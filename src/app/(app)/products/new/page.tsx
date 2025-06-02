@@ -26,12 +26,12 @@ export default function NewProductPage() {
     resolver: zodResolver(productFormSchema),
     defaultValues: {
       productName: "",
-      // category: undefined, // Let placeholder in Select handle this, Zod will ensure it's selected
-      purchasePrice: '' as unknown as number, // Initialize with empty string
-      retailPrice: '' as unknown as number, // Initialize with empty string
-      wholesalePrice: '' as unknown as number, // Initialize with empty string
+      // category: undefined, // Zod will ensure it's selected
+      purchasePrice: '' as unknown as number, 
+      retailPrice: '' as unknown as number, 
+      wholesalePrice: '' as unknown as number,
       unit: PRODUCT_UNITS[0], 
-      initialStock: '' as unknown as number, // Initialize with empty string
+      initialStock: '' as unknown as number, 
     },
   });
 
@@ -46,7 +46,7 @@ export default function NewProductPage() {
           description: result.message,
         });
         form.reset(); 
-        // Optionally redirect: router.push('/products');
+        router.push('/products'); // Redirect to product list page
       } else {
         toast({
           title: "Error",
@@ -129,7 +129,7 @@ export default function NewProductPage() {
                     <FormItem>
                       <FormLabel>Purchase Price (₹)</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 350.00" step="0.01" {...field} />
+                        <Input type="number" placeholder="e.g., 350.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')}/>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -142,7 +142,7 @@ export default function NewProductPage() {
                     <FormItem>
                       <FormLabel>Retail Price (₹)</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 700.00" step="0.01" {...field} />
+                        <Input type="number" placeholder="e.g., 700.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -157,7 +157,7 @@ export default function NewProductPage() {
                   <FormItem>
                     <FormLabel>Wholesale Price (₹)</FormLabel>
                     <FormControl>
-                      <Input type="number" placeholder="e.g., 525.00" step="0.01" {...field} />
+                      <Input type="number" placeholder="e.g., 525.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -198,7 +198,7 @@ export default function NewProductPage() {
                     <FormItem>
                       <FormLabel>Initial Stock Quantity</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 100" step="1" {...field} />
+                        <Input type="number" placeholder="e.g., 100" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || '')} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
