@@ -2,6 +2,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { PRODUCT_UNITS } from "@/lib/constants";
 
 // Placeholder for ProductForm component
 function ProductFormPlaceholder() {
@@ -35,12 +38,15 @@ function ProductFormPlaceholder() {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label htmlFor="unit" className="block text-sm font-medium text-foreground">Unit</label>
-          <select id="unit" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background">
-            <option>piece</option>
-            <option>dozen</option>
-            <option>gross</option>
-          </select>
+          <Label className="block text-sm font-medium text-foreground mb-1">Unit</Label>
+          <RadioGroup defaultValue={PRODUCT_UNITS[0]} className="mt-1 flex flex-wrap gap-x-4 gap-y-2">
+            {PRODUCT_UNITS.map((unit) => (
+              <div key={unit} className="flex items-center space-x-2">
+                <RadioGroupItem value={unit} id={`unit-${unit}`} />
+                <Label htmlFor={`unit-${unit}`} className="font-normal">{unit}</Label>
+              </div>
+            ))}
+          </RadioGroup>
         </div>
         <div>
           <label htmlFor="initialStock" className="block text-sm font-medium text-foreground">Initial Stock Quantity</label>
