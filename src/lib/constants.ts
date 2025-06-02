@@ -1,3 +1,4 @@
+
 export const PRODUCT_CATEGORIES = [
   "Makeup",
   "Imitation Jewellery",
@@ -15,10 +16,6 @@ export const PRODUCT_UNITS = [
   "piece",
   "dozen",
   "gross",
-  "kg",
-  "gram",
-  "liter",
-  "ml",
   "pack",
   "box",
   "set",
