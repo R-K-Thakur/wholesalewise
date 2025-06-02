@@ -1,7 +1,22 @@
+
+"use client";
+
+import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PlusCircle } from "lucide-react";
 import Link from "next/link";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 // Mock data for products table - replace with actual data fetching and ProductsTable component
 const mockProducts = [
@@ -10,8 +25,33 @@ const mockProducts = [
   { id: "3", name: "Silver Earrings", category: "Imitation Jewellery", quantity: 200, price: 1999.00 },
 ];
 
+interface Product {
+  id: string;
+  name: string;
+  category: string;
+  quantity: number;
+  price: number;
+}
 
 export default function ProductsPage() {
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  const [productToDelete, setProductToDelete] = React.useState<Product | null>(null);
+
+  const handleDeleteClick = (product: Product) => {
+    setProductToDelete(product);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (productToDelete) {
+      console.log("Deleting product:", productToDelete.name);
+      // Here you would typically call an API to delete the product
+      // For now, we'll just log and close the dialog
+    }
+    setProductToDelete(null);
+    setIsDeleteDialogOpen(false);
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -56,8 +96,9 @@ export default function ProductsPage() {
                       <Button variant="outline" size="sm" className="mr-2" asChild>
                         <Link href={`/products/${product.id}/edit`}>Edit</Link>
                       </Button>
-                      {/* TODO: Implement Delete functionality with confirmation */}
-                      <Button variant="destructive" size="sm">Delete</Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDeleteClick(product)}>
+                        Delete
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -73,6 +114,24 @@ export default function ProductsPage() {
            <p className="text-muted-foreground mt-4">Pagination placeholder</p>
         </CardContent>
       </Card>
+
+      {productToDelete && (
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure you want to delete this product?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the product
+                "{productToDelete.name}".
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setProductToDelete(null)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }
