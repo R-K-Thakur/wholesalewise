@@ -5,8 +5,8 @@ import Link from "next/link";
 
 // Mock data for sales table
 const mockSales = [
-  { id: "1", customer: "Local Shop A", items: 2, totalAmount: 150.00, type: "wholesale", date: "2024-07-20" },
-  { id: "2", customer: "Retail Customer", items: 1, totalAmount: 12.99, type: "retail", date: "2024-07-19" },
+  { id: "1", customer: "Local Shop A", items: 2, totalAmount: 10500.00, type: "wholesale", date: "2024-07-20" },
+  { id: "2", customer: "Retail Customer", items: 1, totalAmount: 999.00, type: "retail", date: "2024-07-19" },
 ];
 
 export default function SalesPage() {
@@ -45,7 +45,7 @@ export default function SalesPage() {
                   <tr key={sale.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{sale.customer} ({sale.type})</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{sale.items}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">${sale.totalAmount.toFixed(2)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">₹{sale.totalAmount.toFixed(2)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{sale.date}</td>
                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <Button variant="outline" size="sm">View Details</Button>

@@ -5,9 +5,9 @@ import Link from "next/link";
 
 // Mock data for products table - replace with actual data fetching and ProductsTable component
 const mockProducts = [
-  { id: "1", name: "Lavender Lipstick", category: "Makeup", quantity: 150, price: 12.99 },
-  { id: "2", name: "Teal Hair Oil", category: "Hair Oils", quantity: 80, price: 8.50 },
-  { id: "3", name: "Silver Earrings", category: "Imitation Jewellery", quantity: 200, price: 25.00 },
+  { id: "1", name: "Lavender Lipstick", category: "Makeup", quantity: 150, price: 999.00 },
+  { id: "2", name: "Teal Hair Oil", category: "Hair Oils", quantity: 80, price: 650.00 },
+  { id: "3", name: "Silver Earrings", category: "Imitation Jewellery", quantity: 200, price: 1999.00 },
 ];
 
 
@@ -51,7 +51,7 @@ export default function ProductsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{product.name}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.category}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.quantity}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">${product.price.toFixed(2)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">₹{product.price.toFixed(2)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <Button variant="outline" size="sm" className="mr-2">Edit</Button>
                       <Button variant="destructive" size="sm">Delete</Button>

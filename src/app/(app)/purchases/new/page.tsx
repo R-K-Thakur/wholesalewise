@@ -21,8 +21,8 @@ function PurchaseFormPlaceholder() {
           <input type="number" id="quantityPurchased" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 50" />
         </div>
         <div>
-          <label htmlFor="purchasePricePerUnit" className="block text-sm font-medium text-foreground">Purchase Price per Unit ($)</label>
-          <input type="number" id="purchasePricePerUnit" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 5.00" />
+          <label htmlFor="purchasePricePerUnit" className="block text-sm font-medium text-foreground">Purchase Price per Unit (₹)</label>
+          <input type="number" id="purchasePricePerUnit" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 350.00" />
         </div>
       </div>
       <div>

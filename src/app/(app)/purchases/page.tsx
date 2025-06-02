@@ -5,8 +5,8 @@ import Link from "next/link";
 
 // Mock data for purchases table
 const mockPurchases = [
-  { id: "1", productName: "Lavender Lipstick", quantity: 50, totalCost: 250.00, date: "2024-07-15" },
-  { id: "2", productName: "Teal Hair Oil", quantity: 100, totalCost: 400.00, date: "2024-07-10" },
+  { id: "1", productName: "Lavender Lipstick", quantity: 50, totalCost: 17500.00, date: "2024-07-15" },
+  { id: "2", productName: "Teal Hair Oil", quantity: 100, totalCost: 28000.00, date: "2024-07-10" },
 ];
 
 export default function PurchasesPage() {
@@ -45,7 +45,7 @@ export default function PurchasesPage() {
                   <tr key={purchase.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{purchase.productName}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{purchase.quantity}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">${purchase.totalCost.toFixed(2)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">₹{purchase.totalCost.toFixed(2)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{purchase.date}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <Button variant="outline" size="sm">View Details</Button>

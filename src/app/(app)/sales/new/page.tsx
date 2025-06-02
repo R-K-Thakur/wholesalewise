@@ -33,8 +33,8 @@ function SaleFormPlaceholder() {
               <input type="number" id="quantity1" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 2" />
             </div>
             <div>
-              <label htmlFor="pricePerUnit1" className="block text-sm font-medium text-foreground">Price per Unit ($)</label>
-              <input type="number" id="pricePerUnit1" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 10.00" />
+              <label htmlFor="pricePerUnit1" className="block text-sm font-medium text-foreground">Price per Unit (₹)</label>
+              <input type="number" id="pricePerUnit1" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 700.00" />
             </div>
           </div>
           <div className="flex justify-end">

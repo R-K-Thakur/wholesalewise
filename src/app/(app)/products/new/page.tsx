@@ -21,17 +21,17 @@ function ProductFormPlaceholder() {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label htmlFor="purchasePrice" className="block text-sm font-medium text-foreground">Purchase Price ($)</label>
-          <input type="number" id="purchasePrice" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 5.00" />
+          <label htmlFor="purchasePrice" className="block text-sm font-medium text-foreground">Purchase Price (₹)</label>
+          <input type="number" id="purchasePrice" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 350.00" />
         </div>
         <div>
-          <label htmlFor="retailPrice" className="block text-sm font-medium text-foreground">Retail Price ($)</label>
-          <input type="number" id="retailPrice" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 10.00" />
+          <label htmlFor="retailPrice" className="block text-sm font-medium text-foreground">Retail Price (₹)</label>
+          <input type="number" id="retailPrice" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 700.00" />
         </div>
       </div>
        <div>
-        <label htmlFor="wholesalePrice" className="block text-sm font-medium text-foreground">Wholesale Price ($)</label>
-        <input type="number" id="wholesalePrice" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 7.50" />
+        <label htmlFor="wholesalePrice" className="block text-sm font-medium text-foreground">Wholesale Price (₹)</label>
+        <input type="number" id="wholesalePrice" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 525.00" />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
