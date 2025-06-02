@@ -2,12 +2,12 @@
 export const PRODUCT_CATEGORIES = [
   "Makeup",
   "Imitation Jewellery",
-  "Sanitary Pads",
+  "Sanitary items",
   "Hair Oils",
-  "Kitchen Utensils",
+  "Utensils",
   "Skincare",
   "Haircare",
-  "Groceries",
+  "plastic",
   "Stationery",
   "Other",
 ] as const;

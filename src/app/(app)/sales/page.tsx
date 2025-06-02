@@ -48,7 +48,9 @@ export default function SalesPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">₹{sale.totalAmount.toFixed(2)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{sale.date}</td>
                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <Button variant="outline" size="sm">View Details</Button>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/sales/${sale.id}`}>View Details</Link>
+                      </Button>
                     </td>
                   </tr>
                 ))}

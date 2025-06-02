@@ -53,7 +53,10 @@ export default function ProductsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.quantity}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">₹{product.price.toFixed(2)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <Button variant="outline" size="sm" className="mr-2">Edit</Button>
+                      <Button variant="outline" size="sm" className="mr-2" asChild>
+                        <Link href={`/products/${product.id}/edit`}>Edit</Link>
+                      </Button>
+                      {/* TODO: Implement Delete functionality with confirmation */}
                       <Button variant="destructive" size="sm">Delete</Button>
                     </td>
                   </tr>
