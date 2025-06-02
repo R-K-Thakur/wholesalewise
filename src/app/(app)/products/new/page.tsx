@@ -1,4 +1,6 @@
 
+"use client"; // For better form interactivity
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -6,42 +8,76 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { PRODUCT_UNITS, PRODUCT_CATEGORIES } from "@/lib/constants";
+import { Input } from "@/components/ui/input"; // Import Input component
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Import Select components
 
 // Placeholder for ProductForm component
 function ProductFormPlaceholder() {
+  // In a real app, this would use react-hook-form and state
   return (
-    <div className="space-y-6">
+    <form className="space-y-6" onSubmit={(e) => e.preventDefault()}> {/* Added form tag and preventDefault */}
       <div>
         <Label htmlFor="productName" className="block text-sm font-medium text-foreground">Product Name</Label>
-        <input type="text" id="productName" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., Lavender Bliss Soap" />
+        <Input 
+          type="text" 
+          id="productName" 
+          name="productName"
+          className="mt-1" 
+          placeholder="e.g., Lavender Bliss Soap" 
+        />
       </div>
       <div>
         <Label htmlFor="category" className="block text-sm font-medium text-foreground">Category</Label>
-        <select id="category" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background">
-          <option value="">Select a category...</option>
-          {PRODUCT_CATEGORIES.map(category => (
-            <option key={category} value={category}>{category}</option>
-          ))}
-        </select>
+        <Select name="category">
+          <SelectTrigger id="category" className="mt-1 w-full">
+            <SelectValue placeholder="Select a category..." />
+          </SelectTrigger>
+          <SelectContent>
+            {PRODUCT_CATEGORIES.map(category => (
+              <SelectItem key={category} value={category}>{category}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <Label htmlFor="purchasePrice" className="block text-sm font-medium text-foreground">Purchase Price (₹)</Label>
-          <input type="number" id="purchasePrice" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 350.00" />
+          <Input 
+            type="number" 
+            id="purchasePrice" 
+            name="purchasePrice"
+            className="mt-1" 
+            placeholder="e.g., 350.00" 
+            step="0.01"
+          />
         </div>
         <div>
           <Label htmlFor="retailPrice" className="block text-sm font-medium text-foreground">Retail Price (₹)</Label>
-          <input type="number" id="retailPrice" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 700.00" />
+          <Input 
+            type="number" 
+            id="retailPrice" 
+            name="retailPrice"
+            className="mt-1" 
+            placeholder="e.g., 700.00" 
+            step="0.01"
+          />
         </div>
       </div>
        <div>
         <Label htmlFor="wholesalePrice" className="block text-sm font-medium text-foreground">Wholesale Price (₹)</Label>
-        <input type="number" id="wholesalePrice" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 525.00" />
+        <Input 
+          type="number" 
+          id="wholesalePrice" 
+          name="wholesalePrice"
+          className="mt-1" 
+          placeholder="e.g., 525.00" 
+          step="0.01"
+        />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <Label className="block text-sm font-medium text-foreground mb-1">Unit</Label>
-          <RadioGroup defaultValue={PRODUCT_UNITS[0]} className="mt-1 flex flex-wrap gap-x-4 gap-y-2">
+          <RadioGroup defaultValue={PRODUCT_UNITS[0]} name="unit" className="mt-1 flex flex-wrap gap-x-4 gap-y-2">
             {PRODUCT_UNITS.map((unit) => (
               <div key={unit} className="flex items-center space-x-2">
                 <RadioGroupItem value={unit} id={`unit-${unit}`} />
@@ -52,7 +88,14 @@ function ProductFormPlaceholder() {
         </div>
         <div>
           <Label htmlFor="initialStock" className="block text-sm font-medium text-foreground">Initial Stock Quantity</Label>
-          <input type="number" id="initialStock" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 100" />
+          <Input 
+            type="number" 
+            id="initialStock" 
+            name="initialStock"
+            className="mt-1" 
+            placeholder="e.g., 100" 
+            step="1"
+          />
         </div>
       </div>
       <div className="flex justify-end gap-2">
@@ -61,7 +104,7 @@ function ProductFormPlaceholder() {
         </Button>
         <Button type="submit">Save Product</Button>
       </div>
-    </div>
+    </form>
   );
 }
 
@@ -85,7 +128,6 @@ export default function NewProductPage() {
           <CardDescription>Fill in the information for the new product.</CardDescription>
         </CardHeader>
         <CardContent>
-          {/* TODO: Replace with actual ProductForm component using react-hook-form and server actions */}
           <ProductFormPlaceholder />
         </CardContent>
       </Card>
