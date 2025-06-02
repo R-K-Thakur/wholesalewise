@@ -16,12 +16,12 @@ const initialMockProducts: Product[] = [
 let productsStore: Product[] = [...initialMockProducts];
 let nextId = initialMockProducts.length > 0 ? Math.max(...initialMockProducts.map(p => parseInt(p.id))) + 1 : 1;
 
-export function getAllProducts(): Product[] {
+export async function getAllProducts(): Promise<Product[]> {
   // Return a copy to prevent direct modification of the store array
   return JSON.parse(JSON.stringify(productsStore));
 }
 
-export function addProductToStore(productData: ValidatedProductFormData): Product {
+export async function addProductToStore(productData: ValidatedProductFormData): Promise<Product> {
   const newProduct: Product = {
     id: String(nextId++),
     name: productData.productName,
@@ -40,12 +40,12 @@ export function addProductToStore(productData: ValidatedProductFormData): Produc
   return JSON.parse(JSON.stringify(newProduct));
 }
 
-export function findProductById(id: string): Product | undefined {
+export async function findProductById(id: string): Promise<Product | undefined> {
   const product = productsStore.find(p => p.id === id);
   return product ? JSON.parse(JSON.stringify(product)) : undefined;
 }
 
-export function updateProductInStore(id: string, updates: Partial<Omit<ValidatedProductFormData, 'initialStock'> & { quantityInStock?: number }>): Product | null {
+export async function updateProductInStore(id: string, updates: Partial<Omit<ValidatedProductFormData, 'initialStock'> & { quantityInStock?: number }>): Promise<Product | null> {
     const productIndex = productsStore.findIndex(p => p.id === id);
     if (productIndex === -1) {
         return null;
@@ -72,7 +72,7 @@ export function updateProductInStore(id: string, updates: Partial<Omit<Validated
     return JSON.parse(JSON.stringify(productsStore[productIndex]));
 }
 
-export function deleteProductFromStore(id: string): boolean {
+export async function deleteProductFromStore(id: string): Promise<boolean> {
     const initialLength = productsStore.length;
     productsStore = productsStore.filter(p => p.id !== id);
     return productsStore.length < initialLength;
