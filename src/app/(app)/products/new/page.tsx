@@ -26,12 +26,12 @@ export default function NewProductPage() {
     resolver: zodResolver(productFormSchema),
     defaultValues: {
       productName: "",
-      // category: undefined, // Let placeholder in Select handle this
-      purchasePrice: undefined,
-      retailPrice: undefined,
-      wholesalePrice: undefined,
-      unit: PRODUCT_UNITS[0], // Default to the first unit
-      initialStock: undefined,
+      // category: undefined, // Let placeholder in Select handle this, Zod will ensure it's selected
+      purchasePrice: '' as unknown as number, // Initialize with empty string
+      retailPrice: '' as unknown as number, // Initialize with empty string
+      wholesalePrice: '' as unknown as number, // Initialize with empty string
+      unit: PRODUCT_UNITS[0], 
+      initialStock: '' as unknown as number, // Initialize with empty string
     },
   });
 
