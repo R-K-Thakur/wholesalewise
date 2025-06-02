@@ -1,39 +1,41 @@
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { PRODUCT_UNITS } from "@/lib/constants";
+import { PRODUCT_UNITS, PRODUCT_CATEGORIES } from "@/lib/constants";
 
 // Placeholder for ProductForm component
 function ProductFormPlaceholder() {
   return (
     <div className="space-y-6">
       <div>
-        <label htmlFor="productName" className="block text-sm font-medium text-foreground">Product Name</label>
+        <Label htmlFor="productName" className="block text-sm font-medium text-foreground">Product Name</Label>
         <input type="text" id="productName" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., Lavender Bliss Soap" />
       </div>
       <div>
-        <label htmlFor="category" className="block text-sm font-medium text-foreground">Category</label>
+        <Label htmlFor="category" className="block text-sm font-medium text-foreground">Category</Label>
         <select id="category" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background">
-          <option>Makeup</option>
-          <option>Hair Oils</option>
-          <option>Kitchen Utensils</option>
+          <option value="">Select a category...</option>
+          {PRODUCT_CATEGORIES.map(category => (
+            <option key={category} value={category}>{category}</option>
+          ))}
         </select>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label htmlFor="purchasePrice" className="block text-sm font-medium text-foreground">Purchase Price (₹)</label>
+          <Label htmlFor="purchasePrice" className="block text-sm font-medium text-foreground">Purchase Price (₹)</Label>
           <input type="number" id="purchasePrice" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 350.00" />
         </div>
         <div>
-          <label htmlFor="retailPrice" className="block text-sm font-medium text-foreground">Retail Price (₹)</label>
+          <Label htmlFor="retailPrice" className="block text-sm font-medium text-foreground">Retail Price (₹)</Label>
           <input type="number" id="retailPrice" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 700.00" />
         </div>
       </div>
        <div>
-        <label htmlFor="wholesalePrice" className="block text-sm font-medium text-foreground">Wholesale Price (₹)</label>
+        <Label htmlFor="wholesalePrice" className="block text-sm font-medium text-foreground">Wholesale Price (₹)</Label>
         <input type="number" id="wholesalePrice" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 525.00" />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -49,7 +51,7 @@ function ProductFormPlaceholder() {
           </RadioGroup>
         </div>
         <div>
-          <label htmlFor="initialStock" className="block text-sm font-medium text-foreground">Initial Stock Quantity</label>
+          <Label htmlFor="initialStock" className="block text-sm font-medium text-foreground">Initial Stock Quantity</Label>
           <input type="number" id="initialStock" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 100" />
         </div>
       </div>
