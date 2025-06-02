@@ -9,13 +9,14 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from "@/lib/constants";
 import { useToast } from "@/hooks/use-toast";
-import { addProduct, productFormSchema, type ValidatedProductFormData } from "../actions";
+import { addProduct } from "../actions";
+import { productFormSchema, type ValidatedProductFormData } from "../schema";
 
 export default function NewProductPage() {
   const router = useRouter();
