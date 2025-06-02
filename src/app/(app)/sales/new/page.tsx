@@ -1,15 +1,44 @@
+
+"use client"; // This page will involve client-side interaction for the form
+
+import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ArrowLeft, PlusCircle, Trash2 } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trash2, Check, ChevronsUpDown } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { cn } from "@/lib/utils";
+
+const mockProductsForCombobox = [
+  { id: "prod1", name: "Lavender Lipstick" },
+  { id: "prod2", name: "Teal Hair Oil" },
+  { id: "prod3", name: "Silver Earrings" },
+  { id: "prod4", name: "Rose Water Toner" },
+  { id: "prod5", name: "Spicy Chili Flakes" },
+  { id: "prod6", name: "Organic Green Tea" },
+  { id: "prod7", name: "Stainless Steel Pan" },
+];
 
 // Placeholder for SaleForm component
 function SaleFormPlaceholder() {
+  const [comboboxOpen, setComboboxOpen] = React.useState(false);
+  const [selectedProduct, setSelectedProduct] = React.useState("");
+
   return (
     <div className="space-y-6">
       <div>
-        <label htmlFor="saleType" className="block text-sm font-medium text-foreground">Sale Type</label>
-        <select id="saleType" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background">
+        <Label htmlFor="saleType">Sale Type</Label>
+        <select id="saleType" className="mt-1 block w-full rounded-md border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2">
           <option value="retail">Retail</option>
           <option value="wholesale">Wholesale</option>
         </select>
@@ -20,21 +49,59 @@ function SaleFormPlaceholder() {
         {/* Single item entry for placeholder */}
         <div className="p-4 border border-border rounded-md space-y-3">
           <div>
-            <label htmlFor="product1" className="block text-sm font-medium text-foreground">Product</label>
-            <select id="product1" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background">
-              <option>Select a product...</option>
-              <option>Lavender Lipstick</option>
-              <option>Teal Hair Oil</option>
-            </select>
+            <Label htmlFor="product1">Product</Label>
+            <Popover open={comboboxOpen} onOpenChange={setComboboxOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={comboboxOpen}
+                  className="w-full justify-between mt-1"
+                >
+                  {selectedProduct
+                    ? mockProductsForCombobox.find((product) => product.name.toLowerCase() === selectedProduct)?.name
+                    : "Select a product..."}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                <Command>
+                  <CommandInput placeholder="Search product..." />
+                  <CommandEmpty>No product found.</CommandEmpty>
+                  <CommandGroup>
+                    <CommandList>
+                      {mockProductsForCombobox.map((product) => (
+                        <CommandItem
+                          key={product.id}
+                          value={product.name.toLowerCase()}
+                          onSelect={(currentValue) => {
+                            setSelectedProduct(currentValue === selectedProduct ? "" : currentValue);
+                            setComboboxOpen(false);
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              selectedProduct === product.name.toLowerCase() ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          {product.name}
+                        </CommandItem>
+                      ))}
+                    </CommandList>
+                  </CommandGroup>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="quantity1" className="block text-sm font-medium text-foreground">Quantity Sold</label>
-              <input type="number" id="quantity1" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 2" />
+              <Label htmlFor="quantity1">Quantity Sold</Label>
+              <Input type="number" id="quantity1" className="mt-1" placeholder="e.g., 2" />
             </div>
             <div>
-              <label htmlFor="pricePerUnit1" className="block text-sm font-medium text-foreground">Price per Unit (₹)</label>
-              <input type="number" id="pricePerUnit1" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., 700.00" />
+              <Label htmlFor="pricePerUnit1">Price per Unit (₹)</Label>
+              <Input type="number" id="pricePerUnit1" className="mt-1" placeholder="e.g., 700.00" />
             </div>
           </div>
           <div className="flex justify-end">
@@ -49,12 +116,12 @@ function SaleFormPlaceholder() {
       </div>
       
       <div>
-        <label htmlFor="customerName" className="block text-sm font-medium text-foreground">Customer Name (Optional)</label>
-        <input type="text" id="customerName" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" placeholder="e.g., John Doe" />
+        <Label htmlFor="customerName">Customer Name (Optional)</Label>
+        <Input type="text" id="customerName" className="mt-1" placeholder="e.g., John Doe" />
       </div>
       <div>
-        <label htmlFor="saleDate" className="block text-sm font-medium text-foreground">Sale Date</label>
-        <input type="date" id="saleDate" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" />
+        <Label htmlFor="saleDate">Sale Date</Label>
+        <Input type="date" id="saleDate" className="mt-1" />
       </div>
       <div className="flex justify-end gap-2">
         <Button variant="outline" asChild>
