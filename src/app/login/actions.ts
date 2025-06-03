@@ -4,83 +4,83 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase"; // db can be null if config fails
+import { db } from "@/lib/firebase"; 
 
 const SESSION_COOKIE_NAME = "auth-session";
 const APP_SETTINGS_COLLECTION = "app_settings";
 const ROLE_MANAGEMENT_DOC = "role_management";
 
 export interface SessionData {
-  username: string; // Will be the email
+  username: string; 
   email: string;
   role: "owner" | "staff";
-  name: string; // Will be the email or a derived part
+  name: string; 
 }
 
-async function getOwnerEmailsFromFirestore(): Promise<string[] | null> {
+interface RoleEmails {
+  ownerEmails: string[];
+  staffEmails: string[];
+}
+
+async function getRoleEmailsFromFirestore(): Promise<RoleEmails | null> {
   if (!db) {
     console.error(
-      "getOwnerEmailsFromFirestore: Firestore (db) instance is not initialized. Cannot fetch owner emails. Returning empty list."
+      "getRoleEmailsFromFirestore: Firestore (db) instance is not initialized. Cannot fetch roles. Returning empty lists."
     );
-    return [];
+    return { ownerEmails: [], staffEmails: [] };
   }
   try {
     const docRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
-      if (data && Array.isArray(data.ownerEmails)) {
-        return data.ownerEmails.map(email => String(email).toLowerCase()).filter(email => email.includes('@'));
-      } else if (data && data.ownerEmails !== undefined) {
-        console.warn(`Firestore: 'ownerEmails' field in '${APP_SETTINGS_COLLECTION}/${ROLE_MANAGEMENT_DOC}' is not a valid array. Found:`, data.ownerEmails);
-        return [];
-      }
+      const ownerEmails = (data?.ownerEmails && Array.isArray(data.ownerEmails)) 
+        ? data.ownerEmails.map(email => String(email).toLowerCase()).filter(email => email.includes('@')) 
+        : [];
+      const staffEmails = (data?.staffEmails && Array.isArray(data.staffEmails)) 
+        ? data.staffEmails.map(email => String(email).toLowerCase()).filter(email => email.includes('@')) 
+        : [];
+      return { ownerEmails, staffEmails };
     }
-    console.warn(`Firestore: '${APP_SETTINGS_COLLECTION}/${ROLE_MANAGEMENT_DOC}' document not found, or 'ownerEmails' field is missing or not an array. Defaulting to no owners.`);
-    return [];
+    console.warn(`Firestore: '${APP_SETTINGS_COLLECTION}/${ROLE_MANAGEMENT_DOC}' document not found or fields missing. Defaulting to no authorized users.`);
+    return { ownerEmails: [], staffEmails: [] }; // No roles defined if doc/fields are missing
   } catch (error) {
-    console.error("Error fetching owner emails from Firestore:", error);
+    console.error("Error fetching role emails from Firestore:", error);
     return null; // Indicates a database access error
   }
 }
 
 export async function signInWithEmailAction(email: string): Promise<{ error: string } | void> {
   if (!email || !email.includes('@')) {
-    const errorMessage = "Invalid email format provided.";
-    console.error("signInWithEmailAction:", errorMessage);
-    return { error: errorMessage };
+    return { error: "Invalid email format provided." };
   }
 
   if (!db) {
-    const errorMessage = "Authentication service is temporarily unavailable due to a database configuration issue. Cannot determine user role.";
-    console.error("signInWithEmailAction: Firestore (db) not available.", errorMessage);
-    return { error: errorMessage };
+    return { error: "Authentication service is temporarily unavailable due to a database configuration issue." };
   }
 
-  const ownerEmailsResult = await getOwnerEmailsFromFirestore();
+  const roleEmailsResult = await getRoleEmailsFromFirestore();
 
-  if (ownerEmailsResult === null) {
-    const errorMessage = "Could not verify user authorization due to a database access issue. Please try again later.";
-    console.error("signInWithEmailAction: ownerEmailsResult is null, indicating a DB error.", errorMessage);
-    return { error: errorMessage };
+  if (roleEmailsResult === null) {
+    return { error: "Could not verify user authorization due to a database access issue. Please try again later." };
   }
   
-  const normalizedOwnerEmails = Array.isArray(ownerEmailsResult) ? ownerEmailsResult : [];
+  const { ownerEmails, staffEmails } = roleEmailsResult;
   const userEmailLower = email.toLowerCase();
+  let userRole: SessionData['role'] | null = null;
 
-  if (normalizedOwnerEmails.length === 0) {
-    const errorMessage = "Login failed: No authorized users are configured in the system. Please contact an administrator.";
-    console.error("signInWithEmailAction: No owner emails configured.", errorMessage);
-    return { error: errorMessage };
+  if (ownerEmails.includes(userEmailLower)) {
+    userRole = "owner";
+  } else if (staffEmails.includes(userEmailLower)) {
+    userRole = "staff";
   }
 
-  if (!normalizedOwnerEmails.includes(userEmailLower)) {
-    const errorMessage = "Login failed: This email address is not authorized to access the application.";
-    console.error(`signInWithEmailAction: Email "${userEmailLower}" not found in owner list.`, errorMessage);
-    return { error: errorMessage };
+  if (!userRole) {
+    if (ownerEmails.length === 0 && staffEmails.length === 0) {
+      return { error: "Login failed: No authorized users (owners or staff) are configured in the system. Please contact an administrator." };
+    }
+    return { error: "Login failed: This email address is not authorized to access the application." };
   }
-
-  const userRole = "owner";
 
   const sessionData: SessionData = {
     username: email,
@@ -89,13 +89,10 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     name: email, 
   };
 
-  // Force Secure=true and SameSite="none" for cloud environments (like Firebase Studio)
-  // as they typically serve over HTTPS and might involve cross-origin contexts for previews.
-  const cookieSecure = true;
-  const cookieSameSite = "none" as "none" | "lax" | "strict" | undefined; // Explicit type for clarity
-
+  const cookieSecure = true; 
+  const cookieSameSite = "none" as "none" | "lax" | "strict" | undefined;
+  
   try {
-    console.log(`[signInWithEmailAction] Attempting to set session cookie. Email: ${email}, Role: ${userRole}, Secure: ${cookieSecure}, SameSite: ${cookieSameSite}`);
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
       httpOnly: true,
       secure: cookieSecure,
@@ -103,16 +100,7 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
       path: "/",
       sameSite: cookieSameSite,
     });
-    console.log(`[signInWithEmailAction] Session cookie set attempt for ${sessionData.email}. Secure: ${cookieSecure}, SameSite: ${cookieSameSite}`);
-
-    const justSetCookie = cookies().get(SESSION_COOKIE_NAME);
-    if (justSetCookie) {
-      console.log(`[signInWithEmailAction] Cookie read back by server immediately after setting (value starts with): ${justSetCookie.value.substring(0,30)}...`);
-    } else {
-      console.log(`[signInWithEmailAction] Cookie was NOT readable by server immediately after setting via cookies().get().`);
-    }
     
-    console.log("[signInWithEmailAction] Attempting redirect to /dashboard.");
     redirect('/dashboard');
   } catch (e: any) {
     if (typeof e.message === 'string' && e.message.includes('NEXT_REDIRECT')) {

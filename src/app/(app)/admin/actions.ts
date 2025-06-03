@@ -17,11 +17,11 @@ async function verifyOwner(): Promise<SessionData> {
   return session;
 }
 
+// --- Owner Email Actions ---
+
 export async function getOwnerEmailsAction(): Promise<string[]> {
   if (!db) {
-    console.error(
-      "Firestore (db) instance is not initialized. Cannot fetch owner emails for admin actions. Returning empty list."
-    );
+    console.error("Firestore (db) instance is not initialized. Cannot fetch owner emails. Returning empty list.");
     return [];
   }
   try {
@@ -36,8 +36,6 @@ export async function getOwnerEmailsAction(): Promise<string[]> {
     return [];
   } catch (error) {
     console.error("Error fetching owner emails:", error);
-    // Depending on requirements, you might want to throw the error
-    // or return an empty list / specific error object.
     return [];
   }
 }
@@ -46,10 +44,8 @@ export async function addOwnerEmailAction(emailToAdd: string): Promise<{ success
   await verifyOwner();
   
   if (!db) {
-    console.error("Firestore (db) instance is not initialized. Cannot add owner email.");
     return { success: false, message: "Database service not available." };
   }
-
   if (!emailToAdd || !emailToAdd.includes('@')) {
     return { success: false, message: "Invalid email format." };
   }
@@ -59,18 +55,30 @@ export async function addOwnerEmailAction(emailToAdd: string): Promise<{ success
     const docRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
     const docSnap = await getDoc(docRef);
 
+    let ownerEmails: string[] = [];
+    let staffEmails: string[] = [];
+
     if (docSnap.exists()) {
-      const currentEmails = docSnap.data()?.ownerEmails || [];
-      if (Array.isArray(currentEmails) && currentEmails.map(e => String(e).toLowerCase()).includes(normalizedEmail)) {
-        return { success: false, message: "Email already exists in the owner list." };
-      }
+      const data = docSnap.data();
+      ownerEmails = (data?.ownerEmails && Array.isArray(data.ownerEmails)) ? data.ownerEmails.map(e => String(e).toLowerCase()) : [];
+      staffEmails = (data?.staffEmails && Array.isArray(data.staffEmails)) ? data.staffEmails.map(e => String(e).toLowerCase()) : [];
+    }
+
+    if (ownerEmails.includes(normalizedEmail)) {
+      return { success: false, message: "Email already exists in the owner list." };
+    }
+    if (staffEmails.includes(normalizedEmail)) {
+      return { success: false, message: "Email already exists in the staff list. Cannot be both owner and staff." };
+    }
+
+    if (docSnap.exists()) {
       await updateDoc(docRef, {
         ownerEmails: arrayUnion(normalizedEmail)
       });
     } else {
-      // Document doesn't exist, create it with the new email
       await setDoc(docRef, {
-        ownerEmails: [normalizedEmail]
+        ownerEmails: [normalizedEmail],
+        staffEmails: [] // Initialize staffEmails if document is new
       });
     }
     revalidatePath("/admin/settings");
@@ -82,13 +90,11 @@ export async function addOwnerEmailAction(emailToAdd: string): Promise<{ success
 }
 
 export async function removeOwnerEmailAction(emailToRemove: string): Promise<{ success: boolean; message: string }> {
-  const session = await verifyOwner(); // session.email is the email of the current owner trying to perform the action
+  await verifyOwner();
 
   if (!db) {
-    console.error("Firestore (db) instance is not initialized. Cannot remove owner email.");
     return { success: false, message: "Database service not available." };
   }
-
   if (!emailToRemove) {
     return { success: false, message: "Email to remove is required." };
   }
@@ -109,21 +115,12 @@ export async function removeOwnerEmailAction(emailToRemove: string): Promise<{ s
       return { success: false, message: "Email not found in the owner list." };
     }
     
-    // Prevent removing the last owner, especially if it's the current user
     if (ownerEmails.length === 1 && ownerEmails[0] === normalizedEmailToRemove) {
-       return { success: false, message: "Cannot remove the last owner. To change the owner, add a new one first, then remove the old one." };
+       return { success: false, message: "Cannot remove the last owner." };
     }
-    
-    // Optional: Prevent an owner from removing themselves if they are not the very last one.
-    // This logic can be adjusted. For now, an owner can remove another owner.
-    // If you want to prevent self-removal unless they are the last owner (which is handled above):
-    // if (normalizedEmailToRemove === session.email.toLowerCase() && ownerEmails.length > 1) {
-    //   return { success: false, message: "Owners cannot remove themselves if other owners exist. Ask another owner to remove you."};
-    // }
-
 
     await updateDoc(docRef, {
-      ownerEmails: arrayRemove(normalizedEmailToRemove) // Firestore's arrayRemove handles if it's not there, but we checked.
+      ownerEmails: arrayRemove(normalizedEmailToRemove)
     });
     
     revalidatePath("/admin/settings");
@@ -131,5 +128,119 @@ export async function removeOwnerEmailAction(emailToRemove: string): Promise<{ s
   } catch (error) {
     console.error("Error removing owner email:", error);
     return { success: false, message: `Failed to remove owner email: ${error instanceof Error ? error.message : "Unknown error"}` };
+  }
+}
+
+// --- Staff Email Actions ---
+
+export async function getStaffEmailsAction(): Promise<string[]> {
+  if (!db) {
+    console.error("Firestore (db) instance is not initialized. Cannot fetch staff emails. Returning empty list.");
+    return [];
+  }
+  try {
+    const docRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      if (data && Array.isArray(data.staffEmails)) {
+        return data.staffEmails.map(email => String(email));
+      }
+    }
+    return []; // Return empty if field doesn't exist or not an array
+  } catch (error) {
+    console.error("Error fetching staff emails:", error);
+    return [];
+  }
+}
+
+export async function addStaffEmailAction(emailToAdd: string): Promise<{ success: boolean; message: string }> {
+  await verifyOwner(); // Only owners can add staff
+
+  if (!db) {
+    return { success: false, message: "Database service not available." };
+  }
+  if (!emailToAdd || !emailToAdd.includes('@')) {
+    return { success: false, message: "Invalid email format." };
+  }
+  const normalizedEmail = emailToAdd.toLowerCase();
+
+  try {
+    const docRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
+    const docSnap = await getDoc(docRef);
+
+    let ownerEmails: string[] = [];
+    let staffEmails: string[] = [];
+
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      ownerEmails = (data?.ownerEmails && Array.isArray(data.ownerEmails)) ? data.ownerEmails.map(e => String(e).toLowerCase()) : [];
+      staffEmails = (data?.staffEmails && Array.isArray(data.staffEmails)) ? data.staffEmails.map(e => String(e).toLowerCase()) : [];
+    } else {
+      // If role_management doc doesn't exist, we should create it with owner array too
+      // However, this action is guarded by verifyOwner, implying an owner exists,
+      // which implies the document should exist with at least one owner.
+      // For robustness, ensure staffEmails array is initialized if adding to non-existent doc,
+      // though ideally, this path is less likely if owners manage staff.
+      await setDoc(docRef, { ownerEmails: [], staffEmails: [normalizedEmail] });
+      revalidatePath("/admin/settings");
+      return { success: true, message: "Staff email added successfully (new role document created)." };
+    }
+
+    if (ownerEmails.includes(normalizedEmail)) {
+      return { success: false, message: "Email already exists in the owner list. Cannot be both owner and staff." };
+    }
+    if (staffEmails.includes(normalizedEmail)) {
+      return { success: false, message: "Email already exists in the staff list." };
+    }
+    
+    // If staffEmails field doesn't exist, arrayUnion will create it
+    await updateDoc(docRef, {
+      staffEmails: arrayUnion(normalizedEmail)
+    });
+    
+    revalidatePath("/admin/settings");
+    return { success: true, message: "Staff email added successfully." };
+  } catch (error) {
+    console.error("Error adding staff email:", error);
+    return { success: false, message: `Failed to add staff email: ${error instanceof Error ? error.message : "Unknown error"}` };
+  }
+}
+
+export async function removeStaffEmailAction(emailToRemove: string): Promise<{ success: boolean; message: string }> {
+  await verifyOwner(); // Only owners can remove staff
+
+  if (!db) {
+    return { success: false, message: "Database service not available." };
+  }
+  if (!emailToRemove) {
+    return { success: false, message: "Email to remove is required." };
+  }
+  const normalizedEmailToRemove = emailToRemove.toLowerCase();
+
+  try {
+    const docRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
+    const docSnap = await getDoc(docRef);
+
+    if (!docSnap.exists()) {
+      return { success: false, message: "Role management document not found." };
+    }
+
+    const data = docSnap.data();
+    let staffEmails: string[] = (data?.staffEmails && Array.isArray(data.staffEmails)) ? data.staffEmails.map(e => String(e).toLowerCase()) : [];
+
+    if (!staffEmails.includes(normalizedEmailToRemove)) {
+      return { success: false, message: "Email not found in the staff list." };
+    }
+
+    await updateDoc(docRef, {
+      staffEmails: arrayRemove(normalizedEmailToRemove)
+    });
+    
+    revalidatePath("/admin/settings");
+    return { success: true, message: "Staff email removed successfully." };
+  } catch (error) {
+    console.error("Error removing staff email:", error);
+    return { success: false, message: `Failed to remove staff email: ${error instanceof Error ? error.message : "Unknown error"}` };
   }
 }
