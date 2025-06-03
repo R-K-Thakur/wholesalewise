@@ -29,52 +29,52 @@ async function getOwnerEmailsFromFirestore(): Promise<string[] | null> {
     console.error(
       "getOwnerEmailsFromFirestore: Firestore (db) instance is not initialized. Cannot fetch owner emails."
     );
-    return null; // Indicate DB/config failure
+    return null; 
   }
   try {
     const docRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
-      // Ensure ownerEmails is an array of strings, even if field is missing or wrong type in Firestore.
       if (data && Array.isArray(data.ownerEmails)) {
         return data.ownerEmails.map(email => String(email).toLowerCase()).filter(email => email.includes('@'));
       } else if (data && data.ownerEmails !== undefined) {
         console.warn(`Firestore: 'ownerEmails' field in '${APP_SETTINGS_COLLECTION}/${ROLE_MANAGEMENT_DOC}' is not a valid array. Found:`, data.ownerEmails);
-        return []; // Return empty array if field exists but is not an array
+        return []; 
       }
     }
-    // Document or ownerEmails field doesn't exist, or is not an array.
-    // This is not an error, just means no owners are defined in DB.
     console.warn(`Firestore: '${APP_SETTINGS_COLLECTION}/${ROLE_MANAGEMENT_DOC}' document not found, or 'ownerEmails' field is missing or not an array. Defaulting to no owners.`);
-    return []; // Default to an empty array if doc/field doesn't exist
+    return []; 
   } catch (error) {
     console.error("Error fetching owner emails from Firestore:", error);
-    return null; // Indicate a Firestore operation failure
+    return null; 
   }
 }
 
 export async function signInWithGoogleAction(userData: GoogleSignInData): Promise<{ error: string } | void> {
   if (!db) {
-    console.error("signInWithGoogleAction: Firestore (db) not available. Check Firebase configuration.");
-    return { error: "Authentication service is temporarily unavailable due to a configuration issue." };
+    const errorMessage = "Authentication service is temporarily unavailable due to a database configuration issue.";
+    console.error("signInWithGoogleAction: Firestore (db) not available.", errorMessage);
+    return { error: errorMessage };
   }
 
   if (!userData.email) {
-    console.error("Email not provided by Google Sign-In for session creation.");
-    return { error: "Email not provided. Cannot create session." };
+    const errorMessage = "Email not provided. Cannot create session.";
+    console.error("signInWithGoogleAction:", errorMessage);
+    return { error: errorMessage };
   }
 
   const ownerEmailsResult = await getOwnerEmailsFromFirestore();
 
   if (ownerEmailsResult === null) {
-    // This means getOwnerEmailsFromFirestore encountered a DB error (e.g., db was null or a Firestore operation failed)
-    return { error: "Could not determine user role due to a database issue. Please try again later." };
+    const errorMessage = "Could not determine user role due to a database issue. Please try again later.";
+    console.error("signInWithGoogleAction: ownerEmailsResult is null.", errorMessage);
+    return { error: errorMessage };
   }
 
-  // ownerEmailsResult is now guaranteed to be string[]
+  const normalizedOwnerEmails = Array.isArray(ownerEmailsResult) ? ownerEmailsResult : [];
   const userEmailLower = userData.email.toLowerCase();
-  const userRole = ownerEmailsResult.includes(userEmailLower) ? "owner" : "staff";
+  const userRole = normalizedOwnerEmails.includes(userEmailLower) ? "owner" : "staff";
 
   const sessionData: SessionData = {
     username: userData.email,
@@ -85,23 +85,38 @@ export async function signInWithGoogleAction(userData: GoogleSignInData): Promis
   };
 
   try {
+    console.log("[signInWithGoogleAction] Attempting to set session cookie with data:", JSON.stringify(sessionData).substring(0, 50) + "...");
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: true, // Explicitly true for HTTPS environments
       maxAge: 60 * 60 * 24 * 7, // 1 week
       path: "/",
-      sameSite: "lax",
+      sameSite: "lax", 
     });
-  } catch (e) {
-    console.error("Failed to set session cookie:", e);
-    // This catch might not be hit if cookies().set itself doesn't throw but fails silently,
-    // but it's good practice.
-    return { error: "Failed to create your session. Please try again." };
+    console.log(`[signInWithGoogleAction] Session cookie set attempt for ${sessionData.email}.`);
+
+    // For debugging: try to read the cookie immediately after setting it.
+    // Note: This might not reflect what the browser receives due to the asynchronous nature of HTTP headers.
+    const justSetCookie = cookies().get(SESSION_COOKIE_NAME);
+    if (justSetCookie) {
+      console.log(`[signInWithGoogleAction] Cookie read back by server immediately after setting (value starts with): ${justSetCookie.value.substring(0,30)}...`);
+    } else {
+      console.log(`[signInWithGoogleAction] Cookie was NOT readable by server immediately after setting via cookies().get(). This can sometimes be normal due to cookie propagation, but ensure browser is sending it on next request.`);
+    }
+    
+    console.log("[signInWithGoogleAction] Attempting redirect to /dashboard.");
+    redirect('/dashboard');
+    // Note: redirect() throws a special error, so code after it won't run.
+  } catch (e: any) {
+    // Check if the error is the special redirect error from Next.js
+    if (typeof e.message === 'string' && e.message.includes('NEXT_REDIRECT')) {
+      // This is an expected error when redirect() is called. Re-throw it.
+      throw e;
+    }
+    // Log other types of errors
+    console.error("[signInWithGoogleAction] Failed to set session cookie or redirect:", e);
+    return { error: "Failed to create your session or redirect. Please try again." };
   }
-  
-  // If all successful, redirect. This must be the last step for the success path.
-  redirect('/dashboard');
-  // Note: redirect() throws a special error, so code after it won't run.
 }
 
 
@@ -120,7 +135,7 @@ export async function getSession(): Promise<SessionData | null> {
       return sessionData;
     } catch (error) {
       console.error("Failed to parse session cookie:", error);
-      cookies().delete(SESSION_COOKIE_NAME); // Clear invalid cookie
+      cookies().delete(SESSION_COOKIE_NAME); 
       return null;
     }
   }
