@@ -2,9 +2,8 @@
 "use client";
 
 import * as React from "react";
-import { useForm, useFieldArray, Controller } from "react-hook-form";
+import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, PlusCircle, Trash2, Check, ChevronsUpDown, Loader2 } from "lucide-react";
@@ -12,7 +11,6 @@ import { ArrowLeft, PlusCircle, Trash2, Check, ChevronsUpDown, Loader2 } from "l
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label"; // Keep if used outside RHF FormLabel
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command,
@@ -35,25 +33,10 @@ import { cn } from "@/lib/utils";
 import type { Product } from "@/lib/types";
 import { getProductsAction } from "../../products/actions";
 import { useToast } from "@/hooks/use-toast";
+import { saleFormSchema, type SaleFormData, type SaleItemFormData, type RecordSaleActionPayload } from "../schema";
+import { recordSaleAction } from "../actions";
+import type { ProductUnit } from "@/lib/constants";
 
-// Schema Definitions
-const saleItemSchema = z.object({
-  productId: z.string().min(1, "Product is required."),
-  productNameSnapshot: z.string().optional(), // For display or if needed on submission
-  quantitySold: z.coerce.number().min(1, "Quantity must be at least 1."),
-  pricePerUnitSold: z.coerce.number().min(0.01, "Price must be positive."),
-  unitSnapshot: z.string().optional(), // For display or if needed on submission
-});
-
-const saleFormSchema = z.object({
-  saleType: z.enum(['retail', 'wholesale'], { required_error: "Sale type is required."}),
-  customerName: z.string().optional(),
-  saleDate: z.string().refine((date) => !isNaN(Date.parse(date)), { message: "Invalid date" }),
-  items: z.array(saleItemSchema).min(1, "At least one item is required in the sale."),
-  paymentMethod: z.enum(['cash', 'card', 'online'], { required_error: "Payment method is required."}).optional(),
-});
-
-type SaleFormData = z.infer<typeof saleFormSchema>;
 
 // SaleForm component that uses react-hook-form
 function SaleForm({ allProducts }: { allProducts: Product[] }) {
@@ -76,31 +59,83 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   });
 
   const watchSaleType = form.watch("saleType");
+  const watchItems = form.watch("items");
 
   async function onSubmit(data: SaleFormData) {
-    // TODO: Implement actual sale recording logic (e.g., save to Firestore, update stock)
-    console.log("Sale Data:", data);
-    toast({
-      title: "Sale Recorded (Placeholder)",
-      description: "Sale data logged to console. Actual saving not yet implemented.",
-    });
-    // router.push('/sales'); // Redirect after successful save
+    form.clearErrors(); // Clear previous errors
+    let totalAmount = 0;
+    const itemsForAction: RecordSaleActionPayload['items'] = [];
+
+    for (const item of data.items) {
+      const product = allProducts.find(p => p.id === item.productId);
+      if (!product) {
+        // This should ideally be caught by form validation, but as a fallback
+        toast({ title: "Error", description: `Product details not found for one of the items.`, variant: "destructive"});
+        return;
+      }
+      const itemTotal = (item.quantitySold || 0) * (item.pricePerUnitSold || 0);
+      totalAmount += itemTotal;
+      itemsForAction.push({
+        ...item,
+        productNameSnapshot: product.name,
+        unitSnapshot: product.unit,
+        total: itemTotal,
+      });
+    }
+    
+    const payload: RecordSaleActionPayload = {
+      ...data,
+      items: itemsForAction,
+      totalAmount,
+    };
+
+    try {
+      const result = await recordSaleAction(payload);
+      if (result.success) {
+        toast({
+          title: "Success!",
+          description: result.message,
+        });
+        form.reset(); 
+        router.push('/sales'); 
+      } else {
+        toast({
+          title: "Error Recording Sale",
+          description: result.message || "Failed to record sale.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to record sale:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred while recording the sale. Please try again.",
+        variant: "destructive",
+      });
+    }
   }
 
   const handleProductSelect = (itemIndex: number, productId: string) => {
     const product = allProducts.find(p => p.id === productId);
     if (product) {
       form.setValue(`items.${itemIndex}.productId`, product.id);
-      form.setValue(`items.${itemIndex}.productNameSnapshot`, product.name);
-      form.setValue(`items.${itemIndex}.unitSnapshot`, product.unit);
+      // productNameSnapshot and unitSnapshot will be added during onSubmit
       const price = watchSaleType === 'wholesale' ? product.wholesalePrice : product.retailPrice;
       form.setValue(`items.${itemIndex}.pricePerUnitSold`, price);
-      form.clearErrors(`items.${itemIndex}.productId`); // Clear error on selection
+      form.trigger(`items.${itemIndex}.pricePerUnitSold`); // Trigger validation for price
+      form.clearErrors(`items.${itemIndex}.productId`); 
     }
   };
   
-  // Store open state for each combobox
   const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
+
+  const calculateGrandTotal = () => {
+    return watchItems.reduce((sum, item) => {
+      const quantity = Number(item.quantitySold) || 0;
+      const price = Number(item.pricePerUnitSold) || 0;
+      return sum + (quantity * price);
+    }, 0);
+  };
 
 
   return (
@@ -113,7 +148,20 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Sale Type</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select 
+                  onValueChange={(value) => {
+                    field.onChange(value);
+                    // Update prices when sale type changes
+                    watchItems.forEach((item, index) => {
+                      const product = allProducts.find(p => p.id === item.productId);
+                      if (product) {
+                        const newPrice = value === 'wholesale' ? product.wholesalePrice : product.retailPrice;
+                        form.setValue(`items.${index}.pricePerUnitSold`, newPrice);
+                      }
+                    });
+                  }} 
+                  defaultValue={field.value}
+                >
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select sale type" />
@@ -172,7 +220,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
             <FormItem>
               <FormLabel>Customer Name (Optional)</FormLabel>
               <FormControl>
-                <Input placeholder="e.g., John Doe" {...field} />
+                <Input placeholder="e.g., John Doe" {...field} value={field.value ?? ""} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -182,7 +230,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         <div>
           <h3 className="text-lg font-medium text-foreground mb-2">Items</h3>
           {fields.map((item, index) => (
-            <Card key={item.id} className="mb-4 p-4 space-y-3">
+            <Card key={item.id} className="mb-4 p-4 space-y-3 bg-card/50 dark:bg-card/80">
               <FormField
                 control={form.control}
                 name={`items.${index}.productId`}
@@ -223,6 +271,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                                     handleProductSelect(index, product.id);
                                     setOpenComboboxIndex(null);
                                   }}
+                                  disabled={product.quantityInStock === 0}
                                 >
                                   <Check
                                     className={cn(
@@ -233,6 +282,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                                     )}
                                   />
                                   {product.name} (Stock: {product.quantityInStock} {product.unit})
+                                  {product.quantityInStock === 0 && <span className="ml-auto text-xs text-destructive">Out of Stock</span>}
                                 </CommandItem>
                               ))}
                             </CommandGroup>
@@ -244,13 +294,13 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                   </FormItem>
                 )}
               />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <FormField
                   control={form.control}
                   name={`items.${index}.quantitySold`}
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Quantity Sold</FormLabel>
+                      <FormLabel>Quantity</FormLabel>
                       <FormControl>
                         <Input type="number" placeholder="e.g., 2" {...field} />
                       </FormControl>
@@ -263,7 +313,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                   name={`items.${index}.pricePerUnitSold`}
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Price per Unit (₹)</FormLabel>
+                      <FormLabel>Price/Unit (₹)</FormLabel>
                       <FormControl>
                         <Input type="number" placeholder="e.g., 700.00" step="0.01" {...field} />
                       </FormControl>
@@ -271,6 +321,16 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                     </FormItem>
                   )}
                 />
+                 <div className="flex flex-col justify-end">
+                    <FormLabel>Item Total (₹)</FormLabel>
+                    <Input 
+                        type="text" 
+                        readOnly 
+                        disabled 
+                        value={((Number(watchItems[index]?.quantitySold) || 0) * (Number(watchItems[index]?.pricePerUnitSold) || 0)).toFixed(2)}
+                        className="bg-muted/50"
+                    />
+                </div>
               </div>
               <div className="flex justify-end">
                 <Button
@@ -290,18 +350,24 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
             type="button"
             variant="outline"
             className="w-full mt-2"
-            onClick={() => append({ productId: '', quantitySold: 1, pricePerUnitSold: 0 })}
+            onClick={() => append({ productId: '', quantitySold: 1, pricePerUnitSold: 0 } as SaleItemFormData)}
           >
             <PlusCircle className="h-4 w-4 mr-2" /> Add Another Item
           </Button>
            <FormMessage>{form.formState.errors.items?.root?.message || form.formState.errors.items?.message}</FormMessage>
         </div>
 
+        <div className="mt-6 pt-4 border-t">
+            <p className="text-xl font-semibold text-right">
+                Grand Total: ₹{calculateGrandTotal().toFixed(2)}
+            </p>
+        </div>
+
         <div className="flex justify-end gap-2 pt-4">
-          <Button type="button" variant="outline" asChild>
+          <Button type="button" variant="outline" asChild disabled={form.formState.isSubmitting}>
             <Link href="/sales">Cancel</Link>
           </Button>
-          <Button type="submit" disabled={form.formState.isSubmitting}>
+          <Button type="submit" disabled={form.formState.isSubmitting || allProducts.length === 0}>
             {form.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Record Sale
           </Button>
@@ -362,19 +428,19 @@ export default function NewSalePage() {
                <p>{error}</p>
                <Button variant="outline" onClick={() => window.location.reload()} className="mt-4">Try Again</Button>
             </div>
-          ) : products.length === 0 ? (
+          ) : ( // Removed check for products.length === 0 here as SaleForm will handle it or be disabled
+            <SaleForm allProducts={products} />
+          )}
+           { !isLoading && !error && products.length === 0 && (
              <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-               <p>No products found. Please add products first.</p>
+               <p>No products found. Please add products first to record a sale.</p>
                <Button variant="default" asChild className="mt-4">
                  <Link href="/products/new">Add Product</Link>
                </Button>
             </div>
-          ) : (
-            <SaleForm allProducts={products} />
           )}
         </CardContent>
       </Card>
     </div>
   );
 }
-
