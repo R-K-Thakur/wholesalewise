@@ -37,7 +37,7 @@ const GoogleIcon = () => (
 
 
 export default function LoginPage() {
-  const router = useRouter();
+  const router = useRouter(); // Keep router for potential other uses, though not for this specific redirect
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,8 +69,10 @@ export default function LoginPage() {
 
         if (serverResult.success) {
           toast({ title: "Login Successful", description: `Welcome, ${user.displayName || user.email}!` });
-          router.push("/dashboard");
-          router.refresh();
+          // Use window.location.assign for a full page navigation to ensure cookie is sent
+          window.location.assign('/dashboard');
+          // router.push("/dashboard"); // Previous method
+          // router.refresh(); // No longer needed with window.location.assign
         } else {
           setError(serverResult.error || "Failed to create session.");
           toast({ title: "Login Failed", description: serverResult.error, variant: "destructive" });
@@ -81,22 +83,28 @@ export default function LoginPage() {
     } catch (e: any) {
       console.error("Google Sign-In Error:", e);
       let errorMessage = "An unknown error occurred during Google Sign-In.";
-      if (e.code === 'auth/popup-closed-by-user') {
+       if (e.code === 'auth/popup-closed-by-user') {
         errorMessage = "Sign-in cancelled. The Google Sign-In popup was closed.";
       } else if (e.code === 'auth/cancelled-popup-request') {
         errorMessage = "Sign-in cancelled. Multiple popup requests were made.";
       } else if (e.code === 'auth/configuration-not-found') {
-        errorMessage = "Firebase authentication is not configured correctly. Please ensure your API key and Project ID in the .env file are correct for your Firebase project, that Authentication is enabled in the Firebase console, and that your domain is authorized.";
+         errorMessage = "Firebase authentication is not configured correctly for this project or the API key is invalid. Please ensure your API key and Project ID in the .env file are correct for your Firebase project, that Authentication is enabled in the Firebase console, and that your domain is authorized.";
       } else if (e.code === 'auth/unauthorized-domain') {
         errorMessage = "This domain is not authorized for Google Sign-In. Please add it to the 'Authorized domains' list in your Firebase project's Authentication settings (Sign-in method tab).";
-      }
-      else if (e.message) {
+      } else if (e.message) {
         errorMessage = e.message;
       }
       setError(errorMessage);
       toast({ title: "Google Sign-In Failed", description: errorMessage, variant: "destructive" });
     } finally {
-      setIsLoading(false);
+      // setIsLoading(false); // Don't set loading to false if navigating away
+      // If navigation fails for some reason and stays on page, then we might need it.
+      // For now, successful navigation means this component unmounts.
+      // If an error occurs before navigation, setIsLoading will be set in the catch.
+      // If serverResult.success is false, setIsLoading will also remain false.
+      if(!serverResult?.success) { // Check if serverResult exists and was not successful
+        setIsLoading(false);
+      }
     }
   }
 
@@ -127,10 +135,9 @@ export default function LoginPage() {
           )}
         </CardContent>
       </Card>
-       <p className="mt-4 text-xs text-muted-foreground">
-        Ensure your Firebase project is correctly configured with API keys in the .env file, Authentication is enabled, and this domain is authorized.
+       <p className="mt-4 text-xs text-muted-foreground text-center max-w-sm">
+        Ensure your Firebase project is correctly configured with API keys in the .env file, Authentication is enabled, and this domain is authorized. The Sign-in method in Firebase Authentication settings must also include Google.
       </p>
     </div>
   );
 }
-
