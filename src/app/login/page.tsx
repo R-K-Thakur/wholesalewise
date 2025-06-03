@@ -1,21 +1,34 @@
 
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
 import { useToast } from "@/hooks/use-toast";
 import { signInWithEmailAction } from "./actions";
 import { APP_NAME } from "@/lib/constants";
 import { Loader2, LogIn, Mail } from "lucide-react";
+
+const LOCALSTORAGE_REMEMBER_EMAIL_KEY = "rememberedUserEmail";
 
 export default function LoginPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
+  const [rememberEmail, setRememberEmail] = useState(false);
+
+  useEffect(() => {
+    // Pre-fill email if it was remembered
+    const rememberedUserEmail = localStorage.getItem(LOCALSTORAGE_REMEMBER_EMAIL_KEY);
+    if (rememberedUserEmail) {
+      setEmail(rememberedUserEmail);
+      setRememberEmail(true);
+    }
+  }, []);
 
   async function handleEmailSignIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -30,6 +43,13 @@ export default function LoginPage() {
     }
 
     try {
+      // Handle localStorage for "Remember Email"
+      if (rememberEmail) {
+        localStorage.setItem(LOCALSTORAGE_REMEMBER_EMAIL_KEY, email);
+      } else {
+        localStorage.removeItem(LOCALSTORAGE_REMEMBER_EMAIL_KEY);
+      }
+
       const serverResult = await signInWithEmailAction(email);
 
       if (serverResult?.error) { 
@@ -72,8 +92,8 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleEmailSignIn} className="space-y-4">
             <div>
-              <Label htmlFor="email" className="sr-only">Email</Label>
-              <div className="relative">
+              <Label htmlFor="email">Email</Label>
+              <div className="relative mt-1">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
                   id="email"
@@ -87,6 +107,20 @@ export default function LoginPage() {
                   className="pl-10"
                 />
               </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="remember-email"
+                checked={rememberEmail}
+                onCheckedChange={(checked) => setRememberEmail(checked as boolean)}
+                disabled={isLoading}
+              />
+              <Label
+                htmlFor="remember-email"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Remember email
+              </Label>
             </div>
             <Button 
               type="submit"
