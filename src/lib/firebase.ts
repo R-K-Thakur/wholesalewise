@@ -1,7 +1,7 @@
 
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import { getFirestore, type Firestore } from "firebase/firestore";
-import { getAuth, type Auth } from "firebase/auth"; // Import Auth type
+// Auth from firebase/auth is no longer needed for client-side Google Sign-In
 
 // Attempt to load environment variables
 const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
@@ -12,7 +12,6 @@ const messagingSenderId = process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID;
 const appId = process.env.NEXT_PUBLIC_FIREBASE_APP_ID;
 
 // Critical configuration checks: Throw an error if placeholders or missing.
-// This will stop the application earlier and more clearly than a Firestore permission error.
 if (projectId === 'YOUR_PROJECT_ID') {
   throw new Error(
     `CRITICAL FIREBASE CONFIGURATION ERROR: Firebase Project ID (NEXT_PUBLIC_FIREBASE_PROJECT_ID) is set to the placeholder 'YOUR_PROJECT_ID'. ` +
@@ -70,10 +69,7 @@ if (!getApps().length) {
   app = getApps()[0]; // Use the existing app if already initialized
 }
 
-// Initialize Firestore and Auth
-// If initializeApp failed due to fundamentally wrong config not caught above (rare), these would fail.
-// But the checks above should catch the most common issues like placeholders or missing values.
 const db: Firestore = getFirestore(app);
-const auth: Auth = getAuth(app);
+// const auth: Auth = getAuth(app); // No longer needed for client-side Google sign-in logic here
 
-export { db, app, auth };
+export { db, app }; // Removed auth export
