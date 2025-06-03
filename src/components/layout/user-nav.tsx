@@ -32,15 +32,26 @@ export function UserNav({ user }: UserNavProps) {
     setIsLoggingOut(true);
     try {
       await logoutAction();
-      // The redirect in logoutAction will handle navigation
-      // router.refresh() might be needed if redirect doesn't trigger full reload of layout
-      toast({ title: "Logged Out", description: "You have been successfully logged out." });
-    } catch (error) {
-      console.error("Logout failed:", error);
-      toast({ title: "Logout Failed", description: "Could not log you out. Please try again.", variant: "destructive" });
-      setIsLoggingOut(false);
+      // If logoutAction completes successfully, it will redirect.
+      // Code here might not be reached if redirect is synchronous.
+      // The "Logged Out" toast is removed as it's unlikely to be seen.
+    } catch (error: any) {
+      const errorMessage = String(error?.message || error?.name || error?.toString() || "Unknown logout error");
+      if (errorMessage.toUpperCase().includes("NEXT_REDIRECT")) {
+        // This is an expected outcome for a server-side redirect.
+        // The browser should handle the redirect.
+        console.warn("Logout initiated server-side redirect, caught by client:", error);
+        // isLoggingOut will remain true, component might unmount.
+      } else {
+        // This is an actual unexpected error during logout.
+        console.error("Logout failed:", error);
+        toast({ title: "Logout Failed", description: "Could not log you out. Please try again.", variant: "destructive" });
+        setIsLoggingOut(false);
+      }
     }
-    // No need to setIsLoggingOut(false) if successful, as page will redirect.
+    // If not a NEXT_REDIRECT error and not other error, it implies successful execution.
+    // However, redirect should have happened. If execution reaches here without redirect or known error,
+    // it's an unusual state. Setting isLoading to false in the specific error case above is safer.
   };
 
   if (!user) {
