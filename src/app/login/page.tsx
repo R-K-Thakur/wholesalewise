@@ -87,7 +87,10 @@ export default function LoginPage() {
         errorMessage = "Sign-in cancelled. Multiple popup requests were made.";
       } else if (e.code === 'auth/configuration-not-found') {
         errorMessage = "Firebase authentication is not configured correctly. Please ensure your API key and Project ID in the .env file are correct for your Firebase project, that Authentication is enabled in the Firebase console, and that your domain is authorized.";
-      } else if (e.message) {
+      } else if (e.code === 'auth/unauthorized-domain') {
+        errorMessage = "This domain is not authorized for Google Sign-In. Please add it to the 'Authorized domains' list in your Firebase project's Authentication settings (Sign-in method tab).";
+      }
+      else if (e.message) {
         errorMessage = e.message;
       }
       setError(errorMessage);
@@ -130,3 +133,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
