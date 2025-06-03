@@ -1,100 +1,117 @@
 
-"use client"; // Required for using useParams and potentially form state later
+"use client";
 
-import { useParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { ArrowLeft, Loader2 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { ArrowLeft } from "lucide-react";
-import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from "@/lib/constants"; // Assuming PRODUCT_CATEGORIES is also needed
-import type { ProductCategory, ProductUnit } from '@/lib/constants';
-
-// Mock data for product to edit - replace with actual data fetching
-const mockProductData: Record<string, ProductEditData> = {
-  "1": { id: "1", name: "Lavender Lipstick", category: "Makeup", purchasePrice: 350.00, retailPrice: 999.00, wholesalePrice: 500.00, unit: "piece", initialStock: 150 },
-  "2": { id: "2", name: "Teal Hair Oil", category: "Hair Oils", purchasePrice: 280.00, retailPrice: 650.00, wholesalePrice: 400.00, unit: "piece", initialStock: 80 },
-  "3": { id: "3", name: "Silver Earrings", category: "Imitation Jewellery", purchasePrice: 1200.00, retailPrice: 1999.00, wholesalePrice: 1500.00, unit: "set", initialStock: 200 },
-};
-
-interface ProductEditData {
-  id: string;
-  name: string;
-  category: ProductCategory;
-  purchasePrice: number;
-  retailPrice: number;
-  wholesalePrice: number;
-  unit: ProductUnit;
-  initialStock: number; // Or current stock if editing
-}
-
-// Placeholder for ProductForm component, adapted for editing
-// In a real app, this would be a proper form component with react-hook-form
-function EditProductFormPlaceholder({ product }: { product: ProductEditData }) {
-  return (
-    <div className="space-y-6">
-      <div>
-        <label htmlFor="productName" className="block text-sm font-medium text-foreground">Product Name</label>
-        <input type="text" id="productName" defaultValue={product.name} className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" />
-      </div>
-      <div>
-        <label htmlFor="category" className="block text-sm font-medium text-foreground">Category</label>
-        <select id="category" defaultValue={product.category} className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background">
-          {PRODUCT_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-        </select>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label htmlFor="purchasePrice" className="block text-sm font-medium text-foreground">Purchase Price (₹)</label>
-          <input type="number" id="purchasePrice" defaultValue={product.purchasePrice} className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" />
-        </div>
-        <div>
-          <label htmlFor="retailPrice" className="block text-sm font-medium text-foreground">Retail Price (₹)</label>
-          <input type="number" id="retailPrice" defaultValue={product.retailPrice} className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" />
-        </div>
-      </div>
-       <div>
-        <label htmlFor="wholesalePrice" className="block text-sm font-medium text-foreground">Wholesale Price (₹)</label>
-        <input type="number" id="wholesalePrice" defaultValue={product.wholesalePrice} className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" />
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <Label className="block text-sm font-medium text-foreground mb-1">Unit</Label>
-          <RadioGroup defaultValue={product.unit} className="mt-1 flex flex-wrap gap-x-4 gap-y-2">
-            {PRODUCT_UNITS.map((unit) => (
-              <div key={unit} className="flex items-center space-x-2">
-                <RadioGroupItem value={unit} id={`unit-${unit}`} />
-                <Label htmlFor={`unit-${unit}`} className="font-normal">{unit}</Label>
-              </div>
-            ))}
-          </RadioGroup>
-        </div>
-        <div>
-          <label htmlFor="initialStock" className="block text-sm font-medium text-foreground">Stock Quantity</label>
-          <input type="number" id="initialStock" defaultValue={product.initialStock} className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" />
-        </div>
-      </div>
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" asChild>
-          <Link href="/products">Cancel</Link>
-        </Button>
-        {/* TODO: Implement actual save logic */}
-        <Button type="submit">Save Changes</Button>
-      </div>
-    </div>
-  );
-}
-
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from "@/lib/constants";
+import { useToast } from "@/hooks/use-toast";
+import { getProductByIdAction, updateProductAction } from "../actions";
+import { productFormSchema, type ValidatedProductFormData } from "../schema";
+import type { Product } from '@/lib/types';
 
 export default function EditProductPage() {
+  const router = useRouter();
   const params = useParams();
   const productId = params.id as string;
+  const { toast } = useToast();
+  const [isLoadingProduct, setIsLoadingProduct] = useState(true);
+  const [productNotFound, setProductNotFound] = useState(false);
 
-  // In a real app, you would fetch product details based on productId
-  const product = mockProductData[productId]; // Using mock data
+  const form = useForm<ValidatedProductFormData>({
+    resolver: zodResolver(productFormSchema),
+    // Default values will be set by useEffect after fetching product
+  });
 
-  if (!product) {
+  useEffect(() => {
+    if (productId) {
+      setIsLoadingProduct(true);
+      getProductByIdAction(productId)
+        .then(product => {
+          if (product) {
+            // Map Product fields to ValidatedProductFormData fields
+            form.reset({
+              productName: product.name,
+              category: product.category,
+              purchasePrice: product.purchasePrice,
+              retailPrice: product.retailPrice,
+              wholesalePrice: product.wholesalePrice,
+              unit: product.unit,
+              initialStock: product.quantityInStock, // 'initialStock' here refers to current stock for editing
+            });
+            setProductNotFound(false);
+          } else {
+            setProductNotFound(true);
+            toast({
+              title: "Error",
+              description: "Product not found.",
+              variant: "destructive",
+            });
+          }
+        })
+        .catch(error => {
+          console.error("Failed to fetch product:", error);
+          toast({
+            title: "Error",
+            description: "Failed to load product details.",
+            variant: "destructive",
+          });
+          setProductNotFound(true);
+        })
+        .finally(() => {
+          setIsLoadingProduct(false);
+        });
+    }
+  }, [productId, form, toast]);
+
+  const { isSubmitting } = form.formState;
+
+  async function onSubmit(data: ValidatedProductFormData) {
+    try {
+      const result = await updateProductAction(productId, data);
+      if (result.success) {
+        toast({
+          title: "Success!",
+          description: result.message,
+        });
+        router.push('/products');
+      } else {
+        toast({
+          title: "Error",
+          description: result.message || "Failed to update product.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to update product:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      });
+    }
+  }
+
+  if (isLoadingProduct) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-lg text-muted-foreground mt-4">Loading product details...</p>
+      </div>
+    );
+  }
+
+  if (productNotFound) {
     return (
       <div className="flex flex-col items-center justify-center h-full">
         <p className="text-xl text-muted-foreground">Product not found.</p>
@@ -116,17 +133,150 @@ export default function EditProductPage() {
             <span className="sr-only">Back to Products</span>
           </Link>
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight font-headline">Edit Product: {product.name}</h1>
+        <h1 className="text-3xl font-bold tracking-tight font-headline">Edit Product: {form.getValues('productName')}</h1>
       </div>
       
       <Card className="max-w-2xl mx-auto w-full">
         <CardHeader>
           <CardTitle>Edit Product Details</CardTitle>
-          <CardDescription>Modify the information for product: {product.name}.</CardDescription>
+          <CardDescription>Modify the information for product: {form.getValues('productName')}.</CardDescription>
         </CardHeader>
         <CardContent>
-          {/* TODO: Replace with actual ProductForm component using react-hook-form and server actions */}
-          <EditProductFormPlaceholder product={product} />
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="productName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Product Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Lavender Bliss Soap" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="category"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Category</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a category..." />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {PRODUCT_CATEGORIES.map(category => (
+                          <SelectItem key={category} value={category}>{category}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormField
+                  control={form.control}
+                  name="purchasePrice"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Purchase Price (₹)</FormLabel>
+                      <FormControl>
+                        <Input type="number" placeholder="e.g., 350.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')}/>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="retailPrice"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Retail Price (₹)</FormLabel>
+                      <FormControl>
+                        <Input type="number" placeholder="e.g., 700.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="wholesalePrice"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Wholesale Price (₹)</FormLabel>
+                    <FormControl>
+                      <Input type="number" placeholder="e.g., 525.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormField
+                  control={form.control}
+                  name="unit"
+                  render={({ field }) => (
+                    <FormItem className="space-y-3">
+                      <FormLabel>Unit</FormLabel>
+                      <FormControl>
+                        <RadioGroup
+                          onValueChange={field.onChange}
+                          value={field.value}
+                          className="flex flex-wrap gap-x-4 gap-y-2"
+                        >
+                          {PRODUCT_UNITS.map((unit) => (
+                            <FormItem key={unit} className="flex items-center space-x-2 space-y-0">
+                              <FormControl>
+                                <RadioGroupItem value={unit} />
+                              </FormControl>
+                              <FormLabel className="font-normal">{unit}</FormLabel>
+                            </FormItem>
+                          ))}
+                        </RadioGroup>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="initialStock" // This field name is from schema, maps to quantityInStock for edit
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Current Stock Quantity</FormLabel>
+                      <FormControl>
+                        <Input type="number" placeholder="e.g., 100" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || '')} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" asChild disabled={isSubmitting}>
+                  <Link href="/products">Cancel</Link>
+                </Button>
+                <Button type="submit" disabled={isSubmitting || isLoadingProduct}>
+                  {(isSubmitting || isLoadingProduct) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save Changes
+                </Button>
+              </div>
+            </form>
+          </Form>
         </CardContent>
       </Card>
     </div>
