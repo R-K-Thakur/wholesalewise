@@ -66,6 +66,12 @@ export interface GoogleSignInData {
 }
 
 async function getOwnerEmailsFromFirestore(): Promise<string[]> {
+  if (!db) {
+    console.error(
+      "Firestore (db) instance is not initialized. Cannot fetch owner emails from Firestore. Defaulting to no owners."
+    );
+    return [];
+  }
   try {
     const docRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
     const docSnap = await getDoc(docRef);
@@ -79,16 +85,24 @@ async function getOwnerEmailsFromFirestore(): Promise<string[]> {
     return [];
   } catch (error) {
     console.error("Error fetching owner emails from Firestore:", error);
-    return []; // Default to no owners on error
+    return []; 
   }
 }
 
 export async function signInWithGoogleAction(userData: GoogleSignInData) {
   if (!userData.email) {
-    return { success: false, error: "Email not provided by Google Sign-In." };
+    console.error("Email not provided by Google Sign-In during action. Cannot determine role or create session.");
+    return { success: false, error: "Email not provided by Google Sign-In. Cannot determine role or create session." };
   }
 
-  const ownerEmails = await getOwnerEmailsFromFirestore();
+  let ownerEmails = await getOwnerEmailsFromFirestore();
+
+  // Defensive check: Ensure ownerEmails is an array.
+  if (!Array.isArray(ownerEmails)) {
+    console.error("getOwnerEmailsFromFirestore did not return an array as expected. Defaulting to empty array for roles. Value received:", ownerEmails);
+    ownerEmails = [];
+  }
+  
   const userEmailLower = userData.email.toLowerCase();
   const userRole = ownerEmails.includes(userEmailLower) ? "owner" : "staff";
 

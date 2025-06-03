@@ -18,6 +18,12 @@ async function verifyOwner(): Promise<SessionData> {
 }
 
 export async function getOwnerEmailsAction(): Promise<string[]> {
+  if (!db) {
+    console.error(
+      "Firestore (db) instance is not initialized. Cannot fetch owner emails for admin actions. Returning empty list."
+    );
+    return [];
+  }
   try {
     const docRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
     const docSnap = await getDoc(docRef);
@@ -39,6 +45,11 @@ export async function getOwnerEmailsAction(): Promise<string[]> {
 export async function addOwnerEmailAction(emailToAdd: string): Promise<{ success: boolean; message: string }> {
   await verifyOwner();
   
+  if (!db) {
+    console.error("Firestore (db) instance is not initialized. Cannot add owner email.");
+    return { success: false, message: "Database service not available." };
+  }
+
   if (!emailToAdd || !emailToAdd.includes('@')) {
     return { success: false, message: "Invalid email format." };
   }
@@ -72,6 +83,11 @@ export async function addOwnerEmailAction(emailToAdd: string): Promise<{ success
 
 export async function removeOwnerEmailAction(emailToRemove: string): Promise<{ success: boolean; message: string }> {
   const session = await verifyOwner(); // session.email is the email of the current owner trying to perform the action
+
+  if (!db) {
+    console.error("Firestore (db) instance is not initialized. Cannot remove owner email.");
+    return { success: false, message: "Database service not available." };
+  }
 
   if (!emailToRemove) {
     return { success: false, message: "Email to remove is required." };
