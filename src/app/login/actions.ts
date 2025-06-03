@@ -6,10 +6,15 @@ import { redirect } from "next/navigation";
 
 // In a real application, use a secure way to store and verify passwords (e.g., hashing)
 // and fetch users from a database.
+// This USERS array and the loginAction are kept for potential direct API use or future re-integration,
+// but the primary login mechanism is now Google Sign-In.
 const USERS = [
   { username: "owner", password: "password", email: "owner@wholesalewise.com", role: "owner" as const, name: "Owner User" },
   { username: "staff", password: "password", email: "staff@wholesalewise.com", role: "staff" as const, name: "Staff User" },
 ];
+
+// Define owner emails here. Replace with actual owner Google email addresses.
+const OWNER_EMAILS: string[] = ["your-owner-email@example.com"]; // IMPORTANT: Update this with the owner's actual Google email
 
 const SESSION_COOKIE_NAME = "auth-session";
 
@@ -64,12 +69,13 @@ export async function signInWithGoogleAction(userData: GoogleSignInData) {
     return { success: false, error: "Email not provided by Google Sign-In." };
   }
 
-  // For Google Sign-In, assign 'staff' role by default.
-  // Username can be the email or part of it.
+  // Determine role based on email
+  const userRole = OWNER_EMAILS.includes(userData.email.toLowerCase()) ? "owner" : "staff";
+
   const sessionData: SessionData = {
-    username: userData.email,
+    username: userData.email, // Use email as username for Google Sign-In users
     email: userData.email,
-    role: "staff", // Default role for Google Sign-In users
+    role: userRole,
     name: userData.name || userData.email, // Use name if available, else email
     uid: userData.uid,
   };
@@ -107,3 +113,4 @@ export async function getSession(): Promise<SessionData | null> {
   }
   return null;
 }
+
