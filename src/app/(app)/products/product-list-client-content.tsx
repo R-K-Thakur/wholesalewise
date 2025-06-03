@@ -72,7 +72,9 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
               <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Category</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Stock</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Retail Price</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Purchase (₹)</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Wholesale (₹)</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Retail (₹)</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Unit</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
             </tr>
@@ -83,7 +85,9 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{product.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.category}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.quantityInStock}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">₹{product.retailPrice.toFixed(2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{(product.purchasePrice || 0).toFixed(2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{(product.wholesalePrice || 0).toFixed(2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{(product.retailPrice || 0).toFixed(2)}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.unit}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <Button variant="outline" size="sm" className="mr-2" asChild>
@@ -97,7 +101,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
             ))}
             {products.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-4 text-center text-sm text-muted-foreground">No products found.</td>
+                <td colSpan={8} className="px-6 py-4 text-center text-sm text-muted-foreground">No products found.</td>
               </tr>
             )}
           </tbody>
@@ -124,4 +128,3 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     </>
   );
 }
-

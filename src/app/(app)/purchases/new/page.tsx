@@ -1,18 +1,33 @@
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { getProductsAction } from "../../products/actions"; // Fetch actual products
+import type { Product } from "@/lib/types";
 
 // Placeholder for PurchaseForm component
-function PurchaseFormPlaceholder() {
+// This will now receive the actual products list
+async function PurchaseFormPlaceholder() {
+  const products: Product[] = await getProductsAction();
+
   return (
-    <div className="space-y-6">
+    <form className="space-y-6">
       <div>
         <label htmlFor="product" className="block text-sm font-medium text-foreground">Product</label>
-        <select id="product" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background">
-          <option>Select a product...</option>
-          <option>Lavender Lipstick</option>
-          <option>Teal Hair Oil</option>
+        <select 
+          id="product" 
+          name="product"
+          className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background"
+          // In a real form, you'd handle the value and onChange with react-hook-form
+        >
+          <option value="">Select a product...</option>
+          {products.map(product => (
+            <option key={product.id} value={product.id}>
+              {product.name} (Stock: {product.quantityInStock})
+            </option>
+          ))}
+          {products.length === 0 && <option disabled>No products available</option>}
         </select>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -31,7 +46,7 @@ function PurchaseFormPlaceholder() {
       </div>
       <div>
         <label htmlFor="purchaseDate" className="block text-sm font-medium text-foreground">Purchase Date</label>
-        <input type="date" id="purchaseDate" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" />
+        <input type="date" id="purchaseDate" className="mt-1 block w-full rounded-md border-input shadow-sm focus:border-primary focus:ring-primary sm:text-sm p-2 bg-background" defaultValue={new Date().toISOString().split('T')[0]} />
       </div>
       <div className="flex justify-end gap-2">
         <Button variant="outline" asChild>
@@ -39,7 +54,7 @@ function PurchaseFormPlaceholder() {
         </Button>
         <Button type="submit">Record Purchase</Button>
       </div>
-    </div>
+    </form>
   );
 }
 
@@ -62,10 +77,17 @@ export default function NewPurchasePage() {
           <CardDescription>Enter the details of the stock purchase.</CardDescription>
         </CardHeader>
         <CardContent>
-          {/* TODO: Replace with actual PurchaseForm component using react-hook-form and server actions */}
+          {/* 
+            The PurchaseFormPlaceholder is now an async component.
+            To use it here, this NewPurchasePage or its parent would ideally
+            also be an async component, or you'd use Suspense.
+            For simplicity in this step, we're making PurchaseFormPlaceholder itself async
+            and directly invoking it. This works because it's a server component.
+          */}
           <PurchaseFormPlaceholder />
         </CardContent>
       </Card>
     </div>
   );
 }
+
