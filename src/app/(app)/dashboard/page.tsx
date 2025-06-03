@@ -1,5 +1,6 @@
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, ShoppingCart, AlertTriangle } from "lucide-react";
+import { Package, ShoppingCart, AlertTriangle, IndianRupee } from "lucide-react";
 
 // Mock data for dashboard cards - replace with actual data fetching
 const summaryData = {
@@ -8,29 +9,6 @@ const summaryData = {
   totalProducts: 230,
   lowStockItems: 15,
 };
-
-// Custom Lucide icon for Rupee
-const RupeeIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    {...props}
-  >
-    <path d="M6 3h12" />
-    <path d="M6 8h12" />
-    <path d="M6 13h12" />
-    <path d="M6 18h12" />
-    <path d="M18 13c0 4.418-3.134 8-7 8s-7-3.582-7-8c0-4.418 3.134-8 7-8s7 3.582 7 8Z" />
-  </svg>
-);
-
 
 export default function DashboardPage() {
   return (
@@ -41,7 +19,7 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-            <RupeeIcon className="h-5 w-5 text-muted-foreground" />
+            <IndianRupee className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
