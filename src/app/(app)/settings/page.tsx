@@ -8,19 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Settings, Moon, Sun, ListOrdered, CalendarDays, SlidersHorizontal } from 'lucide-react'; // Added CalendarDays, SlidersHorizontal
+import { Settings, Moon, Sun, ListOrdered, CalendarDays } from 'lucide-react';
 
 const THEME_STORAGE_KEY = "app-theme";
 const ITEMS_PER_PAGE_STORAGE_KEY = "app-items-per-page";
-const DEFAULT_SALE_TYPE_STORAGE_KEY = "app-default-sale-type";
-const DEFAULT_TREND_RANGE_STORAGE_KEY = "app-default-trend-range"; // New key
+const DEFAULT_TREND_RANGE_STORAGE_KEY = "app-default-trend-range"; 
 
 const ITEMS_PER_PAGE_OPTIONS = ["10", "25", "50"];
-const SALE_TYPE_OPTIONS = [
-  { value: "retail", label: "Retail" },
-  { value: "wholesale", label: "Wholesale" },
-];
-const TREND_DATE_RANGE_OPTIONS = [ // New options
+const TREND_DATE_RANGE_OPTIONS = [ 
   { value: "7", label: "Last 7 Days" },
   { value: "30", label: "Last 30 Days" },
   { value: "90", label: "Last 90 Days" },
@@ -30,8 +25,7 @@ const TREND_DATE_RANGE_OPTIONS = [ // New options
 export default function UserSettingsPage() {
   const [isDarkTheme, setIsDarkTheme] = useState(false);
   const [itemsPerPage, setItemsPerPage] = useState(ITEMS_PER_PAGE_OPTIONS[0]);
-  const [defaultSaleType, setDefaultSaleType] = useState(SALE_TYPE_OPTIONS[0].value);
-  const [defaultTrendRange, setDefaultTrendRange] = useState(TREND_DATE_RANGE_OPTIONS[1].value); // New state
+  const [defaultTrendRange, setDefaultTrendRange] = useState(TREND_DATE_RANGE_OPTIONS[1].value); 
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -54,12 +48,6 @@ export default function UserSettingsPage() {
       setItemsPerPage(storedItemsPerPage);
     }
 
-    // Default Sale Type
-    const storedDefaultSaleType = localStorage.getItem(DEFAULT_SALE_TYPE_STORAGE_KEY);
-    if (storedDefaultSaleType && SALE_TYPE_OPTIONS.some(opt => opt.value === storedDefaultSaleType)) {
-      setDefaultSaleType(storedDefaultSaleType);
-    }
-
     // Default Trend Date Range
     const storedDefaultTrendRange = localStorage.getItem(DEFAULT_TREND_RANGE_STORAGE_KEY);
     if (storedDefaultTrendRange && TREND_DATE_RANGE_OPTIONS.some(opt => opt.value === storedDefaultTrendRange)) {
@@ -79,12 +67,7 @@ export default function UserSettingsPage() {
     localStorage.setItem(ITEMS_PER_PAGE_STORAGE_KEY, itemsPerPage);
   }, [itemsPerPage, isMounted]);
 
-  useEffect(() => {
-    if (!isMounted) return;
-    localStorage.setItem(DEFAULT_SALE_TYPE_STORAGE_KEY, defaultSaleType);
-  }, [defaultSaleType, isMounted]);
-
-  useEffect(() => { // New effect for trend range
+  useEffect(() => { 
     if (!isMounted) return;
     localStorage.setItem(DEFAULT_TREND_RANGE_STORAGE_KEY, defaultTrendRange);
   }, [defaultTrendRange, isMounted]);
@@ -97,11 +80,7 @@ export default function UserSettingsPage() {
     setItemsPerPage(value);
   };
 
-  const handleDefaultSaleTypeChange = (value: string) => {
-    setDefaultSaleType(value);
-  };
-
-  const handleDefaultTrendRangeChange = (value: string) => { // New handler
+  const handleDefaultTrendRangeChange = (value: string) => { 
     setDefaultTrendRange(value);
   };
 
@@ -174,38 +153,8 @@ export default function UserSettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Data Entry Preferences</CardTitle>
-          <CardDescription>Set defaults for data entry forms.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between p-3 border rounded-md">
-            <div className="flex items-center gap-2">
-                <SlidersHorizontal className="h-5 w-5" />
-              <Label htmlFor="default-sale-type-select" className="text-base">
-                Default Sale Type
-              </Label>
-            </div>
-            <Select value={defaultSaleType} onValueChange={handleDefaultSaleTypeChange}>
-              <SelectTrigger id="default-sale-type-select" className="w-[120px]">
-                <SelectValue placeholder="Select type" />
-              </SelectTrigger>
-              <SelectContent>
-                {SALE_TYPE_OPTIONS.map(option => (
-                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Choose the default sale type (Retail or Wholesale) for the "Record New Sale" form.
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Dashboard Preferences</CardTitle>
-          <CardDescription>Customize your dashboard view.</CardDescription>
+          <CardTitle>Dashboard Customization</CardTitle>
+          <CardDescription>Personalize your dashboard view and data presentation.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between p-3 border rounded-md">

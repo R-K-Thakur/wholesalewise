@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
+import { Checkbox } from "@/components/ui/checkbox"; 
 import {
   Command,
   CommandEmpty,
@@ -24,7 +24,7 @@ import {
 import {
   Form,
   FormControl,
-  FormDescription as ShadFormDescription, // Alias if FormDescription is used elsewhere
+  FormDescription as ShadFormDescription, 
   FormField,
   FormItem,
   FormLabel,
@@ -47,7 +47,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   const form = useForm<SaleFormData>({
     resolver: zodResolver(saleFormSchema),
     defaultValues: {
-      saleType: 'retail',
+      saleType: 'retail', // Always default to retail
       saleDate: new Date().toISOString().split('T')[0],
       items: [{ productId: '', quantitySold: 1, pricePerUnitSold: 0 }],
       paymentMethod: 'cash',
@@ -59,7 +59,6 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     name: "items",
   });
 
-  const watchSaleType = form.watch("saleType");
   const watchItems = form.watch("items");
 
   async function onSubmit(data: SaleFormData) {
@@ -458,4 +457,3 @@ export default function NewSalePage() {
     </div>
   );
 }
-
