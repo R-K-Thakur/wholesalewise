@@ -1,3 +1,4 @@
+
 import type { ReactNode } from 'react';
 import {
   SidebarProvider,
@@ -7,17 +8,17 @@ import {
   SidebarFooter,
   SidebarTrigger,
   SidebarInset,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
 } from '@/components/ui/sidebar';
 import { MainNav } from '@/components/layout/main-nav';
 import { UserNav } from '@/components/layout/user-nav';
 import { APP_NAME } from '@/lib/constants';
 import { Leaf } from 'lucide-react'; // Using Leaf as a placeholder app icon
+import { getSession, type SessionData } from '@/app/login/actions';
 
 
-export default function AppLayout({ children }: { children: ReactNode }) {
+export default async function AppLayout({ children }: { children: ReactNode }) {
+  const userSession: SessionData | null = await getSession();
+
   return (
     <SidebarProvider defaultOpen>
       <Sidebar collapsible="icon" variant="sidebar" side="left" className="border-r">
@@ -40,7 +41,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <SidebarTrigger className="md:hidden" /> {/* Hidden on md+ as sidebar rail is visible */}
             {/* Page title could go here, dynamically set by pages */}
           </div>
-          <UserNav />
+          <UserNav user={userSession} />
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
           {children}

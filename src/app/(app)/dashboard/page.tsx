@@ -8,11 +8,12 @@ import { getSalesAction } from "../sales/actions";
 import type { Product } from "@/lib/types";
 import type { Sale } from "@/lib/types";
 import { LowStockWidget } from "./low-stock-widget";
+import { getSession, type SessionData } from "@/app/login/actions";
 
 
 export default async function DashboardPage() {
-  // Simulate user role - in a real app, this would come from authentication
-  const userRole = 'staff'; // Change to 'admin' or other to show revenue
+  const userSession: SessionData | null = await getSession();
+  const userRole = userSession?.role || 'staff'; // Default to 'staff' if no session or role
 
   const products: Product[] = await getProductsAction();
   const sales: Sale[] = await getSalesAction();
