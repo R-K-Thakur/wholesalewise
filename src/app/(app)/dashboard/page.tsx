@@ -1,6 +1,8 @@
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, ShoppingCart, AlertTriangle, IndianRupee } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { Package, ShoppingCart, AlertTriangle, IndianRupee, PlusCircle } from "lucide-react";
 import { getProductsAction } from "../products/actions";
 import { getSalesAction } from "../sales/actions";
 import type { Product } from "@/lib/types";
@@ -87,6 +89,27 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Quick Actions</CardTitle>
+          <CardDescription>Perform common tasks quickly.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col sm:flex-row gap-4">
+          <Button asChild className="w-full sm:w-auto">
+            <Link href="/products/new">
+              <PlusCircle className="mr-2 h-5 w-5" />
+              Add New Product
+            </Link>
+          </Button>
+          <Button asChild className="w-full sm:w-auto">
+            <Link href="/sales/new">
+              <PlusCircle className="mr-2 h-5 w-5" />
+              Record New Sale
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
