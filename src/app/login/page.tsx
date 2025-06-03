@@ -45,6 +45,15 @@ export default function LoginPage() {
   async function handleGoogleSignIn() {
     setIsLoading(true);
     setError(null);
+    
+    if (!auth) {
+      const criticalErrorMsg = "Firebase is not configured correctly. Authentication cannot proceed. Please check your .env file and Firebase project setup.";
+      setError(criticalErrorMsg);
+      toast({ title: "Configuration Error", description: criticalErrorMsg, variant: "destructive" });
+      setIsLoading(false);
+      return;
+    }
+
     const provider = new GoogleAuthProvider();
 
     try {
@@ -76,6 +85,8 @@ export default function LoginPage() {
         errorMessage = "Sign-in cancelled. The Google Sign-In popup was closed.";
       } else if (e.code === 'auth/cancelled-popup-request') {
         errorMessage = "Sign-in cancelled. Multiple popup requests were made.";
+      } else if (e.code === 'auth/configuration-not-found') {
+        errorMessage = "Firebase authentication is not configured correctly. Please ensure your API key and Project ID in the .env file are correct for your Firebase project, that Authentication is enabled in the Firebase console, and that your domain is authorized.";
       } else if (e.message) {
         errorMessage = e.message;
       }
@@ -114,7 +125,7 @@ export default function LoginPage() {
         </CardContent>
       </Card>
        <p className="mt-4 text-xs text-muted-foreground">
-        The previous username/password login (owner/password) is still available if needed directly via API or code but the UI now uses Google Sign-In. Google users are assigned 'staff' role.
+        Ensure your Firebase project is correctly configured with API keys in the .env file, Authentication is enabled, and this domain is authorized.
       </p>
     </div>
   );
