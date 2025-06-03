@@ -2,14 +2,42 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { collection, addDoc, doc, runTransaction, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, doc, runTransaction, Timestamp, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { RecordSaleActionPayload } from './schema';
 import type { Product, Sale, SaleItem } from '@/lib/types';
-import { getProductByIdAction } from '../products/actions'; // To fetch product details for stock update
+// import { getProductByIdAction } from '../products/actions'; // To fetch product details for stock update // Not used directly here
 
 const SALES_COLLECTION = 'sales';
 const PRODUCTS_COLLECTION = 'products';
+
+// Helper function to convert Firestore doc data to Sale
+const mapDocToSale = (document: import('firebase/firestore').QueryDocumentSnapshot): Sale => {
+  const data = document.data();
+  if (!data) {
+    throw new Error('Sale document data is undefined.');
+  }
+  const nowAsISO = new Date().toISOString();
+  return {
+    id: document.id,
+    items: Array.isArray(data.items) ? data.items.map((item: any) => ({ // Basic mapping, ensure SaleItem structure
+      productId: typeof item.productId === 'string' ? item.productId : '',
+      productNameSnapshot: typeof item.productNameSnapshot === 'string' ? item.productNameSnapshot : '',
+      quantitySold: typeof item.quantitySold === 'number' ? item.quantitySold : 0,
+      pricePerUnitSold: typeof item.pricePerUnitSold === 'number' ? item.pricePerUnitSold : 0,
+      unitSnapshot: typeof item.unitSnapshot === 'string' ? item.unitSnapshot : 'piece', // Add default for unitSnapshot
+      total: typeof item.total === 'number' ? item.total : 0,
+    })) : [],
+    totalAmount: typeof data.totalAmount === 'number' ? data.totalAmount : 0,
+    saleType: ['wholesale', 'retail'].includes(data.saleType) ? data.saleType : 'retail',
+    saleDate: typeof data.saleDate === 'string' ? data.saleDate : nowAsISO, // data.saleDate is already ISO string
+    customerName: typeof data.customerName === 'string' ? data.customerName : '',
+    paymentMethod: ['cash', 'card', 'online'].includes(data.paymentMethod) ? data.paymentMethod : undefined,
+    notes: typeof data.notes === 'string' ? data.notes : '',
+    createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (typeof data.createdAt === 'string' ? data.createdAt : nowAsISO),
+    updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : (typeof data.updatedAt === 'string' ? data.updatedAt : nowAsISO),
+  };
+};
 
 export async function recordSaleAction(data: RecordSaleActionPayload) {
   console.log('Recording sale with data:', JSON.stringify(data, null, 2));
@@ -30,7 +58,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
           throw new Error(`Product "${item.productNameSnapshot}" (ID: ${item.productId}) not found.`);
         }
 
-        const product = productSnap.data() as Omit<Product, 'id'>; // Assuming Product type structure
+        const product = productSnap.data() as Omit<Product, 'id'>;
 
         if (product.quantityInStock < item.quantitySold) {
           throw new Error(
@@ -52,22 +80,19 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         calculatedTotalAmount += item.quantitySold * item.pricePerUnitSold;
       }
       
-      // Verify calculated total amount matches the one passed if necessary, or use the calculated one.
-      // For robustness, we'll use the server-calculated total.
       if (Math.abs(calculatedTotalAmount - data.totalAmount) > 0.001) {
          console.warn(`Total amount discrepancy. Client: ${data.totalAmount}, Server calculated: ${calculatedTotalAmount}. Using server calculated.`);
       }
 
-
       const now = Timestamp.now().toDate().toISOString();
       const newSaleData: Omit<Sale, 'id'> = {
         customerName: data.customerName || '',
-        saleDate: data.saleDate, // Already an ISO string from form
+        saleDate: data.saleDate, 
         saleType: data.saleType,
         paymentMethod: data.paymentMethod,
         items: saleItemsForDb,
-        totalAmount: calculatedTotalAmount, // Use server-calculated total
-        notes: '', // Assuming notes field is not yet in SaleFormData, add if needed
+        totalAmount: calculatedTotalAmount, 
+        notes: data.notes || '', 
         createdAt: now,
         updatedAt: now,
       };
@@ -76,9 +101,8 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
     });
 
     revalidatePath('/sales');
-    revalidatePath('/products'); // Stock levels changed
-    revalidatePath('/dashboard'); // Dashboard data might depend on sales/stock
-    // Potentially revalidate individual product pages if they show stock, but that's more granular.
+    revalidatePath('/products'); 
+    revalidatePath('/dashboard'); 
 
     return { success: true, message: 'Sale recorded successfully!' };
   } catch (error) {
@@ -87,7 +111,17 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
   }
 }
 
-// Action to fetch sales (can be implemented later if needed for sales list page)
-// export async function getSalesAction(): Promise<Sale[]> { ... }
+export async function getSalesAction(): Promise<Sale[]> {
+  try {
+    const q = query(collection(db, SALES_COLLECTION), orderBy("createdAt", "desc"));
+    const querySnapshot = await getDocs(q);
+    const sales = querySnapshot.docs.map(mapDocToSale);
+    return sales;
+  } catch (error) {
+    console.error("Error fetching sales from Firestore:", error);
+    return [];
+  }
+}
+
 // Action to fetch a specific sale (can be implemented later)
 // export async function getSaleByIdAction(id: string): Promise<Sale | undefined> { ... }

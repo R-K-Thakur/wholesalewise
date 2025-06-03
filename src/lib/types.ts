@@ -1,3 +1,4 @@
+
 import type { ProductCategory, ProductUnit } from './constants';
 
 export interface Product {
@@ -25,7 +26,7 @@ export interface Purchase {
   purchasePricePerUnit: number;
   totalCost: number;
   purchaseDate: string; // ISO Date string
-  vendor?: string; 
+  vendor?: string;
   notes?: string;
 }
 
@@ -35,9 +36,11 @@ export interface Sale {
   totalAmount: number;
   saleType: 'wholesale' | 'retail';
   saleDate: string; // ISO Date string
-  customerName?: string; 
+  customerName?: string;
   paymentMethod?: 'cash' | 'card' | 'online';
   notes?: string;
+  createdAt: string; // ISO Date string
+  updatedAt: string; // ISO Date string
 }
 
 export interface SaleItem {
