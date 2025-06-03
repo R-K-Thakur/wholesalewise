@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { getSession, type SessionData } from "@/app/login/actions";
-import { getOwnerEmailsAction, addOwnerEmailAction, removeOwnerEmailAction } from "./actions";
+// Corrected import path for admin actions
+import { getOwnerEmailsAction, addOwnerEmailAction, removeOwnerEmailAction } from "@/app/(app)/admin/actions";
 import { Loader2, PlusCircle, Trash2, ShieldAlert, UserCog } from "lucide-react";
 
 export default function AdminSettingsPage() {
@@ -23,22 +24,27 @@ export default function AdminSettingsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    async function fetchSessionAndEmails() {
+    async function fetchSessionAndData() {
       setIsLoadingPage(true);
       const currentSession = await getSession();
       setSession(currentSession);
 
       if (!currentSession || currentSession.role !== "owner") {
-        toast({ title: "Access Denied", description: "You do not have permission to view this page.", variant: "destructive" });
-        router.push("/dashboard");
+        toast({
+          title: "Access Denied",
+          description: "You do not have permission to view this page or your session is invalid.",
+          variant: "destructive"
+        });
+        router.push("/login"); // Redirect to login if not an owner or no session
         return;
       }
       
+      // Only fetch emails if user is confirmed owner
       await fetchEmails();
       setIsLoadingPage(false);
     }
-    fetchSessionAndEmails();
-  }, [router, toast]);
+    fetchSessionAndData();
+  }, [router, toast]); // router and toast are generally stable, but fine to keep
 
   async function fetchEmails() {
     setIsLoadingEmails(true);
@@ -47,6 +53,7 @@ export default function AdminSettingsPage() {
       setOwnerEmails(emails);
     } catch (error) {
       toast({ title: "Error", description: "Failed to load owner emails.", variant: "destructive" });
+      console.error("Failed to load owner emails:", error); // Log error for more details
     } finally {
       setIsLoadingEmails(false);
     }
@@ -71,7 +78,7 @@ export default function AdminSettingsPage() {
   };
 
   const handleRemoveOwnerEmail = async (emailToRemove: string) => {
-    setIsSubmitting(true); // Use general submitting state or a specific one per item
+    setIsSubmitting(true);
     const result = await removeOwnerEmailAction(emailToRemove);
     if (result.success) {
       toast({ title: "Success", description: result.message });
@@ -82,7 +89,7 @@ export default function AdminSettingsPage() {
     setIsSubmitting(false);
   };
 
-  if (isLoadingPage) {
+  if (isLoadingPage && !session) { // Show loading only if session is not yet determined
     return (
       <div className="flex flex-col items-center justify-center h-full">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -91,17 +98,32 @@ export default function AdminSettingsPage() {
     );
   }
 
-  if (!session || session.role !== "owner") {
-    // This case should be handled by redirection in useEffect, but as a fallback:
+  // This check might be redundant if useEffect redirects, but good as a safeguard
+  // or if loading state changes prevent redirect from firing immediately.
+  if (session && session.role !== "owner") {
+    // This state should ideally be caught by useEffect's redirect.
+    // If it's reached, it means user is not an owner.
+    // The toast and redirect in useEffect should handle this.
+    // To prevent flash of content or this message, useEffect handles it.
     return (
       <div className="flex flex-col items-center justify-center h-full text-center p-6">
         <ShieldAlert className="h-16 w-16 text-destructive mb-4" />
         <h1 className="text-2xl font-bold text-destructive">Access Denied</h1>
-        <p className="text-muted-foreground mt-2">You do not have the necessary permissions to view this page.</p>
-        <Button onClick={() => router.push('/dashboard')} className="mt-6">Go to Dashboard</Button>
+        <p className="text-muted-foreground mt-2">Redirecting to login...</p>
       </div>
     );
   }
+  
+  // Only render the main content if session is available and user is owner.
+  // The isLoadingPage check handles the initial load.
+  // If loading is done and session is not owner, useEffect redirects.
+  if (!session || session.role !== 'owner') {
+    // This case should be covered by isLoadingPage or the redirect in useEffect.
+    // If still here, it means something went wrong with loading/session logic.
+    // The useEffect redirect to /login should have already happened.
+    return null; // Or a more graceful loading/error state
+  }
+
 
   return (
     <div className="flex flex-col gap-6">
@@ -193,3 +215,6 @@ export default function AdminSettingsPage() {
     </div>
   );
 }
+
+
+    
