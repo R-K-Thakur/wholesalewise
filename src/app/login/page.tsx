@@ -2,8 +2,6 @@
 "use client";
 
 import { useState } from "react";
-// useRouter is not needed if server action handles redirect
-// import { useRouter } from "next/navigation"; 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -54,38 +52,39 @@ export default function LoginPage() {
     }
 
     const provider = new GoogleAuthProvider();
+    let showErrorToast = true; // Default to showing error toast
 
     try {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
       if (user) {
-        // Optional: Show a "processing" toast. The success toast is removed as redirect takes over.
-        // toast({ title: "Processing Sign-In...", description: "Please wait." });
-
         const serverResult = await signInWithGoogleAction({
           email: user.email,
           name: user.displayName,
           uid: user.uid,
         });
 
-        // This block is ONLY reached if signInWithGoogleAction returned an error object
-        // (because a successful call would have redirected the page).
         if (serverResult?.error) { 
           setError(serverResult.error);
           toast({ title: "Login Failed", description: serverResult.error, variant: "destructive" });
-          setIsLoading(false); // Stop loading if server action explicitly returns an error
         }
-        // If signInWithGoogleAction redirects, this part of the code (and setting isLoading to false)
-        // might not be reached, or the component unmounts, making setIsLoading(false) moot for the success path.
+        // If server action redirects, code here might not be reached or component unmounts.
       } else {
-        // This case should ideally not happen if signInWithPopup succeeds
         throw new Error("No user information received from Google.");
       }
     } catch (e: any) {
-      console.error("Google Sign-In Error:", e);
+      console.error("Google Sign-In Error (client-side catch):", e);
       let errorMessage = "An unknown error occurred during Google Sign-In.";
-       if (e.code === 'auth/popup-closed-by-user') {
+      
+      const errorString = String(e.message || e.name || e.toString()).toUpperCase(); // Convert to uppercase for case-insensitive check
+
+      if (errorString.includes("NEXT_REDIRECT")) {
+        console.warn("NEXT_REDIRECT error caught on client. This suggests the server attempted a redirect, but it propagated as an error. The browser might still redirect.");
+        showErrorToast = false; // Suppress generic error toast for NEXT_REDIRECT
+        // A client-side redirect fallback could be added here if necessary:
+        // window.location.assign('/dashboard');
+      } else if (e.code === 'auth/popup-closed-by-user') {
         errorMessage = "Sign-in cancelled. The Google Sign-In popup was closed.";
       } else if (e.code === 'auth/cancelled-popup-request') {
         errorMessage = "Sign-in cancelled. Multiple popup requests were made.";
@@ -96,11 +95,16 @@ export default function LoginPage() {
       } else if (e.message) {
         errorMessage = e.message;
       }
-      setError(errorMessage);
-      toast({ title: "Google Sign-In Failed", description: errorMessage, variant: "destructive" });
-      setIsLoading(false); // Stop loading on Firebase client-side auth error
+
+      if (showErrorToast) {
+        setError(errorMessage);
+        toast({ title: "Google Sign-In Failed", description: errorMessage, variant: "destructive" });
+      }
+    } finally {
+      // If a redirect was supposed to happen (even if it errored as NEXT_REDIRECT),
+      // the component might unmount. Setting isLoading to false is generally safe.
+      setIsLoading(false);
     }
-    // isLoading state will be managed by error paths or component unmount on redirect.
   }
 
   return (
@@ -125,7 +129,7 @@ export default function LoginPage() {
             )}
             Sign in with Google
           </Button>
-          {error && (
+          {error && !error.toUpperCase().includes("NEXT_REDIRECT") && ( // Avoid showing NEXT_REDIRECT as a visible error message
             <p className="text-sm text-destructive text-center">{error}</p>
           )}
         </CardContent>
