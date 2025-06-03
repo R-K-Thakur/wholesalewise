@@ -3,6 +3,8 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 // In a real application, use a secure way to store and verify passwords (e.g., hashing)
 // and fetch users from a database.
@@ -13,10 +15,9 @@ const USERS = [
   { username: "staff", password: "password", email: "staff@wholesalewise.com", role: "staff" as const, name: "Staff User" },
 ];
 
-// Define owner emails here. Replace with actual owner Google email addresses.
-const OWNER_EMAILS: string[] = ["your-owner-email@example.com"]; // IMPORTANT: Update this with the owner's actual Google email
-
 const SESSION_COOKIE_NAME = "auth-session";
+const APP_SETTINGS_COLLECTION = "app_settings";
+const ROLE_MANAGEMENT_DOC = "role_management";
 
 export interface SessionData {
   username: string;
@@ -64,19 +65,38 @@ export interface GoogleSignInData {
   uid: string;
 }
 
+async function getOwnerEmailsFromFirestore(): Promise<string[]> {
+  try {
+    const docRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      if (data && Array.isArray(data.ownerEmails)) {
+        return data.ownerEmails.map(email => String(email).toLowerCase());
+      }
+    }
+    console.warn(`Firestore: '${APP_SETTINGS_COLLECTION}/${ROLE_MANAGEMENT_DOC}' document not found or 'ownerEmails' field is missing/invalid. Defaulting to no owners.`);
+    return [];
+  } catch (error) {
+    console.error("Error fetching owner emails from Firestore:", error);
+    return []; // Default to no owners on error
+  }
+}
+
 export async function signInWithGoogleAction(userData: GoogleSignInData) {
   if (!userData.email) {
     return { success: false, error: "Email not provided by Google Sign-In." };
   }
 
-  // Determine role based on email
-  const userRole = OWNER_EMAILS.includes(userData.email.toLowerCase()) ? "owner" : "staff";
+  const ownerEmails = await getOwnerEmailsFromFirestore();
+  const userEmailLower = userData.email.toLowerCase();
+  const userRole = ownerEmails.includes(userEmailLower) ? "owner" : "staff";
 
   const sessionData: SessionData = {
-    username: userData.email, // Use email as username for Google Sign-In users
+    username: userData.email, 
     email: userData.email,
     role: userRole,
-    name: userData.name || userData.email, // Use name if available, else email
+    name: userData.name || userData.email, 
     uid: userData.uid,
   };
 
@@ -113,4 +133,3 @@ export async function getSession(): Promise<SessionData | null> {
   }
   return null;
 }
-

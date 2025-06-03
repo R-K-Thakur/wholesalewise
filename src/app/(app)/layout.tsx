@@ -12,12 +12,13 @@ import {
 import { MainNav } from '@/components/layout/main-nav';
 import { UserNav } from '@/components/layout/user-nav';
 import { APP_NAME } from '@/lib/constants';
-import { Leaf } from 'lucide-react'; // Using Leaf as a placeholder app icon
+import { Leaf } from 'lucide-react'; 
 import { getSession, type SessionData } from '@/app/login/actions';
 
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const userSession: SessionData | null = await getSession();
+  const userRole = userSession?.role;
 
   return (
     <SidebarProvider defaultOpen>
@@ -29,7 +30,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           </h1>
         </SidebarHeader>
         <SidebarContent>
-          <MainNav />
+          <MainNav userRole={userRole} />
         </SidebarContent>
         <SidebarFooter className="p-4 group-data-[collapsible=icon]:hidden">
           <p className="text-xs text-sidebar-foreground/70">&copy; {new Date().getFullYear()} {APP_NAME}</p>
@@ -38,8 +39,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <SidebarInset className="flex flex-col">
         <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/80 backdrop-blur-sm px-4 md:px-6">
           <div className="flex items-center gap-2">
-            <SidebarTrigger className="md:hidden" /> {/* Hidden on md+ as sidebar rail is visible */}
-            {/* Page title could go here, dynamically set by pages */}
+            <SidebarTrigger className="md:hidden" /> 
           </div>
           <UserNav user={userSession} />
         </header>
