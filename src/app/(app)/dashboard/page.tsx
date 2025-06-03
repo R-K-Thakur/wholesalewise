@@ -1,16 +1,44 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Package, ShoppingCart, AlertTriangle, IndianRupee } from "lucide-react";
+import { getProductsAction } from "../products/actions";
+import { getSalesAction } from "../sales/actions";
+import type { Product } from "@/lib/types";
+import type { Sale } from "@/lib/types";
 
-// Mock data for dashboard cards - replace with actual data fetching
-const summaryData = {
-  totalRevenue: 52310.50,
-  totalSales: 1250,
-  totalProducts: 230,
-  lowStockItems: 15,
-};
+// Define a default low stock threshold for products without a specific reorder threshold.
+const DEFAULT_LOW_STOCK_THRESHOLD = 5;
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const products: Product[] = await getProductsAction();
+  const sales: Sale[] = await getSalesAction();
+
+  let totalRevenue = 0;
+  let totalSalesUnits = 0;
+
+  sales.forEach(sale => {
+    totalRevenue += sale.totalAmount;
+    sale.items.forEach(item => {
+      totalSalesUnits += item.quantitySold;
+    });
+  });
+
+  const totalProducts = products.length;
+
+  const lowStockItems = products.filter(product => {
+    const threshold = product.reorderThreshold !== undefined && product.reorderThreshold > 0 
+                      ? product.reorderThreshold 
+                      : DEFAULT_LOW_STOCK_THRESHOLD;
+    return product.quantityInStock < threshold;
+  }).length;
+
+  const summaryData = {
+    totalRevenue: totalRevenue,
+    totalSales: totalSalesUnits,
+    totalProducts: totalProducts,
+    lowStockItems: lowStockItems,
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-3xl font-bold tracking-tight font-headline">Dashboard Overview</h1>
@@ -25,7 +53,7 @@ export default function DashboardPage() {
             <div className="text-2xl font-bold">
               ₹{summaryData.totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            <p className="text-xs text-muted-foreground">+20.1% from last month</p>
+            {/* <p className="text-xs text-muted-foreground">+20.1% from last month</p> */}
           </CardContent>
         </Card>
         <Card>
@@ -35,7 +63,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{summaryData.totalSales.toLocaleString('en-IN')}</div>
-            <p className="text-xs text-muted-foreground">+180.1% from last month</p>
+            {/* <p className="text-xs text-muted-foreground">+180.1% from last month</p> */}
           </CardContent>
         </Card>
         <Card>
@@ -45,7 +73,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{summaryData.totalProducts.toLocaleString('en-IN')}</div>
-            <p className="text-xs text-muted-foreground">+19 from last month</p>
+            {/* <p className="text-xs text-muted-foreground">+19 from last month</p> */}
           </CardContent>
         </Card>
         <Card>
@@ -55,7 +83,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{summaryData.lowStockItems.toLocaleString('en-IN')}</div>
-            <p className="text-xs text-muted-foreground">Needs attention</p>
+            {/* <p className="text-xs text-muted-foreground">Needs attention</p> */}
           </CardContent>
         </Card>
       </div>
