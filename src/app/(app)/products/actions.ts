@@ -2,12 +2,37 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, Timestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { ValidatedProductFormData } from './schema';
 import type { Product } from '@/lib/types';
 
 const PRODUCTS_COLLECTION = 'products';
+
+// Helper function to convert Firestore doc data to Product, ensuring Timestamps are strings
+const mapDocToProduct = (document: import('firebase/firestore').DocumentSnapshot | import('firebase/firestore').QueryDocumentSnapshot): Product => {
+  const data = document.data();
+  if (!data) {
+    throw new Error('Document data is undefined');
+  }
+  return {
+    id: document.id,
+    name: data.name,
+    category: data.category,
+    purchasePrice: data.purchasePrice,
+    retailPrice: data.retailPrice,
+    wholesalePrice: data.wholesalePrice,
+    unit: data.unit,
+    quantityInStock: data.quantityInStock,
+    sku: data.sku,
+    barcode: data.barcode,
+    reorderThreshold: data.reorderThreshold,
+    vendor: data.vendor,
+    createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt,
+    updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : data.updatedAt,
+  } as Product;
+};
+
 
 export async function addProduct(data: ValidatedProductFormData) {
   console.log('Adding new product to Firestore:', data);
@@ -17,6 +42,7 @@ export async function addProduct(data: ValidatedProductFormData) {
   }
 
   try {
+    const now = Timestamp.now().toDate().toISOString();
     const newProductData = {
       name: data.productName,
       category: data.category,
@@ -25,16 +51,21 @@ export async function addProduct(data: ValidatedProductFormData) {
       wholesalePrice: data.wholesalePrice,
       unit: data.unit,
       quantityInStock: data.initialStock,
-      // Optional fields can be added here if needed, e.g., sku, barcode
-      createdAt: Timestamp.now().toDate().toISOString(),
-      updatedAt: Timestamp.now().toDate().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     };
     const docRef = await addDoc(collection(db, PRODUCTS_COLLECTION), newProductData);
     
     revalidatePath('/products');
     revalidatePath('/dashboard');
 
-    return { success: true, message: 'Product added successfully!', product: { id: docRef.id, ...newProductData } as Product };
+    // Construct the product object to return, ensuring dates are strings
+    const productToReturn: Product = {
+      id: docRef.id,
+      ...newProductData, // newProductData already has dates as ISO strings
+    };
+
+    return { success: true, message: 'Product added successfully!', product: productToReturn };
   } catch (error) {
     console.error("Error adding product to Firestore:", error);
     return { success: false, message: `Failed to add product: ${error instanceof Error ? error.message : 'Unknown error'}` };
@@ -43,11 +74,10 @@ export async function addProduct(data: ValidatedProductFormData) {
 
 export async function getProductsAction(): Promise<Product[]> {
   try {
-    const querySnapshot = await getDocs(collection(db, PRODUCTS_COLLECTION));
-    const products = querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    } as Product));
+    // Order by createdAt in descending order to get newest products first
+    const q = query(collection(db, PRODUCTS_COLLECTION), orderBy("createdAt", "desc"));
+    const querySnapshot = await getDocs(q);
+    const products = querySnapshot.docs.map(mapDocToProduct);
     return products;
   } catch (error) {
     console.error("Error fetching products from Firestore:", error);
@@ -61,7 +91,7 @@ export async function getProductByIdAction(id: string): Promise<Product | undefi
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() } as Product;
+      return mapDocToProduct(docSnap);
     } else {
       console.log("No such product document!");
       return undefined;
@@ -83,7 +113,7 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
     if (data.retailPrice !== undefined) updateData.retailPrice = data.retailPrice;
     if (data.wholesalePrice !== undefined) updateData.wholesalePrice = data.wholesalePrice;
     if (data.unit !== undefined) updateData.unit = data.unit;
-    if (data.initialStock !== undefined) updateData.quantityInStock = data.initialStock; // Assuming 'initialStock' from form means current stock when editing
+    if (data.initialStock !== undefined) updateData.quantityInStock = data.initialStock; 
 
     if (Object.keys(updateData).length === 0) {
       return { success: false, message: 'No changes provided to update.' };
@@ -97,13 +127,12 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
     revalidatePath(`/products/${id}/edit`);
     revalidatePath('/dashboard');
 
-    // For the return value, it's good to fetch the updated product to reflect server-side changes like updatedAt
     const updatedDocSnap = await getDoc(productRef);
     if (!updatedDocSnap.exists()) {
         return { success: false, message: 'Product not found after update.' };
     }
     
-    return { success: true, message: 'Product updated successfully!', product: {id: updatedDocSnap.id, ...updatedDocSnap.data()} as Product };
+    return { success: true, message: 'Product updated successfully!', product: mapDocToProduct(updatedDocSnap) };
   } catch (error) {
     console.error("Error updating product in Firestore:", error);
     return { success: false, message: `Failed to update product: ${error instanceof Error ? error.message : 'Unknown error'}` };
