@@ -14,7 +14,7 @@ export interface SessionData {
   username: string; 
   email: string;
   role: "owner" | "staff";
-  name: string; 
+  name: string; // This will serve as the display name
 }
 
 interface RoleEmails {
@@ -43,10 +43,10 @@ async function getRoleEmailsFromFirestore(): Promise<RoleEmails | null> {
       return { ownerEmails, staffEmails };
     }
     console.warn(`Firestore: '${APP_SETTINGS_COLLECTION}/${ROLE_MANAGEMENT_DOC}' document not found or fields missing. Defaulting to no authorized users.`);
-    return { ownerEmails: [], staffEmails: [] }; // No roles defined if doc/fields are missing
+    return { ownerEmails: [], staffEmails: [] }; 
   } catch (error) {
     console.error("Error fetching role emails from Firestore:", error);
-    return null; // Indicates a database access error
+    return null;
   }
 }
 
@@ -75,6 +75,7 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     userRole = "staff";
   }
 
+
   if (!userRole) {
     if (ownerEmails.length === 0 && staffEmails.length === 0) {
       return { error: "Login failed: No authorized users (owners or staff) are configured in the system. Please contact an administrator." };
@@ -83,10 +84,10 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   }
 
   const sessionData: SessionData = {
-    username: email,
+    username: email, // Keep username as email for potential unique ID
     email: email,
     role: userRole,
-    name: email, 
+    name: email, // Initialize display name to email; can be changed via profile
   };
 
   const cookieSecure = true; 
@@ -95,7 +96,7 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   try {
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
       httpOnly: true,
-      secure: cookieSecure,
+      secure: cookieSecure, 
       maxAge: 60 * 60 * 24 * 7, // 1 week
       path: "/",
       sameSite: cookieSameSite,
@@ -132,4 +133,40 @@ export async function getSession(): Promise<SessionData | null> {
     }
   }
   return null;
+}
+
+export async function updateUserDisplayNameAction(newName: string): Promise<{ success: boolean; message?: string }> {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, message: "No active session found. Please log in again." };
+  }
+
+  if (!newName || newName.trim().length === 0) {
+    return { success: false, message: "Display name cannot be empty." };
+  }
+  if (newName.trim().length > 50) {
+    return { success: false, message: "Display name cannot exceed 50 characters." };
+  }
+
+  const updatedSessionData: SessionData = {
+    ...session,
+    name: newName.trim(), // Update the name field which is used as display name
+  };
+  
+  const cookieSecure = true;
+  const cookieSameSite = "none" as "none" | "lax" | "strict" | undefined;
+
+  try {
+    cookies().set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
+      httpOnly: true,
+      secure: cookieSecure,
+      maxAge: 60 * 60 * 24 * 7, // 1 week
+      path: "/",
+      sameSite: cookieSameSite,
+    });
+    return { success: true, message: "Display name updated successfully." };
+  } catch (error) {
+    console.error("Failed to update session cookie for display name:", error);
+    return { success: false, message: "Failed to update your session. Please try again." };
+  }
 }
