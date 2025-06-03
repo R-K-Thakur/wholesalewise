@@ -58,16 +58,18 @@ export default async function DashboardPage() {
             {/* <p className="text-xs text-muted-foreground">+20.1% from last month</p> */}
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Sales (Units)</CardTitle>
-            <ShoppingCart className="h-5 w-5 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{summaryData.totalSales.toLocaleString('en-IN')}</div>
-            {/* <p className="text-xs text-muted-foreground">+180.1% from last month</p> */}
-          </CardContent>
-        </Card>
+        <Link href="/sales" className="hover:shadow-md transition-shadow duration-200 rounded-lg block hover:cursor-pointer">
+          <Card className="h-full">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Sales (Units)</CardTitle>
+              <ShoppingCart className="h-5 w-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{summaryData.totalSales.toLocaleString('en-IN')}</div>
+              {/* <p className="text-xs text-muted-foreground">+180.1% from last month</p> */}
+            </CardContent>
+          </Card>
+        </Link>
         <Link href="/products" className="hover:shadow-md transition-shadow duration-200 rounded-lg block hover:cursor-pointer">
           <Card className="h-full">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
