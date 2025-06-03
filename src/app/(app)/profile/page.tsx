@@ -7,9 +7,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { User, Edit3, Save, Loader2 } from 'lucide-react';
+import { User, Edit3, Save, Loader2, ImagePlus } from 'lucide-react';
 import { getSession, updateUserDisplayNameAction, type SessionData } from "@/app/login/actions";
 import { useToast } from "@/hooks/use-toast";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function UserProfilePage() {
   const { toast } = useToast();
@@ -25,7 +26,7 @@ export default function UserProfilePage() {
       const currentSession = await getSession();
       setSession(currentSession);
       if (currentSession) {
-        setDisplayName(currentSession.name || currentSession.email);
+        setDisplayName(currentSession.name || currentSession.email || "");
       }
       setIsLoadingSession(false);
     }
@@ -38,7 +39,7 @@ export default function UserProfilePage() {
       toast({ title: "Error", description: "Display name cannot be empty.", variant: "destructive" });
       return;
     }
-    if (displayName.trim() === session?.name) {
+    if (displayName.trim() === (session?.name || session?.email)) {
       setIsEditingName(false);
       return;
     }
@@ -47,18 +48,26 @@ export default function UserProfilePage() {
     const result = await updateUserDisplayNameAction(displayName.trim());
     if (result.success) {
       toast({ title: "Success", description: "Display name updated successfully." });
-      // Optimistically update session state or re-fetch if needed
-      // For now, the UserNav will re-render with new cookie data on next page load/refresh
-      // or if we force a re-fetch of session here.
-      const updatedSession = await getSession(); // Re-fetch to update UI immediately
+      const updatedSession = await getSession(); 
       setSession(updatedSession);
-      if (updatedSession) setDisplayName(updatedSession.name);
+      if (updatedSession) setDisplayName(updatedSession.name || updatedSession.email || "");
       setIsEditingName(false);
     } else {
       toast({ title: "Error", description: result.message || "Failed to update display name.", variant: "destructive" });
     }
     setIsSavingName(false);
   };
+
+  const handleComingSoonFeature = () => {
+    toast({
+      title: "Coming Soon!",
+      description: "This feature is under development.",
+    });
+  };
+  
+  const avatarName = session?.name || session?.email || "User";
+  const avatarInitial = avatarName.charAt(0).toUpperCase();
+
 
   if (isLoadingSession) {
     return (
@@ -107,10 +116,10 @@ export default function UserProfilePage() {
                   maxLength={50}
                   className="flex-grow"
                 />
-                <Button type="button" variant="outline" onClick={() => { setIsEditingName(false); if(session) setDisplayName(session.name); }} disabled={isSavingName}>
+                <Button type="button" variant="outline" onClick={() => { setIsEditingName(false); if(session) setDisplayName(session.name || session.email || ""); }} disabled={isSavingName}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={isSavingName || !displayName.trim() || displayName.trim() === session?.name}>
+                <Button type="submit" disabled={isSavingName || !displayName.trim() || displayName.trim() === (session?.name || session?.email)}>
                   {isSavingName ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   <span className="ml-2 hidden sm:inline">Save</span>
                 </Button>
@@ -126,9 +135,22 @@ export default function UserProfilePage() {
       <Card>
         <CardHeader>
           <CardTitle>Profile Picture</CardTitle>
+          <CardDescription>Manage your avatar.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground">Profile picture upload functionality is coming soon!</p>
+        <CardContent className="flex flex-col items-center sm:flex-row sm:items-start gap-6">
+          <Avatar className="h-24 w-24 sm:h-32 sm:w-32">
+            {/* Current placeholder, replace with actual user.avatarUrl if implemented */}
+            <AvatarImage src={`https://placehold.co/128x128.png?text=${avatarInitial}`} alt={avatarName} data-ai-hint="user avatar" />
+            <AvatarFallback>{avatarInitial}</AvatarFallback>
+          </Avatar>
+          <div className="flex flex-col gap-2 items-center sm:items-start">
+            <Button onClick={handleComingSoonFeature}>
+              <ImagePlus className="mr-2 h-4 w-4" /> Change Picture
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Upload a new profile picture. JPG, PNG, or GIF. Max 2MB.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
