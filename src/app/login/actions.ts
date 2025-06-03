@@ -13,7 +13,7 @@ const ROLE_MANAGEMENT_DOC = "role_management";
 export interface SessionData {
   username: string; // Will be the email
   email: string;
-  role: "owner" | "staff"; // Staff role will no longer be assigned if only owners can log in
+  role: "owner" | "staff";
   name: string; // Will be the email or a derived part
 }
 
@@ -22,7 +22,7 @@ async function getOwnerEmailsFromFirestore(): Promise<string[] | null> {
     console.error(
       "getOwnerEmailsFromFirestore: Firestore (db) instance is not initialized. Cannot fetch owner emails. Returning empty list."
     );
-    return []; // Consistent with behavior of returning empty list if doc/field not found
+    return [];
   }
   try {
     const docRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
@@ -37,7 +37,7 @@ async function getOwnerEmailsFromFirestore(): Promise<string[] | null> {
       }
     }
     console.warn(`Firestore: '${APP_SETTINGS_COLLECTION}/${ROLE_MANAGEMENT_DOC}' document not found, or 'ownerEmails' field is missing or not an array. Defaulting to no owners.`);
-    return []; // Return empty array if document or field doesn't exist or is not an array
+    return [];
   } catch (error) {
     console.error("Error fetching owner emails from Firestore:", error);
     return null; // Indicates a database access error
@@ -80,7 +80,6 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     return { error: errorMessage };
   }
 
-  // If email is in the owner list, assign 'owner' role
   const userRole = "owner";
 
   const sessionData: SessionData = {
@@ -90,18 +89,21 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     name: email, 
   };
 
-  const isProduction = process.env.NODE_ENV === 'production';
+  // Force Secure=true and SameSite="none" for cloud environments (like Firebase Studio)
+  // as they typically serve over HTTPS and might involve cross-origin contexts for previews.
+  const cookieSecure = true;
+  const cookieSameSite = "none" as "none" | "lax" | "strict" | undefined; // Explicit type for clarity
 
   try {
-    console.log(`[signInWithEmailAction] Attempting to set session cookie. Production: ${isProduction}, Email: ${email}, Role: ${userRole}`);
+    console.log(`[signInWithEmailAction] Attempting to set session cookie. Email: ${email}, Role: ${userRole}, Secure: ${cookieSecure}, SameSite: ${cookieSameSite}`);
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
       httpOnly: true,
-      secure: isProduction,
+      secure: cookieSecure,
       maxAge: 60 * 60 * 24 * 7, // 1 week
       path: "/",
-      sameSite: isProduction ? "none" : "lax",
+      sameSite: cookieSameSite,
     });
-    console.log(`[signInWithEmailAction] Session cookie set attempt for ${sessionData.email}. Secure: ${isProduction}, SameSite: ${isProduction ? "none" : "lax"}`);
+    console.log(`[signInWithEmailAction] Session cookie set attempt for ${sessionData.email}. Secure: ${cookieSecure}, SameSite: ${cookieSameSite}`);
 
     const justSetCookie = cookies().get(SESSION_COOKIE_NAME);
     if (justSetCookie) {
@@ -111,7 +113,7 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     }
     
     console.log("[signInWithEmailAction] Attempting redirect to /dashboard.");
-    redirect('/dashboard'); // Successful login and redirect for authorized owner
+    redirect('/dashboard');
   } catch (e: any) {
     if (typeof e.message === 'string' && e.message.includes('NEXT_REDIRECT')) {
       throw e;
@@ -143,5 +145,3 @@ export async function getSession(): Promise<SessionData | null> {
   }
   return null;
 }
-
-    
