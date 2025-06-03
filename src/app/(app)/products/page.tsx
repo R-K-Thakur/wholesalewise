@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { PlusCircle } from "lucide-react";
 import Link from "next/link";
 import { getProductsAction } from "./actions"; // Assuming getProductsAction is defined in actions.ts
-import type { Product } from "@/lib/types";
+// import type { Product } from "@/lib/types"; // No longer directly used here
 import { ProductListClientContent } from "./product-list-client-content";
 
 
@@ -34,8 +34,6 @@ export default async function ProductsPage() {
           
           <ProductListClientContent products={products} />
           
-          {/* TODO: Implement Pagination component */}
-           <p className="text-muted-foreground mt-4">Pagination placeholder</p>
         </CardContent>
       </Card>
     </div>

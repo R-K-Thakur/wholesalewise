@@ -7,42 +7,61 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Settings, Moon, Sun } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Settings, Moon, Sun, ListOrdered } from 'lucide-react';
 
 const THEME_STORAGE_KEY = "app-theme";
+const ITEMS_PER_PAGE_STORAGE_KEY = "app-items-per-page";
+const ITEMS_PER_PAGE_OPTIONS = ["10", "25", "50"];
 
 export default function UserSettingsPage() {
   const [isDarkTheme, setIsDarkTheme] = useState(false);
+  const [itemsPerPage, setItemsPerPage] = useState(ITEMS_PER_PAGE_OPTIONS[0]);
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
+    // Theme
     const storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
     if (storedTheme) {
       const initialThemeDark = storedTheme === 'dark';
       setIsDarkTheme(initialThemeDark);
       document.documentElement.classList.toggle('dark', initialThemeDark);
     } else {
-      // Default to system preference or light mode if no preference stored
       const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
       setIsDarkTheme(prefersDark);
       document.documentElement.classList.toggle('dark', prefersDark);
     }
+
+    // Items per page
+    const storedItemsPerPage = localStorage.getItem(ITEMS_PER_PAGE_STORAGE_KEY);
+    if (storedItemsPerPage && ITEMS_PER_PAGE_OPTIONS.includes(storedItemsPerPage)) {
+      setItemsPerPage(storedItemsPerPage);
+    }
   }, []);
 
   useEffect(() => {
-    if (!isMounted) return; // Don't run on initial mount until client state is confirmed
+    if (!isMounted) return;
+    // Theme
     document.documentElement.classList.toggle('dark', isDarkTheme);
     localStorage.setItem(THEME_STORAGE_KEY, isDarkTheme ? 'dark' : 'light');
   }, [isDarkTheme, isMounted]);
+
+  useEffect(() => {
+    if (!isMounted) return;
+    // Items per page
+    localStorage.setItem(ITEMS_PER_PAGE_STORAGE_KEY, itemsPerPage);
+  }, [itemsPerPage, isMounted]);
 
   const handleThemeChange = (checked: boolean) => {
     setIsDarkTheme(checked);
   };
 
+  const handleItemsPerPageChange = (value: string) => {
+    setItemsPerPage(value);
+  };
+
   if (!isMounted) {
-    // Avoid rendering UI that depends on client-side state until mounted
-    // to prevent hydration mismatches, especially with theme.
     return null; 
   }
 
@@ -73,11 +92,42 @@ export default function UserSettingsPage() {
               aria-label="Toggle dark mode"
             />
           </div>
-           <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Change the application&apos;s color scheme. Your preference will be saved for your next visit.
           </p>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Display Preferences</CardTitle>
+          <CardDescription>Control how data is displayed in tables.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between p-3 border rounded-md">
+            <div className="flex items-center gap-2">
+              <ListOrdered className="h-5 w-5" />
+              <Label htmlFor="items-per-page-select" className="text-base">
+                Items Per Page
+              </Label>
+            </div>
+            <Select value={itemsPerPage} onValueChange={handleItemsPerPageChange}>
+              <SelectTrigger id="items-per-page-select" className="w-[80px]">
+                <SelectValue placeholder="Select" />
+              </SelectTrigger>
+              <SelectContent>
+                {ITEMS_PER_PAGE_OPTIONS.map(option => (
+                  <SelectItem key={option} value={option}>{option}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Set the default number of items shown in paginated lists (e.g., Products, Sales).
+          </p>
+        </CardContent>
+      </Card>
+
 
       <Card>
         <CardHeader>

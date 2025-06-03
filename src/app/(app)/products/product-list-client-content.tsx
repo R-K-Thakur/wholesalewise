@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation"; // For revalidating after delete
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -18,6 +18,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import type { Product } from "@/lib/types";
 import { deleteProductAction } from "./actions";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+
+const ITEMS_PER_PAGE_STORAGE_KEY = "app-items-per-page";
+const DEFAULT_ITEMS_PER_PAGE = 10;
 
 interface ProductListClientContentProps {
   products: Product[];
@@ -30,9 +34,21 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [productToDelete, setProductToDelete] = React.useState<Product | null>(null);
 
-  // Update products if initialProducts prop changes (e.g., after server-side revalidation)
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const [itemsPerPage, setItemsPerPage] = React.useState(DEFAULT_ITEMS_PER_PAGE);
+  const [isMounted, setIsMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsMounted(true);
+    const storedItemsPerPage = localStorage.getItem(ITEMS_PER_PAGE_STORAGE_KEY);
+    if (storedItemsPerPage) {
+      setItemsPerPage(parseInt(storedItemsPerPage, 10) || DEFAULT_ITEMS_PER_PAGE);
+    }
+  }, []);
+
   React.useEffect(() => {
     setProducts(initialProducts);
+    setCurrentPage(1); // Reset to first page if products change
   }, [initialProducts]);
 
   const handleDeleteClick = (product: Product) => {
@@ -48,9 +64,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
           title: "Success!",
           description: result.message,
         });
-        // Optimistically update UI or rely on revalidation
         setProducts(prevProducts => prevProducts.filter(p => p.id !== productToDelete.id));
-        // router.refresh(); // Could also use this to re-fetch server component data
       } else {
         toast({
           title: "Error",
@@ -62,6 +76,48 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     setProductToDelete(null);
     setIsDeleteDialogOpen(false);
   };
+
+  const totalPages = Math.ceil(products.length / itemsPerPage);
+  const paginatedProducts = products.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  const handleNextPage = () => {
+    setCurrentPage((prev) => Math.min(prev + 1, totalPages));
+  };
+
+  const handlePrevPage = () => {
+    setCurrentPage((prev) => Math.max(prev - 1, 1));
+  };
+  
+  if (!isMounted) {
+    // To prevent hydration mismatch for itemsPerPage from localStorage
+    // You can show a loader or a simplified version until mounted
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-border">
+          <thead className="bg-muted/50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Category</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Stock</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Purchase (₹)</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Wholesale (₹)</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Retail (₹)</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Unit</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="bg-card divide-y divide-border">
+            <tr>
+              <td colSpan={8} className="px-6 py-4 text-center text-sm text-muted-foreground">Loading products...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -80,7 +136,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
             </tr>
           </thead>
           <tbody className="bg-card divide-y divide-border">
-            {products.map((product) => (
+            {paginatedProducts.map((product) => (
               <tr key={product.id}>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{product.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.category}</td>
@@ -104,9 +160,32 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
                 <td colSpan={8} className="px-6 py-4 text-center text-sm text-muted-foreground">No products found.</td>
               </tr>
             )}
+             {products.length > 0 && paginatedProducts.length === 0 && (
+              <tr>
+                <td colSpan={8} className="px-6 py-4 text-center text-sm text-muted-foreground">
+                  No products on this page. Try adjusting filters or page number.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
+
+      {products.length > itemsPerPage && (
+        <div className="mt-4 flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Page {currentPage} of {totalPages}
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handlePrevPage} disabled={currentPage === 1}>
+              <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleNextPage} disabled={currentPage === totalPages}>
+              Next <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {productToDelete && (
         <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
