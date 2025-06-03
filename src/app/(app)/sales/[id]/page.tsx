@@ -77,7 +77,7 @@ export default async function SaleDetailPage({ params }: SaleDetailPageProps) {
               </thead>
               <tbody className="bg-card divide-y divide-border">
                 {sale.items.map((item, index) => (
-                  <tr key={item.productId + '-' + index}> {/* Added index for more unique key */}
+                  <tr key={`${item.productId}-${index}`}>
                     <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-foreground">{item.productNameSnapshot}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{item.quantitySold}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{item.unitSnapshot}</td>
