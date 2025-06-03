@@ -13,7 +13,7 @@ const ROLE_MANAGEMENT_DOC = "role_management";
 export interface SessionData {
   username: string; // Will be the email
   email: string;
-  role: "owner" | "staff";
+  role: "owner" | "staff"; // Staff role will no longer be assigned if only owners can log in
   name: string; // Will be the email or a derived part
 }
 
@@ -22,7 +22,7 @@ async function getOwnerEmailsFromFirestore(): Promise<string[] | null> {
     console.error(
       "getOwnerEmailsFromFirestore: Firestore (db) instance is not initialized. Cannot fetch owner emails. Returning empty list."
     );
-    return [];
+    return []; // Consistent with behavior of returning empty list if doc/field not found
   }
   try {
     const docRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
@@ -37,10 +37,10 @@ async function getOwnerEmailsFromFirestore(): Promise<string[] | null> {
       }
     }
     console.warn(`Firestore: '${APP_SETTINGS_COLLECTION}/${ROLE_MANAGEMENT_DOC}' document not found, or 'ownerEmails' field is missing or not an array. Defaulting to no owners.`);
-    return [];
+    return []; // Return empty array if document or field doesn't exist or is not an array
   } catch (error) {
     console.error("Error fetching owner emails from Firestore:", error);
-    return null;
+    return null; // Indicates a database access error
   }
 }
 
@@ -60,29 +60,43 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   const ownerEmailsResult = await getOwnerEmailsFromFirestore();
 
   if (ownerEmailsResult === null) {
-    const errorMessage = "Could not determine user role due to a database access issue. Please try again later.";
+    const errorMessage = "Could not verify user authorization due to a database access issue. Please try again later.";
     console.error("signInWithEmailAction: ownerEmailsResult is null, indicating a DB error.", errorMessage);
     return { error: errorMessage };
   }
   
   const normalizedOwnerEmails = Array.isArray(ownerEmailsResult) ? ownerEmailsResult : [];
   const userEmailLower = email.toLowerCase();
-  const userRole = normalizedOwnerEmails.includes(userEmailLower) ? "owner" : "staff";
+
+  if (normalizedOwnerEmails.length === 0) {
+    const errorMessage = "Login failed: No authorized users are configured in the system. Please contact an administrator.";
+    console.error("signInWithEmailAction: No owner emails configured.", errorMessage);
+    return { error: errorMessage };
+  }
+
+  if (!normalizedOwnerEmails.includes(userEmailLower)) {
+    const errorMessage = "Login failed: This email address is not authorized to access the application.";
+    console.error(`signInWithEmailAction: Email "${userEmailLower}" not found in owner list.`, errorMessage);
+    return { error: errorMessage };
+  }
+
+  // If email is in the owner list, assign 'owner' role
+  const userRole = "owner";
 
   const sessionData: SessionData = {
     username: email,
     email: email,
     role: userRole,
-    name: email, // Using email as name for simplicity
+    name: email, 
   };
 
   const isProduction = process.env.NODE_ENV === 'production';
 
   try {
-    console.log(`[signInWithEmailAction] Attempting to set session cookie. Production: ${isProduction}, Email: ${email}`);
+    console.log(`[signInWithEmailAction] Attempting to set session cookie. Production: ${isProduction}, Email: ${email}, Role: ${userRole}`);
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
       httpOnly: true,
-      secure: isProduction, 
+      secure: isProduction,
       maxAge: 60 * 60 * 24 * 7, // 1 week
       path: "/",
       sameSite: isProduction ? "none" : "lax",
@@ -97,11 +111,9 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     }
     
     console.log("[signInWithEmailAction] Attempting redirect to /dashboard.");
-    redirect('/dashboard');
+    redirect('/dashboard'); // Successful login and redirect for authorized owner
   } catch (e: any) {
     if (typeof e.message === 'string' && e.message.includes('NEXT_REDIRECT')) {
-      // This error is part of Next.js's redirect mechanism.
-      // It's thrown to signal the redirect, so we re-throw it.
       throw e;
     }
     console.error("[signInWithEmailAction] Failed to set session cookie or redirect:", e);
@@ -131,3 +143,5 @@ export async function getSession(): Promise<SessionData | null> {
   }
   return null;
 }
+
+    
