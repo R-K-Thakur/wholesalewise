@@ -37,7 +37,7 @@ export default async function SaleDetailPage({ params }: SaleDetailPageProps) {
           </Link>
         </Button>
         <h1 className="text-3xl font-bold tracking-tight font-headline">
-          Sale Details - ID: {sale.id}
+          Sale Details - ID: {sale.id} - Date: {new Date(sale.saleDate).toLocaleDateString()} - Customer: {sale.customerName || 'N/A'}
         </h1>
       </div>
 
