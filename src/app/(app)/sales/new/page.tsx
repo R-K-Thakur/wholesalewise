@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ArrowLeft, PlusCircle, Trash2, Check, ChevronsUpDown } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trash2, Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -129,8 +129,25 @@ function SaleFormPlaceholder({ products }: { products: Product[] }) {
 }
 
 
-export default async function NewSalePage() {
-  const products = await getProductsAction();
+export default function NewSalePage() {
+  const [products, setProducts] = React.useState<Product[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    async function fetchProductsData() {
+      setIsLoading(true);
+      try {
+        const fetchedProducts = await getProductsAction();
+        setProducts(fetchedProducts);
+      } catch (error) {
+        console.error("Failed to fetch products for new sale page:", error);
+        // Optionally, set an error state and display a message to the user
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchProductsData();
+  }, []);
 
   return (
     <div className="flex flex-col gap-6">
@@ -150,10 +167,16 @@ export default async function NewSalePage() {
           <CardDescription>Enter the details for the new sale.</CardDescription>
         </CardHeader>
         <CardContent>
-          <SaleFormPlaceholder products={products} />
+          {isLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="ml-2 text-muted-foreground">Loading products...</p>
+            </div>
+          ) : (
+            <SaleFormPlaceholder products={products} />
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
-
