@@ -2,17 +2,17 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { collection, addDoc, doc, runTransaction, Timestamp, getDocs, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, doc, runTransaction, Timestamp, getDocs, query, orderBy, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { RecordSaleActionPayload } from './schema';
 import type { Product, Sale, SaleItem } from '@/lib/types';
-// import { getProductByIdAction } from '../products/actions'; // To fetch product details for stock update // Not used directly here
+import type { ProductUnit } from '@/lib/constants';
 
 const SALES_COLLECTION = 'sales';
 const PRODUCTS_COLLECTION = 'products';
 
 // Helper function to convert Firestore doc data to Sale
-const mapDocToSale = (document: import('firebase/firestore').QueryDocumentSnapshot): Sale => {
+const mapDocToSale = (document: import('firebase/firestore').DocumentSnapshot | import('firebase/firestore').QueryDocumentSnapshot): Sale => {
   const data = document.data();
   if (!data) {
     throw new Error('Sale document data is undefined.');
@@ -20,19 +20,19 @@ const mapDocToSale = (document: import('firebase/firestore').QueryDocumentSnapsh
   const nowAsISO = new Date().toISOString();
   return {
     id: document.id,
-    items: Array.isArray(data.items) ? data.items.map((item: any) => ({ // Basic mapping, ensure SaleItem structure
+    items: Array.isArray(data.items) ? data.items.map((item: any): SaleItem => ({ 
       productId: typeof item.productId === 'string' ? item.productId : '',
       productNameSnapshot: typeof item.productNameSnapshot === 'string' ? item.productNameSnapshot : '',
       quantitySold: typeof item.quantitySold === 'number' ? item.quantitySold : 0,
       pricePerUnitSold: typeof item.pricePerUnitSold === 'number' ? item.pricePerUnitSold : 0,
-      unitSnapshot: typeof item.unitSnapshot === 'string' ? item.unitSnapshot : 'piece', // Add default for unitSnapshot
+      unitSnapshot: typeof item.unitSnapshot === 'string' ? item.unitSnapshot as ProductUnit : 'piece', 
       total: typeof item.total === 'number' ? item.total : 0,
     })) : [],
     totalAmount: typeof data.totalAmount === 'number' ? data.totalAmount : 0,
     saleType: ['wholesale', 'retail'].includes(data.saleType) ? data.saleType : 'retail',
-    saleDate: typeof data.saleDate === 'string' ? data.saleDate : nowAsISO, // data.saleDate is already ISO string
+    saleDate: typeof data.saleDate === 'string' ? data.saleDate : nowAsISO,
     customerName: typeof data.customerName === 'string' ? data.customerName : '',
-    paymentMethod: ['cash', 'card', 'online'].includes(data.paymentMethod) ? data.paymentMethod : undefined,
+    paymentMethod: ['cash', 'card', 'online'].includes(data.paymentMethod) ? data.paymentMethod as Sale['paymentMethod'] : undefined,
     notes: typeof data.notes === 'string' ? data.notes : '',
     createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (typeof data.createdAt === 'string' ? data.createdAt : nowAsISO),
     updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : (typeof data.updatedAt === 'string' ? data.updatedAt : nowAsISO),
@@ -46,7 +46,6 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
       const saleItemsForDb: SaleItem[] = [];
       let calculatedTotalAmount = 0;
 
-      // First, validate stock and prepare product updates
       for (const item of data.items) {
         if (!item.productId) {
           throw new Error(`Missing productId for item: ${item.productNameSnapshot}`);
@@ -123,5 +122,19 @@ export async function getSalesAction(): Promise<Sale[]> {
   }
 }
 
-// Action to fetch a specific sale (can be implemented later)
-// export async function getSaleByIdAction(id: string): Promise<Sale | undefined> { ... }
+export async function getSaleByIdAction(id: string): Promise<Sale | undefined> {
+  try {
+    const docRef = doc(db, SALES_COLLECTION, id);
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      return mapDocToSale(docSnap);
+    } else {
+      console.log("No such sale document!");
+      return undefined;
+    }
+  } catch (error) {
+    console.error("Error fetching sale by ID from Firestore:", error);
+    return undefined;
+  }
+}

@@ -1,69 +1,18 @@
 
-"use client"; // Required for using useParams
-
-import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ArrowLeft } from 'lucide-react';
-import type { ProductUnit } from '@/lib/constants'; // Assuming ProductUnit is defined
+import { getSaleByIdAction } from '../actions'; // Import the action
+import type { Sale } from '@/lib/types'; // Use the Sale type
 
-// Mock data - replace with actual data fetching logic
-const mockSalesData: Record<string, SaleDetails> = {
-  "1": {
-    id: "1",
-    customerName: "Local Shop A",
-    saleDate: "2024-07-20",
-    saleType: "wholesale",
-    paymentMethod: "online",
-    notes: "Urgent delivery requested.",
-    items: [
-      { productId: "prod1", productNameSnapshot: "Lavender Lipstick", quantitySold: 10, pricePerUnitSold: 500, total: 5000, unitSnapshot: "piece" },
-      { productId: "prod2", productNameSnapshot: "Teal Hair Oil", quantitySold: 5, pricePerUnitSold: 1100, total: 5500, unitSnapshot: "piece" },
-    ],
-    totalAmount: 10500.00,
-  },
-  "2": {
-    id: "2",
-    customerName: "Retail Customer",
-    saleDate: "2024-07-19",
-    saleType: "retail",
-    paymentMethod: "cash",
-    notes: "",
-    items: [
-      { productId: "prod3", productNameSnapshot: "Silver Earrings", quantitySold: 1, pricePerUnitSold: 999, total: 999, unitSnapshot: "set" },
-    ],
-    totalAmount: 999.00,
-  },
-};
-
-interface SaleItemDetails {
-  productId: string;
-  productNameSnapshot: string;
-  quantitySold: number;
-  pricePerUnitSold: number;
-  total: number;
-  unitSnapshot: ProductUnit;
+interface SaleDetailPageProps {
+  params: { id: string };
 }
 
-interface SaleDetails {
-  id: string;
-  customerName?: string;
-  saleDate: string;
-  saleType: 'wholesale' | 'retail';
-  paymentMethod?: 'cash' | 'card' | 'online';
-  notes?: string;
-  items: SaleItemDetails[];
-  totalAmount: number;
-}
-
-
-export default function SaleDetailPage() {
-  const params = useParams();
-  const saleId = params.id as string;
-  
-  // In a real app, you would fetch sale details based on saleId
-  const sale = mockSalesData[saleId]; // Using mock data
+export default async function SaleDetailPage({ params }: SaleDetailPageProps) {
+  const saleId = params.id;
+  const sale: Sale | undefined = await getSaleByIdAction(saleId);
 
   if (!sale) {
     return (
@@ -128,7 +77,7 @@ export default function SaleDetailPage() {
               </thead>
               <tbody className="bg-card divide-y divide-border">
                 {sale.items.map((item, index) => (
-                  <tr key={index}>
+                  <tr key={item.productId + '-' + index}> {/* Added index for more unique key */}
                     <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-foreground">{item.productNameSnapshot}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{item.quantitySold}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{item.unitSnapshot}</td>
