@@ -11,20 +11,21 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Check for placeholder values
+// Check for placeholder values and log critical errors if found
 if (!firebaseConfig.projectId || firebaseConfig.projectId === 'YOUR_PROJECT_ID') {
   console.error(
-    'CRITICAL FIREBASE CONFIGURATION ERROR: Firebase Project ID is not set or is still a placeholder.' +
-    'Please update NEXT_PUBLIC_FIREBASE_PROJECT_ID in your .env file with your actual Firebase Project ID and restart the server.'
+    'CRITICAL FIREBASE CONFIGURATION ERROR: Firebase Project ID is not set or is still a placeholder. ' +
+    'Please update NEXT_PUBLIC_FIREBASE_PROJECT_ID in your .env file with your actual Firebase Project ID and restart the server. ' +
+    'The current value is: ' + firebaseConfig.projectId
   );
 }
 if (!firebaseConfig.apiKey || firebaseConfig.apiKey === 'YOUR_API_KEY') {
   console.error(
-    'CRITICAL FIREBASE CONFIGURATION ERROR: Firebase API Key is not set or is still a placeholder.' +
-    'Please update NEXT_PUBLIC_FIREBASE_API_KEY in your .env file with your actual Firebase API Key and restart the server.'
+    'CRITICAL FIREBASE CONFIGURATION ERROR: Firebase API Key is not set or is still a placeholder. ' +
+    'Please update NEXT_PUBLIC_FIREBASE_API_KEY in your .env file with your actual Firebase API Key and restart the server. ' +
+    'The current value is: ' + firebaseConfig.apiKey
   );
 }
-
 
 let app: FirebaseApp;
 if (!getApps().length) {
@@ -36,4 +37,3 @@ if (!getApps().length) {
 const db: Firestore = getFirestore(app);
 
 export { db, app };
-
