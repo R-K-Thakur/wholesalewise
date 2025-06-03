@@ -1,2 +1,6 @@
-// This file is intentionally left blank as it is being removed.
-// If this file is not automatically deleted, you can manually delete the /src/app/(app)/purchases directory.
+// This page is slated for removal.
+// If you see this, the build process might need a restart
+// or the directory src/app/(app)/purchases should be deleted.
+export default function PurchasesPage() {
+  return null;
+}
