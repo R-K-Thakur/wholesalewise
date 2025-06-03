@@ -2,17 +2,17 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+// useRouter is not needed if server action handles redirect
+// import { useRouter } from "next/navigation"; 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { signInWithGoogleAction } from "./actions";
 import { APP_NAME } from "@/lib/constants";
-import { auth } from "@/lib/firebase"; // Import Firebase auth instance
-import { GoogleAuthProvider, signInWithPopup, type User } from "firebase/auth";
+import { auth } from "@/lib/firebase"; 
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { Loader2, LogIn } from "lucide-react";
 
-// Google SVG Icon (simplified)
 const GoogleIcon = () => (
   <svg viewBox="0 0 24 24" className="h-5 w-5 mr-2">
     <path
@@ -37,7 +37,6 @@ const GoogleIcon = () => (
 
 
 export default function LoginPage() {
-  const router = useRouter(); // Keep router for potential other uses, though not for this specific redirect
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,23 +60,26 @@ export default function LoginPage() {
       const user = result.user;
 
       if (user) {
+        // Optional: Show a "processing" toast. The success toast is removed as redirect takes over.
+        // toast({ title: "Processing Sign-In...", description: "Please wait." });
+
         const serverResult = await signInWithGoogleAction({
           email: user.email,
           name: user.displayName,
           uid: user.uid,
         });
 
-        if (serverResult.success) {
-          toast({ title: "Login Successful", description: `Welcome, ${user.displayName || user.email}!` });
-          // Use window.location.assign for a full page navigation to ensure cookie is sent
-          window.location.assign('/dashboard');
-          // router.push("/dashboard"); // Previous method
-          // router.refresh(); // No longer needed with window.location.assign
-        } else {
-          setError(serverResult.error || "Failed to create session.");
+        // This block is ONLY reached if signInWithGoogleAction returned an error object
+        // (because a successful call would have redirected the page).
+        if (serverResult?.error) { 
+          setError(serverResult.error);
           toast({ title: "Login Failed", description: serverResult.error, variant: "destructive" });
+          setIsLoading(false); // Stop loading if server action explicitly returns an error
         }
+        // If signInWithGoogleAction redirects, this part of the code (and setting isLoading to false)
+        // might not be reached, or the component unmounts, making setIsLoading(false) moot for the success path.
       } else {
+        // This case should ideally not happen if signInWithPopup succeeds
         throw new Error("No user information received from Google.");
       }
     } catch (e: any) {
@@ -96,16 +98,9 @@ export default function LoginPage() {
       }
       setError(errorMessage);
       toast({ title: "Google Sign-In Failed", description: errorMessage, variant: "destructive" });
-    } finally {
-      // setIsLoading(false); // Don't set loading to false if navigating away
-      // If navigation fails for some reason and stays on page, then we might need it.
-      // For now, successful navigation means this component unmounts.
-      // If an error occurs before navigation, setIsLoading will be set in the catch.
-      // If serverResult.success is false, setIsLoading will also remain false.
-      if(!serverResult?.success) { // Check if serverResult exists and was not successful
-        setIsLoading(false);
-      }
+      setIsLoading(false); // Stop loading on Firebase client-side auth error
     }
+    // isLoading state will be managed by error paths or component unmount on redirect.
   }
 
   return (

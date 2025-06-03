@@ -4,16 +4,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-
-// In a real application, use a secure way to store and verify passwords (e.g., hashing)
-// and fetch users from a database.
-// This USERS array and the loginAction are kept for potential direct API use or future re-integration,
-// but the primary login mechanism is now Google Sign-In.
-const USERS = [
-  { username: "owner", password: "password", email: "owner@wholesalewise.com", role: "owner" as const, name: "Owner User" },
-  { username: "staff", password: "password", email: "staff@wholesalewise.com", role: "staff" as const, name: "Staff User" },
-];
+import { db } from "@/lib/firebase"; // db can be null if config fails
 
 const SESSION_COOKIE_NAME = "auth-session";
 const APP_SETTINGS_COLLECTION = "app_settings";
@@ -24,39 +15,7 @@ export interface SessionData {
   email: string;
   role: "owner" | "staff";
   name: string;
-  uid?: string; // Add UID for Firebase users
-}
-
-export async function loginAction(formData: FormData) {
-  const username = formData.get("username") as string;
-  const password = formData.get("password") as string;
-
-  if (!username || !password) {
-    return { success: false, error: "Username and password are required." };
-  }
-
-  const user = USERS.find((u) => u.username === username);
-
-  if (!user || user.password !== password) {
-    return { success: false, error: "Invalid username or password." };
-  }
-
-  const sessionData: SessionData = {
-    username: user.username,
-    email: user.email,
-    role: user.role,
-    name: user.name,
-  };
-
-  cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 60 * 60 * 24 * 7, // 1 week
-    path: "/",
-    sameSite: "lax",
-  });
-
-  return { success: true };
+  uid?: string;
 }
 
 export interface GoogleSignInData {
@@ -65,64 +24,84 @@ export interface GoogleSignInData {
   uid: string;
 }
 
-async function getOwnerEmailsFromFirestore(): Promise<string[]> {
+async function getOwnerEmailsFromFirestore(): Promise<string[] | null> {
   if (!db) {
     console.error(
-      "Firestore (db) instance is not initialized. Cannot fetch owner emails from Firestore. Defaulting to no owners."
+      "getOwnerEmailsFromFirestore: Firestore (db) instance is not initialized. Cannot fetch owner emails."
     );
-    return [];
+    return null; // Indicate DB/config failure
   }
   try {
     const docRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
+      // Ensure ownerEmails is an array of strings, even if field is missing or wrong type in Firestore.
       if (data && Array.isArray(data.ownerEmails)) {
-        return data.ownerEmails.map(email => String(email).toLowerCase());
+        return data.ownerEmails.map(email => String(email).toLowerCase()).filter(email => email.includes('@'));
+      } else if (data && data.ownerEmails !== undefined) {
+        console.warn(`Firestore: 'ownerEmails' field in '${APP_SETTINGS_COLLECTION}/${ROLE_MANAGEMENT_DOC}' is not a valid array. Found:`, data.ownerEmails);
+        return []; // Return empty array if field exists but is not an array
       }
     }
-    console.warn(`Firestore: '${APP_SETTINGS_COLLECTION}/${ROLE_MANAGEMENT_DOC}' document not found or 'ownerEmails' field is missing/invalid. Defaulting to no owners.`);
-    return [];
+    // Document or ownerEmails field doesn't exist, or is not an array.
+    // This is not an error, just means no owners are defined in DB.
+    console.warn(`Firestore: '${APP_SETTINGS_COLLECTION}/${ROLE_MANAGEMENT_DOC}' document not found, or 'ownerEmails' field is missing or not an array. Defaulting to no owners.`);
+    return []; // Default to an empty array if doc/field doesn't exist
   } catch (error) {
     console.error("Error fetching owner emails from Firestore:", error);
-    return []; 
+    return null; // Indicate a Firestore operation failure
   }
 }
 
-export async function signInWithGoogleAction(userData: GoogleSignInData) {
+export async function signInWithGoogleAction(userData: GoogleSignInData): Promise<{ error: string } | void> {
+  if (!db) {
+    console.error("signInWithGoogleAction: Firestore (db) not available. Check Firebase configuration.");
+    return { error: "Authentication service is temporarily unavailable due to a configuration issue." };
+  }
+
   if (!userData.email) {
-    console.error("Email not provided by Google Sign-In during action. Cannot determine role or create session.");
-    return { success: false, error: "Email not provided by Google Sign-In. Cannot determine role or create session." };
+    console.error("Email not provided by Google Sign-In for session creation.");
+    return { error: "Email not provided. Cannot create session." };
   }
 
-  let ownerEmails = await getOwnerEmailsFromFirestore();
+  const ownerEmailsResult = await getOwnerEmailsFromFirestore();
 
-  // Defensive check: Ensure ownerEmails is an array.
-  if (!Array.isArray(ownerEmails)) {
-    console.error("getOwnerEmailsFromFirestore did not return an array as expected. Defaulting to empty array for roles. Value received:", ownerEmails);
-    ownerEmails = [];
+  if (ownerEmailsResult === null) {
+    // This means getOwnerEmailsFromFirestore encountered a DB error (e.g., db was null or a Firestore operation failed)
+    return { error: "Could not determine user role due to a database issue. Please try again later." };
   }
-  
+
+  // ownerEmailsResult is now guaranteed to be string[]
   const userEmailLower = userData.email.toLowerCase();
-  const userRole = ownerEmails.includes(userEmailLower) ? "owner" : "staff";
+  const userRole = ownerEmailsResult.includes(userEmailLower) ? "owner" : "staff";
 
   const sessionData: SessionData = {
-    username: userData.email, 
+    username: userData.email,
     email: userData.email,
     role: userRole,
-    name: userData.name || userData.email, 
+    name: userData.name || userData.email,
     uid: userData.uid,
   };
 
-  cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 60 * 60 * 24 * 7, // 1 week
-    path: "/",
-    sameSite: "lax",
-  });
-
-  return { success: true };
+  try {
+    cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 60 * 60 * 24 * 7, // 1 week
+      path: "/",
+      sameSite: "lax",
+    });
+  } catch (e) {
+    console.error("Failed to set session cookie:", e);
+    // This catch might not be hit if cookies().set itself doesn't throw but fails silently,
+    // but it's good practice.
+    return { error: "Failed to create your session. Please try again." };
+  }
+  
+  // If all successful, redirect. This must be the last step for the success path.
+  redirect('/dashboard');
+  // Note: redirect() throws a special error, so code after it won't run.
 }
 
 
@@ -141,7 +120,7 @@ export async function getSession(): Promise<SessionData | null> {
       return sessionData;
     } catch (error) {
       console.error("Failed to parse session cookie:", error);
-      cookies().delete(SESSION_COOKIE_NAME);
+      cookies().delete(SESSION_COOKIE_NAME); // Clear invalid cookie
       return null;
     }
   }
