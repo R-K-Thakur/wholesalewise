@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -5,7 +6,6 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Package,
-  ShoppingCart,
   Bell,
   PackagePlus,
   // DollarSign, // Replaced with RupeeIcon
@@ -41,7 +41,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/products", label: "Products", icon: Package },
   { href: "/products/new", label: "Add Product", icon: PackagePlus },
-  { href: "/purchases", label: "Purchases", icon: ShoppingCart },
+  // { href: "/purchases", label: "Purchases", icon: ShoppingCart }, // Removed Purchases link
   { href: "/sales", label: "Sales", icon: RupeeIcon },
   { href: "/alerts", label: "Reorder Alerts", icon: Bell },
   // Example additional links
