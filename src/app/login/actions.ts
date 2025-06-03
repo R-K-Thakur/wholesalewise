@@ -27,9 +27,9 @@ export interface GoogleSignInData {
 async function getOwnerEmailsFromFirestore(): Promise<string[] | null> {
   if (!db) {
     console.error(
-      "getOwnerEmailsFromFirestore: Firestore (db) instance is not initialized. Cannot fetch owner emails."
+      "getOwnerEmailsFromFirestore: Firestore (db) instance is not initialized. Cannot fetch owner emails. Returning empty list."
     );
-    return null; 
+    return []; // Return empty array instead of null to prevent errors downstream
   }
   try {
     const docRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
@@ -47,31 +47,33 @@ async function getOwnerEmailsFromFirestore(): Promise<string[] | null> {
     return []; 
   } catch (error) {
     console.error("Error fetching owner emails from Firestore:", error);
-    return null; 
+    return null; // Indicate failure to fetch, will be handled by caller
   }
 }
 
 export async function signInWithGoogleAction(userData: GoogleSignInData): Promise<{ error: string } | void> {
-  if (!db) {
-    const errorMessage = "Authentication service is temporarily unavailable due to a database configuration issue.";
-    console.error("signInWithGoogleAction: Firestore (db) not available.", errorMessage);
-    return { error: errorMessage };
-  }
-
   if (!userData.email) {
     const errorMessage = "Email not provided. Cannot create session.";
     console.error("signInWithGoogleAction:", errorMessage);
+    return { error: errorMessage };
+  }
+  
+  if (!db) {
+    const errorMessage = "Authentication service is temporarily unavailable due to a database configuration issue. Cannot determine user role.";
+    console.error("signInWithGoogleAction: Firestore (db) not available.", errorMessage);
     return { error: errorMessage };
   }
 
   const ownerEmailsResult = await getOwnerEmailsFromFirestore();
 
   if (ownerEmailsResult === null) {
-    const errorMessage = "Could not determine user role due to a database issue. Please try again later.";
-    console.error("signInWithGoogleAction: ownerEmailsResult is null.", errorMessage);
+    // This means getOwnerEmailsFromFirestore encountered a critical error trying to fetch roles.
+    const errorMessage = "Could not determine user role due to a database access issue. Please try again later.";
+    console.error("signInWithGoogleAction: ownerEmailsResult is null, indicating a DB error.", errorMessage);
     return { error: errorMessage };
   }
-
+  
+  // Ensure ownerEmailsResult is an array before using .includes()
   const normalizedOwnerEmails = Array.isArray(ownerEmailsResult) ? ownerEmailsResult : [];
   const userEmailLower = userData.email.toLowerCase();
   const userRole = normalizedOwnerEmails.includes(userEmailLower) ? "owner" : "staff";
@@ -85,18 +87,16 @@ export async function signInWithGoogleAction(userData: GoogleSignInData): Promis
   };
 
   try {
-    console.log("[signInWithGoogleAction] Attempting to set session cookie with data:", JSON.stringify(sessionData).substring(0, 50) + "...");
+    console.log("[signInWithGoogleAction] Attempting to set session cookie with data (first 50 chars):", JSON.stringify(sessionData).substring(0, 50) + "...");
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
       httpOnly: true,
-      secure: true, // Explicitly true for HTTPS environments
+      secure: true, // Explicitly true as your environment is HTTPS
       maxAge: 60 * 60 * 24 * 7, // 1 week
       path: "/",
-      sameSite: "lax", 
+      sameSite: "none", // Changed from "lax" to "none"
     });
     console.log(`[signInWithGoogleAction] Session cookie set attempt for ${sessionData.email}.`);
 
-    // For debugging: try to read the cookie immediately after setting it.
-    // Note: This might not reflect what the browser receives due to the asynchronous nature of HTTP headers.
     const justSetCookie = cookies().get(SESSION_COOKIE_NAME);
     if (justSetCookie) {
       console.log(`[signInWithGoogleAction] Cookie read back by server immediately after setting (value starts with): ${justSetCookie.value.substring(0,30)}...`);
@@ -110,7 +110,7 @@ export async function signInWithGoogleAction(userData: GoogleSignInData): Promis
   } catch (e: any) {
     // Check if the error is the special redirect error from Next.js
     if (typeof e.message === 'string' && e.message.includes('NEXT_REDIRECT')) {
-      // This is an expected error when redirect() is called. Re-throw it.
+      // This is an expected error when redirect() is called. Re-throw it so Next.js handles the redirect.
       throw e;
     }
     // Log other types of errors
