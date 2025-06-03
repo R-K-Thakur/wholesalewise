@@ -1,5 +1,5 @@
 
-"use client"; // This page will involve client-side interaction for the form
+"use client"; // Main page can be client, but SaleFormPlaceholder will get data via props
 
 import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -18,21 +18,16 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import type { Product } from "@/lib/types"; // Import Product type
+import { getProductsAction } from "../../products/actions"; // Import action to get products
 
-const mockProductsForCombobox = [
-  { id: "prod1", name: "Lavender Lipstick" },
-  { id: "prod2", name: "Teal Hair Oil" },
-  { id: "prod3", name: "Silver Earrings" },
-  { id: "prod4", name: "Rose Water Toner" },
-  { id: "prod5", name: "Spicy Chili Flakes" },
-  { id: "prod6", name: "Organic Green Tea" },
-  { id: "prod7", name: "Stainless Steel Pan" },
-];
 
-// Placeholder for SaleForm component
-function SaleFormPlaceholder() {
+// Placeholder for SaleForm component - now accepts products prop
+function SaleFormPlaceholder({ products }: { products: Product[] }) {
   const [comboboxOpen, setComboboxOpen] = React.useState(false);
   const [selectedProduct, setSelectedProduct] = React.useState("");
+
+  // TODO: Implement actual form logic with react-hook-form, item management, etc.
 
   return (
     <div className="space-y-6">
@@ -59,7 +54,7 @@ function SaleFormPlaceholder() {
                   className="w-full justify-between mt-1"
                 >
                   {selectedProduct
-                    ? mockProductsForCombobox.find((product) => product.name.toLowerCase() === selectedProduct)?.name
+                    ? products.find((product) => product.name.toLowerCase() === selectedProduct)?.name
                     : "Select a product..."}
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
@@ -70,7 +65,7 @@ function SaleFormPlaceholder() {
                   <CommandEmpty>No product found.</CommandEmpty>
                   <CommandGroup>
                     <CommandList>
-                      {mockProductsForCombobox.map((product) => (
+                      {products.map((product) => (
                         <CommandItem
                           key={product.id}
                           value={product.name.toLowerCase()}
@@ -85,7 +80,7 @@ function SaleFormPlaceholder() {
                               selectedProduct === product.name.toLowerCase() ? "opacity-100" : "opacity-0"
                             )}
                           />
-                          {product.name}
+                          {product.name} (Stock: {product.quantityInStock})
                         </CommandItem>
                       ))}
                     </CommandList>
@@ -121,7 +116,7 @@ function SaleFormPlaceholder() {
       </div>
       <div>
         <Label htmlFor="saleDate">Sale Date</Label>
-        <Input type="date" id="saleDate" className="mt-1" />
+        <Input type="date" id="saleDate" className="mt-1" defaultValue={new Date().toISOString().split('T')[0]} />
       </div>
       <div className="flex justify-end gap-2">
         <Button variant="outline" asChild>
@@ -134,7 +129,9 @@ function SaleFormPlaceholder() {
 }
 
 
-export default function NewSalePage() {
+export default async function NewSalePage() {
+  const products = await getProductsAction();
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-4">
@@ -153,10 +150,10 @@ export default function NewSalePage() {
           <CardDescription>Enter the details for the new sale.</CardDescription>
         </CardHeader>
         <CardContent>
-          {/* TODO: Replace with actual SaleForm component using react-hook-form and server actions */}
-          <SaleFormPlaceholder />
+          <SaleFormPlaceholder products={products} />
         </CardContent>
       </Card>
     </div>
   );
 }
+
