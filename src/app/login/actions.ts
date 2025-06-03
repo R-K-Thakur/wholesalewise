@@ -18,6 +18,7 @@ export interface SessionData {
   email: string;
   role: "owner" | "staff";
   name: string;
+  uid?: string; // Add UID for Firebase users
 }
 
 export async function loginAction(formData: FormData) {
@@ -46,12 +47,44 @@ export async function loginAction(formData: FormData) {
     secure: process.env.NODE_ENV === "production",
     maxAge: 60 * 60 * 24 * 7, // 1 week
     path: "/",
-    sameSite: "lax", 
+    sameSite: "lax",
   });
 
   return { success: true };
-  // Redirect will be handled by the client-side after success
 }
+
+export interface GoogleSignInData {
+  email: string | null;
+  name: string | null;
+  uid: string;
+}
+
+export async function signInWithGoogleAction(userData: GoogleSignInData) {
+  if (!userData.email) {
+    return { success: false, error: "Email not provided by Google Sign-In." };
+  }
+
+  // For Google Sign-In, assign 'staff' role by default.
+  // Username can be the email or part of it.
+  const sessionData: SessionData = {
+    username: userData.email,
+    email: userData.email,
+    role: "staff", // Default role for Google Sign-In users
+    name: userData.name || userData.email, // Use name if available, else email
+    uid: userData.uid,
+  };
+
+  cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 60 * 24 * 7, // 1 week
+    path: "/",
+    sameSite: "lax",
+  });
+
+  return { success: true };
+}
+
 
 export async function logoutAction() {
   cookies().delete(SESSION_COOKIE_NAME);
@@ -65,11 +98,9 @@ export async function getSession(): Promise<SessionData | null> {
   if (sessionCookie?.value) {
     try {
       const sessionData = JSON.parse(sessionCookie.value) as SessionData;
-      // Optional: Add validation for sessionData structure here
       return sessionData;
     } catch (error) {
       console.error("Failed to parse session cookie:", error);
-      // Clear potentially corrupted cookie
       cookies().delete(SESSION_COOKIE_NAME);
       return null;
     }
