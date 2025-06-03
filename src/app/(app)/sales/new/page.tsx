@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
 import {
   Command,
   CommandEmpty,
@@ -23,6 +24,7 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription as ShadFormDescription, // Alias if FormDescription is used elsewhere
   FormField,
   FormItem,
   FormLabel,
@@ -38,7 +40,6 @@ import { recordSaleAction } from "../actions";
 import type { ProductUnit } from "@/lib/constants";
 
 
-// SaleForm component that uses react-hook-form
 function SaleForm({ allProducts }: { allProducts: Product[] }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -62,14 +63,13 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   const watchItems = form.watch("items");
 
   async function onSubmit(data: SaleFormData) {
-    form.clearErrors(); // Clear previous errors
+    form.clearErrors();
     let totalAmount = 0;
     const itemsForAction: RecordSaleActionPayload['items'] = [];
 
     for (const item of data.items) {
       const product = allProducts.find(p => p.id === item.productId);
       if (!product) {
-        // This should ideally be caught by form validation, but as a fallback
         toast({ title: "Error", description: `Product details not found for one of the items.`, variant: "destructive"});
         return;
       }
@@ -119,10 +119,10 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     const product = allProducts.find(p => p.id === productId);
     if (product) {
       form.setValue(`items.${itemIndex}.productId`, product.id);
-      // productNameSnapshot and unitSnapshot will be added during onSubmit
-      const price = watchSaleType === 'wholesale' ? product.wholesalePrice : product.retailPrice;
+      const currentSaleType = form.getValues("saleType");
+      const price = currentSaleType === 'wholesale' ? product.wholesalePrice : product.retailPrice;
       form.setValue(`items.${itemIndex}.pricePerUnitSold`, price);
-      form.trigger(`items.${itemIndex}.pricePerUnitSold`); // Trigger validation for price
+      form.trigger(`items.${itemIndex}.pricePerUnitSold`); 
       form.clearErrors(`items.${itemIndex}.productId`); 
     }
   };
@@ -141,37 +141,37 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
           <FormField
             control={form.control}
             name="saleType"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>Sale Type</FormLabel>
-                <Select 
-                  onValueChange={(value) => {
-                    field.onChange(value);
-                    // Update prices when sale type changes
-                    watchItems.forEach((item, index) => {
-                      const product = allProducts.find(p => p.id === item.productId);
-                      if (product) {
-                        const newPrice = value === 'wholesale' ? product.wholesalePrice : product.retailPrice;
-                        form.setValue(`items.${index}.pricePerUnitSold`, newPrice);
-                      }
-                    });
-                  }} 
-                  defaultValue={field.value}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select sale type" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="retail">Retail</SelectItem>
-                    <SelectItem value="wholesale">Wholesale</SelectItem>
-                  </SelectContent>
-                </Select>
+              <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 h-full">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value === 'wholesale'}
+                    onCheckedChange={(checked) => {
+                      const newSaleType = checked ? 'wholesale' : 'retail';
+                      field.onChange(newSaleType);
+                      // Update prices when sale type changes
+                      watchItems.forEach((item, index) => {
+                        const product = allProducts.find(p => p.id === item.productId);
+                        if (product) {
+                          const newPrice = newSaleType === 'wholesale' ? product.wholesalePrice : product.retailPrice;
+                          form.setValue(`items.${index}.pricePerUnitSold`, newPrice);
+                        }
+                      });
+                    }}
+                  />
+                </FormControl>
+                <div className="space-y-1 leading-none">
+                  <FormLabel>
+                    Wholesale Sale
+                  </FormLabel>
+                  <ShadFormDescription>
+                    Mark if this is a wholesale transaction.
+                  </ShadFormDescription>
+                </div>
                 <FormMessage />
               </FormItem>
             )}
@@ -302,7 +302,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                     <FormItem>
                       <FormLabel>Quantity</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 2" {...field} />
+                        <Input type="number" placeholder="e.g., 2" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -315,7 +315,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                     <FormItem>
                       <FormLabel>Price/Unit (₹)</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 700.00" step="0.01" {...field} />
+                        <Input type="number" placeholder="e.g., 700.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -362,6 +362,20 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                 Grand Total: ₹{calculateGrandTotal().toFixed(2)}
             </p>
         </div>
+
+        <FormField
+          control={form.control}
+          name="notes"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Notes (Optional)</FormLabel>
+              <FormControl>
+                <Input placeholder="Any additional notes for this sale..." {...field} value={field.value ?? ""} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
         <div className="flex justify-end gap-2 pt-4">
           <Button type="button" variant="outline" asChild disabled={form.formState.isSubmitting}>
@@ -428,7 +442,7 @@ export default function NewSalePage() {
                <p>{error}</p>
                <Button variant="outline" onClick={() => window.location.reload()} className="mt-4">Try Again</Button>
             </div>
-          ) : ( // Removed check for products.length === 0 here as SaleForm will handle it or be disabled
+          ) : ( 
             <SaleForm allProducts={products} />
           )}
            { !isLoading && !error && products.length === 0 && (
@@ -444,3 +458,4 @@ export default function NewSalePage() {
     </div>
   );
 }
+
