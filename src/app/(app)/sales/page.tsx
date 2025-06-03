@@ -34,9 +34,9 @@ export default async function SalesPage() {
             <table className="min-w-full divide-y divide-border">
               <thead className="bg-muted/50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">ID / Customer</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Customer Name</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Type</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Items Sold</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Items Sold</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Amount (₹)</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
@@ -46,11 +46,7 @@ export default async function SalesPage() {
                 {sales.map((sale) => (
                   <tr key={sale.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
-                      <Link href={`/sales/${sale.id}`} className="hover:underline">
-                        {sale.id.substring(0, 8)}...
-                      </Link>
-                      <br />
-                      <span className="text-xs text-muted-foreground">{sale.customerName || "N/A"}</span>
+                      {sale.customerName || "N/A"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground capitalize">{sale.saleType}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground text-center">{sale.items.length}</td>
