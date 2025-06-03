@@ -2,14 +2,13 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Package, ShoppingCart, AlertTriangle, IndianRupee, PlusCircle } from "lucide-react";
+import { Package, ShoppingCart, IndianRupee, PlusCircle } from "lucide-react";
 import { getProductsAction } from "../products/actions";
 import { getSalesAction } from "../sales/actions";
 import type { Product } from "@/lib/types";
 import type { Sale } from "@/lib/types";
+import { LowStockWidget } from "./low-stock-widget";
 
-// Define a default low stock threshold for products without a specific reorder threshold.
-const DEFAULT_LOW_STOCK_THRESHOLD = 5;
 
 export default async function DashboardPage() {
   const products: Product[] = await getProductsAction();
@@ -27,18 +26,10 @@ export default async function DashboardPage() {
 
   const totalProducts = products.length;
 
-  const lowStockItems = products.filter(product => {
-    const threshold = product.reorderThreshold !== undefined && product.reorderThreshold > 0 
-                      ? product.reorderThreshold 
-                      : DEFAULT_LOW_STOCK_THRESHOLD;
-    return product.quantityInStock < threshold;
-  }).length;
-
   const summaryData = {
     totalRevenue: totalRevenue,
     totalSales: totalSalesUnits,
     totalProducts: totalProducts,
-    lowStockItems: lowStockItems,
   };
 
   return (
@@ -55,7 +46,6 @@ export default async function DashboardPage() {
             <div className="text-2xl font-bold">
               ₹{summaryData.totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            {/* <p className="text-xs text-muted-foreground">+20.1% from last month</p> */}
           </CardContent>
         </Card>
         <Link href="/sales" className="hover:shadow-md transition-shadow duration-200 rounded-lg block hover:cursor-pointer">
@@ -66,7 +56,6 @@ export default async function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{summaryData.totalSales.toLocaleString('en-IN')}</div>
-              {/* <p className="text-xs text-muted-foreground">+180.1% from last month</p> */}
             </CardContent>
           </Card>
         </Link>
@@ -78,20 +67,10 @@ export default async function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{summaryData.totalProducts.toLocaleString('en-IN')}</div>
-              {/* <p className="text-xs text-muted-foreground">+19 from last month</p> */}
             </CardContent>
           </Card>
         </Link>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
-            <AlertTriangle className="h-5 w-5 text-destructive" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{summaryData.lowStockItems.toLocaleString('en-IN')}</div>
-            {/* <p className="text-xs text-muted-foreground">Needs attention</p> */}
-          </CardContent>
-        </Card>
+        <LowStockWidget products={products} />
       </div>
 
       <Card>
