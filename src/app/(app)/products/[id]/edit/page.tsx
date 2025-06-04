@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState }_react from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
