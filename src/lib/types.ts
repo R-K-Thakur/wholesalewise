@@ -36,10 +36,10 @@ export interface Purchase {
   purchaseUnitSnapshot: ProductUnit; // Snapshot of the product's purchaseUnit
   purchasePricePerUnitSnapshot: number; // Price per purchaseUnit at time of purchase
   totalCost: number;
-  purchaseDate: string; // ISO Date string
+  purchaseDate: string; // ISO Date string - effectively the event date for the purchase
   // vendor?: string; // Kept minimal for now based on current "Add Stock"
   // notes?: string;  // Kept minimal
-  createdAt: string; // ISO Date string
+  createdAt: string; // ISO Date string - when the record was created in DB
   updatedAt: string; // ISO Date string
 }
 
@@ -48,11 +48,11 @@ export interface Sale {
   items: SaleItem[];
   totalAmount: number;
   saleType: 'wholesale' | 'retail';
-  saleDate: string; // ISO Date string
+  saleDate: string; // ISO Date string - the date the sale occurred
   customerName?: string;
   paymentMethod?: 'cash' | 'card' | 'online';
   notes?: string;
-  createdAt: string; // ISO Date string
+  createdAt: string; // ISO Date string - when the record was created in DB
   updatedAt: string; // ISO Date string
 }
 
@@ -97,4 +97,14 @@ export interface PurchaseTrend {
   date: string; // Formatted date string for chart (e.g., "MMM d")
   totalPurchases: number; // Total cost of purchases on this date
   fullDate?: string; // Original full date for sorting if needed (e.g., "yyyy-MM-dd")
+}
+
+// For Recent Activity Widget
+export interface ActivityItem {
+  id: string; // Unique ID, can be sale.id, purchase.id
+  type: 'sale' | 'purchase'; // 'new_product' can be inferred from purchase context
+  date: string; // ISO Date string for sorting (typically createdAt of the event record)
+  description: string;
+  amount?: number; // For sales or purchase totalCost
+  link?: string; // e.g., to /sales/[id] or /products/[id]/edit
 }

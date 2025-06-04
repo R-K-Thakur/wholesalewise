@@ -2,25 +2,25 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Package, ShoppingCart, IndianRupee, PlusCircle, Search, TrendingUp, History } from "lucide-react";
-import { getProductsAction, getPurchasesAction } from "../products/actions"; // Added getPurchasesAction
+import { Package, ShoppingCart, IndianRupee, PlusCircle, Search, TrendingUp, History, PackagePlus } from "lucide-react";
+import { getProductsAction, getPurchasesAction } from "../products/actions";
 import { getSalesAction } from "../sales/actions";
-import type { Product, Purchase } from "@/lib/types"; // Added Purchase type
-import type { Sale } from "@/lib/types";
+import type { Product, Purchase, Sale, ActivityItem } from "@/lib/types";
 import { LowStockWidget } from "./low-stock-widget";
 import { getSession, type SessionData } from "@/app/login/actions";
 import { DashboardProductSearchWidget } from "./dashboard-product-search-widget";
 import { SalesTrendChart } from "./sales-trend-chart";
-import { PurchaseHistoryChart } from "./purchase-history-chart"; // Import new chart
+import { PurchaseHistoryChart } from "./purchase-history-chart";
+import { RecentActivityWidget } from "./recent-activity-widget";
 
 
 export default async function DashboardPage() {
   const userSession: SessionData | null = await getSession();
-  const userRole = userSession?.role || 'staff'; // Default to 'staff' if no session or role
+  const userRole = userSession?.role || 'staff'; 
 
   const products: Product[] = await getProductsAction();
   const sales: Sale[] = await getSalesAction();
-  const purchases: Purchase[] = await getPurchasesAction(); // Fetch purchases
+  const purchases: Purchase[] = await getPurchasesAction(); 
 
   let totalRevenue = 0;
   let totalSalesUnits = 0;
@@ -39,6 +39,47 @@ export default async function DashboardPage() {
     totalSales: totalSalesUnits,
     totalProducts: totalProducts,
   };
+
+  // Prepare recent activity data
+  const MAX_ACTIVITY_ITEMS = 7;
+  const activityItems: ActivityItem[] = [];
+
+  sales.forEach(sale => {
+    activityItems.push({
+      id: sale.id,
+      type: 'sale',
+      date: sale.createdAt, // Use createdAt for recency of the record
+      description: `Sale of ₹${sale.totalAmount.toFixed(2)} to ${sale.customerName || 'N/A'}.`,
+      amount: sale.totalAmount,
+      link: `/sales/${sale.id}`,
+    });
+  });
+
+  purchases.forEach(purchase => {
+    const product = products.find(p => p.id === purchase.productId);
+    let desc = `Stock added for ${purchase.productNameSnapshot}: ${purchase.quantityPurchased} ${purchase.purchaseUnitSnapshot}.`;
+    
+    // Check if this purchase was for a new product's initial stock
+    if (product && product.createdAt === purchase.createdAt) {
+      // A more robust check might involve comparing purchase.purchaseDate with product.createdAt if timestamps are exact
+      // Or checking if this is the *only* purchase for this product created at the same time as the product.
+      // For simplicity, if purchase record createdAt matches product createdAt, we assume initial stock.
+       desc = `Initial stock for ${purchase.productNameSnapshot}: ${purchase.quantityPurchased} ${purchase.purchaseUnitSnapshot}.`;
+    }
+  
+    activityItems.push({
+      id: purchase.id, 
+      type: 'purchase',
+      date: purchase.createdAt, // Use createdAt for recency of the record
+      description: desc,
+      amount: purchase.totalCost,
+      link: product ? `/products/${product.id}/edit` : undefined,
+    });
+  });
+
+  activityItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const recentActivities = activityItems.slice(0, MAX_ACTIVITY_ITEMS);
+
 
   return (
     <div className="flex flex-col gap-6">
@@ -106,19 +147,13 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-1">
+      <div className="grid gap-4 md:grid-cols-2"> {/* Changed from md:grid-cols-1 to md:grid-cols-2 */}
         <SalesTrendChart sales={sales} />
         <PurchaseHistoryChart purchases={purchases} /> 
       </div>
-       <Card>
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">Recent activity feed placeholder (e.g., latest sales, purchases, stock updates)</p>
-            {/* TODO: Add list of recent activities */}
-          </CardContent>
-        </Card>
+      
+      <RecentActivityWidget activities={recentActivities} /> {/* Replaced placeholder */}
+       
     </div>
   );
 }
