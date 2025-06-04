@@ -2,13 +2,14 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Package, ShoppingCart, IndianRupee, PlusCircle } from "lucide-react";
+import { Package, ShoppingCart, IndianRupee, PlusCircle, Search } from "lucide-react";
 import { getProductsAction } from "../products/actions";
 import { getSalesAction } from "../sales/actions";
 import type { Product } from "@/lib/types";
 import type { Sale } from "@/lib/types";
 import { LowStockWidget } from "./low-stock-widget";
 import { getSession, type SessionData } from "@/app/login/actions";
+import { DashboardProductSearchWidget } from "./dashboard-product-search-widget";
 
 
 export default async function DashboardPage() {
@@ -78,6 +79,8 @@ export default async function DashboardPage() {
         </Link>
         <LowStockWidget products={products} />
       </div>
+
+      <DashboardProductSearchWidget products={products} />
 
       <Card>
         <CardHeader>
