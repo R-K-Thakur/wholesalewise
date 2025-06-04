@@ -2,7 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Package, ShoppingCart, PlusCircle, Search, TrendingUp, History, PackagePlus } from "lucide-react";
+import { Package, ShoppingCart, PlusCircle, Search, TrendingUp, History, PackagePlus, IndianRupee } from "lucide-react"; // Added IndianRupee
 import { getProductsAction, getPurchasesAction } from "../products/actions";
 import { getSalesAction } from "../sales/actions";
 import type { Product, Purchase, Sale, ActivityItem } from "@/lib/types";
@@ -87,8 +87,7 @@ export default async function DashboardPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-              {/* Using a generic currency icon. Can be re-evaluated. */}
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-muted-foreground"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+              <IndianRupee className="h-5 w-5 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
