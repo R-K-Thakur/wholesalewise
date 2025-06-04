@@ -3,12 +3,13 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase"; 
 
 const SESSION_COOKIE_NAME = "auth-session";
 const APP_SETTINGS_COLLECTION = "app_settings";
 const ROLE_MANAGEMENT_DOC = "role_management";
+const USERS_COLLECTION = "users"; // New collection for user profiles
 
 export interface SessionData {
   username: string; 
@@ -75,7 +76,6 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     userRole = "staff";
   }
 
-
   if (!userRole) {
     if (ownerEmails.length === 0 && staffEmails.length === 0) {
       return { error: "Login failed: No authorized users (owners or staff) are configured in the system. Please contact an administrator." };
@@ -83,11 +83,34 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     return { error: "Login failed: This email address is not authorized to access the application." };
   }
 
+  // Fetch or create user profile from Firestore
+  const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
+  let userDisplayName = userEmailLower; // Default display name
+
+  try {
+    const userDocSnap = await getDoc(userDocRef);
+    if (userDocSnap.exists()) {
+      const userData = userDocSnap.data();
+      if (userData.displayName && typeof userData.displayName === 'string' && userData.displayName.trim() !== "") {
+        userDisplayName = userData.displayName;
+      } else {
+        // Document exists but no valid displayName, update it with email
+        await updateDoc(userDocRef, { displayName: userEmailLower, email: userEmailLower }); // ensure email is also there
+      }
+    } else {
+      // User document doesn't exist, create it with email as displayName
+      await setDoc(userDocRef, { email: userEmailLower, displayName: userEmailLower });
+    }
+  } catch (dbError) {
+    console.error("Error accessing/creating user document in Firestore:", dbError);
+    // Proceed with email as display name, but log the error. Don't fail login.
+  }
+
   const sessionData: SessionData = {
-    username: email, // Keep username as email for potential unique ID
+    username: email, 
     email: email,
     role: userRole,
-    name: email, // Initialize display name to email; can be changed via profile
+    name: userDisplayName, // Use fetched/default display name
   };
 
   const cookieSecure = true; 
@@ -144,13 +167,33 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
   if (!newName || newName.trim().length === 0) {
     return { success: false, message: "Display name cannot be empty." };
   }
-  if (newName.trim().length > 50) {
+  const newTrimmedName = newName.trim();
+  if (newTrimmedName.length > 50) {
     return { success: false, message: "Display name cannot exceed 50 characters." };
   }
 
+  const userEmailLower = session.email.toLowerCase();
+  const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
+
+  try {
+    // Update Firestore document
+    const userDocSnap = await getDoc(userDocRef);
+    if (userDocSnap.exists()) {
+      await updateDoc(userDocRef, { displayName: newTrimmedName });
+    } else {
+      // This case should ideally not happen if sign-in creates the doc, but handle defensively
+      await setDoc(userDocRef, { email: userEmailLower, displayName: newTrimmedName });
+      console.warn(`User document for ${userEmailLower} was created during display name update. This might indicate an issue with the sign-in flow not creating the user document initially.`);
+    }
+  } catch (dbError) {
+    console.error("Error updating user displayName in Firestore:", dbError);
+    return { success: false, message: "Failed to save display name to the database. Please try again." };
+  }
+
+  // Update session cookie
   const updatedSessionData: SessionData = {
     ...session,
-    name: newName.trim(), // Update the name field which is used as display name
+    name: newTrimmedName, 
   };
   
   const cookieSecure = true;
@@ -167,6 +210,8 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
     return { success: true, message: "Display name updated successfully." };
   } catch (error) {
     console.error("Failed to update session cookie for display name:", error);
-    return { success: false, message: "Failed to update your session. Please try again." };
+    // Note: Firestore update succeeded, but cookie update failed. This could lead to inconsistency until next login.
+    return { success: false, message: "Display name was saved to the database, but failed to update your current session. Changes will reflect on next login." };
   }
 }
+
