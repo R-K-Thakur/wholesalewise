@@ -6,14 +6,14 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, Search as SearchIcon } from "lucide-react"; // Added SearchIcon
+import { ArrowLeft, PlusCircle, Trash2, Loader2, Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"; // Import Command components
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
   Form,
   FormControl,
@@ -64,21 +64,32 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   const watchSaleType = form.watch("saleType");
 
   const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
-  // This state holds the text for the main input field, which also drives the CommandInput
-  const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>(
-    form.getValues("items").map(() => "")
-  );
+  const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>([]);
 
   React.useEffect(() => {
-    const formItemsCount = form.getValues("items").length;
-    if (formItemsCount !== itemSearchTexts.length) {
-        const newSearchTexts = Array(formItemsCount).fill("").map((_, i) => {
-            return itemSearchTexts[i] !== undefined ? itemSearchTexts[i] : "";
-        });
-        setItemSearchTexts(newSearchTexts);
+    // Initialize or update itemSearchTexts based on the number of fields
+    const newSearchTexts = form.getValues("items").map((item, i) => {
+      const product = allProducts.find(p => p.id === item.productId);
+      return product ? product.name : (itemSearchTexts[i] || "");
+    });
+    if (newSearchTexts.length !== itemSearchTexts.length || newSearchTexts.some((text, i) => text !== itemSearchTexts[i])) {
+      setItemSearchTexts(newSearchTexts);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields.length]); // Only run when number of fields changes
+  }, [fields.length, form.getValues("items").map(i => i.productId).join(',')]); // Re-run if product IDs change (e.g., on initial load)
+
+  React.useEffect(() => {
+    // Ensure itemSearchTexts array has the same length as fields array
+    if (fields.length !== itemSearchTexts.length) {
+      setItemSearchTexts(currentSearchTexts => {
+        const newTexts = [...currentSearchTexts];
+        while (newTexts.length < fields.length) {
+          newTexts.push(""); // Add empty strings for new items
+        }
+        return newTexts.slice(0, fields.length); // Truncate if items were removed
+      });
+    }
+  }, [fields.length]);
 
 
   const handleAddItem = () => {
@@ -89,7 +100,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : PRODUCT_UNITS[0],
       baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : PRODUCT_UNITS[0]
     });
-    setItemSearchTexts(prev => [...prev, ""]);
+    setItemSearchTexts(prev => [...prev, ""]); // Add new empty search text
   };
 
   const handleRemoveItem = (index: number) => {
@@ -122,11 +133,10 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       form.trigger(`items.${itemIndex}.soldUnit`);
       form.clearErrors(`items.${itemIndex}.productId`);
 
-      // Update the main input text to the selected product's name
       const newSearchTexts = [...itemSearchTexts];
       newSearchTexts[itemIndex] = product.name;
       setItemSearchTexts(newSearchTexts);
-      setOpenComboboxIndex(null); // Close the popover
+      setOpenComboboxIndex(null);
     }
   };
 
@@ -246,7 +256,6 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        {/* ... other form fields (saleType, saleDate, paymentMethod, customerName) ... */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
           <FormField
             control={form.control}
@@ -354,12 +363,8 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                                 const newSearchTexts = [...itemSearchTexts];
                                 newSearchTexts[index] = currentVal;
                                 setItemSearchTexts(newSearchTexts);
-
-                                // Clear actual productId if user types, forcing re-selection
-                                if (RHFfield.value) {
-                                    RHFfield.onChange('');
-                                }
-                                setOpenComboboxIndex(index); // Ensure popover opens
+                                if (RHFfield.value) { RHFfield.onChange(''); } // Clear selection if typing
+                                setOpenComboboxIndex(index);
                             }}
                             onFocus={() => {
                                 if (allProducts.length > 0) {
@@ -372,37 +377,24 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                       <PopoverContent className="w-[--radix-popover-trigger-width)] p-0" align="start" side="bottom">
                         <Command
                             filter={(value, search) => {
-                                // CMDK's filter prop is tricky for complex objects / async.
-                                // We will do manual filtering in the CommandList render.
-                                // Return 1 to allow manual filtering based on `itemSearchTexts`.
-                                return 1;
+                                return 1; // Allow manual filtering
                             }}
                         >
-                          <CommandInput
-                            placeholder="Search product..."
-                            value={itemSearchTexts[index]} // Sync with outer input
-                            onValueChange={(searchValue) => { // When CommandInput changes, update outer input
-                                const newSearchTexts = [...itemSearchTexts];
-                                newSearchTexts[index] = searchValue;
-                                setItemSearchTexts(newSearchTexts);
-                                if (RHFfield.value) { RHFfield.onChange(''); } // Clear selection if typing in command
-                            }}
-                          />
                           <CommandList>
                             <CommandEmpty>No product found.</CommandEmpty>
                             <CommandGroup>
                               {allProducts
                                 .filter(p => {
                                     const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                    if (!searchText) return true; // Show all if no search text
+                                    if (!searchText) return true;
                                     return p.name.toLowerCase().includes(searchText) ||
                                         (p.sku && p.sku.toLowerCase().includes(searchText));
                                 })
-                                .slice(0,10) // Limit results for performance
+                                .slice(0,10)
                                 .map((product) => (
                                 <CommandItem
                                   key={product.id}
-                                  value={product.name} // Value for CMDK's internal matching/selection (might need to be product.id if names aren't unique)
+                                  value={product.name}
                                   onSelect={() => {
                                     if (product.quantityInStock === 0) {
                                         toast({ title: "Out of Stock", description: `${product.name} is currently out of stock.`, variant: "destructive"});
@@ -477,7 +469,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                   name={`items.${index}.pricePerUnitSold`}
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Price/Unit (₹)</FormLabel>
+                      <FormLabel>Price/Unit (\u20B9)</FormLabel>
                       <FormControl>
                         <Input type="number" placeholder="e.g., 700.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
                       </FormControl>
@@ -486,7 +478,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                   )}
                 />
                  <div className="flex flex-col justify-end">
-                    <FormLabel>Item Total (₹)</FormLabel>
+                    <FormLabel>Item Total (\u20B9)</FormLabel>
                     <Input
                         type="text"
                         readOnly
@@ -524,7 +516,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
 
         <div className="mt-6 pt-4 border-t">
             <p className="text-xl font-semibold text-right">
-                Grand Total: ₹{calculateGrandTotal().toFixed(2)}
+                Grand Total: \u20B9{calculateGrandTotal().toFixed(2)}
             </p>
         </div>
 
@@ -623,5 +615,3 @@ export default function NewSalePage() {
     </div>
   );
 }
-
-    

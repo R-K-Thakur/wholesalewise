@@ -80,16 +80,16 @@ export default async function SaleDetailPage({ params }: SaleDetailPageProps) {
                   <tr key={`${item.productId}-${index}`}>
                     <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-foreground">{item.productNameSnapshot}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{item.quantitySold}</td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{item.unitSnapshot}</td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">₹{item.pricePerUnitSold.toFixed(2)}</td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">₹{item.total.toFixed(2)}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{item.soldUnit}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">\u20B9{item.pricePerUnitSold.toFixed(2)}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">\u20B9{item.total.toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <div className="mt-4 text-right">
-            <p className="text-lg font-semibold">Grand Total: ₹{sale.totalAmount.toFixed(2)}</p>
+            <p className="text-lg font-semibold">Grand Total: \u20B9{sale.totalAmount.toFixed(2)}</p>
           </div>
         </CardContent>
       </Card>

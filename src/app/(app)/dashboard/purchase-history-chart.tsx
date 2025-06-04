@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis, Tooltip as RechartsTooltip } from "recharts";
 import {
   Card,
   CardContent,
@@ -13,7 +13,6 @@ import {
 import {
   ChartConfig,
   ChartContainer,
-  ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
 import type { Purchase, PurchaseTrend } from "@/lib/types";
@@ -34,8 +33,8 @@ interface PurchaseHistoryChartProps {
 
 const chartConfig = {
   totalPurchases: {
-    label: "Purchases (₹)",
-    color: "hsl(var(--chart-2))", // Using chart-2 color for differentiation
+    label: "Purchases (\u20B9)", // Using chart-2 color for differentiation
+    color: "hsl(var(--chart-2))",
   },
 } satisfies ChartConfig;
 
@@ -159,13 +158,13 @@ export function PurchaseHistoryChart({ purchases }: PurchaseHistoryChartProps) {
                 tickFormatter={(value) => value.slice(0, 6)}
               />
               <YAxis
-                tickFormatter={(value) => `₹${value.toLocaleString()}`}
+                tickFormatter={(value) => `\u20B9${value.toLocaleString()}`}
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
                 width={80}
               />
-              <ChartTooltip
+              <RechartsTooltip
                 cursor={false}
                 content={<ChartTooltipContent indicator="dashed" />}
               />

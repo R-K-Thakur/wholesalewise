@@ -2,12 +2,11 @@
 "use client";
 
 import * as React from "react";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"; // Removed ResponsiveContainer from here
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis, Tooltip as RechartsTooltip } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   ChartConfig,
   ChartContainer,
-  ChartTooltip, // This is RechartsPrimitive.Tooltip from shadcn/ui/chart
   ChartTooltipContent,
 } from "@/components/ui/chart";
 import type { Sale } from "@/lib/types";
@@ -22,7 +21,7 @@ interface SalesTrendChartProps {
 
 const chartConfig = {
   totalSales: {
-    label: "Sales (₹)",
+    label: "Sales (\u20B9)",
     color: "hsl(var(--chart-1))",
   },
 } satisfies ChartConfig;
@@ -142,16 +141,16 @@ export function SalesTrendChart({ sales }: SalesTrendChartProps) {
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                tickFormatter={(value) => value.slice(0, 6)} // Shorten date display if needed
+                tickFormatter={(value) => value.slice(0, 6)} 
               />
               <YAxis
-                tickFormatter={(value) => `₹${value.toLocaleString()}`}
+                tickFormatter={(value) => `\u20B9${value.toLocaleString()}`}
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
                 width={80}
               />
-              <ChartTooltip
+              <RechartsTooltip
                 cursor={false}
                 content={<ChartTooltipContent indicator="dashed" />}
               />
