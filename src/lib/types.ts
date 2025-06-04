@@ -29,15 +29,18 @@ export interface Product {
 }
 
 export interface Purchase {
-  id:string;
+  id: string;
   productId: string;
   productNameSnapshot: string; // Snapshot of product name at time of purchase
   quantityPurchased: number; // In purchaseUnits of the product
-  purchasePricePerUnitSnapshot: number; // Price per purchaseUnit
+  purchaseUnitSnapshot: ProductUnit; // Snapshot of the product's purchaseUnit
+  purchasePricePerUnitSnapshot: number; // Price per purchaseUnit at time of purchase
   totalCost: number;
   purchaseDate: string; // ISO Date string
-  vendor?: string;
-  notes?: string;
+  // vendor?: string; // Kept minimal for now based on current "Add Stock"
+  // notes?: string;  // Kept minimal
+  createdAt: string; // ISO Date string
+  updatedAt: string; // ISO Date string
 }
 
 export interface Sale {
@@ -65,9 +68,10 @@ export interface SaleItem {
 
 // For forms - typically omit id, createdAt, updatedAt, and snapshots
 export type ProductFormData = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'quantityInStock'> & { initialStockInPurchaseUnits: number }; // initialStock is in purchase units for new product form
-export type PurchaseFormData = Omit<Purchase, 'id' | 'productNameSnapshot' | 'totalCost' | 'purchaseDate'> & { purchaseDate?: Date };
+export type PurchaseFormData = Omit<Purchase, 'id' | 'productNameSnapshot' | 'totalCost' | 'purchaseDate' | 'purchaseUnitSnapshot' | 'createdAt' | 'updatedAt'> & { purchaseDate?: Date };
 
-export type SaleItemFormData = Omit<SaleItem, 'productNameSnapshot' | 'baseUnitSnapshot' | 'total' | 'pricePerUnitSold'> & { pricePerUnitSold?: number }; // pricePerUnitSold is optional as it will be set
+
+export type SaleItemFormData = Omit<SaleItem, 'productNameSnapshot' | 'total' | 'pricePerUnitSold'> & { pricePerUnitSold?: number };
 export type SaleFormData = {
   items: SaleItemFormData[];
   saleType: 'wholesale' | 'retail';
@@ -90,6 +94,7 @@ export interface SalesTrend {
 }
 
 export interface PurchaseTrend {
-  date: string;
-  totalPurchases: number;
+  date: string; // Formatted date string for chart (e.g., "MMM d")
+  totalPurchases: number; // Total cost of purchases on this date
+  fullDate?: string; // Original full date for sorting if needed (e.g., "yyyy-MM-dd")
 }

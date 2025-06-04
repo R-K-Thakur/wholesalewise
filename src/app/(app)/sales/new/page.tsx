@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils";
 import type { Product } from "@/lib/types";
 import { getProductsAction } from "../../products/actions";
 import { useToast } from "@/hooks/use-toast";
-import { saleFormSchema, type SaleFormData, type SaleItemFormData, type RecordSaleActionPayload } from "../schema";
+import { saleFormSchema, type SaleFormData, type RecordSaleActionPayload } from "../schema";
 import { recordSaleAction } from "../actions";
 import type { ProductUnit } from "@/lib/constants";
 
@@ -47,10 +47,18 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   const form = useForm<SaleFormData>({
     resolver: zodResolver(saleFormSchema),
     defaultValues: {
-      saleType: 'retail', // Always default to retail
+      saleType: 'retail', 
       saleDate: new Date().toISOString().split('T')[0],
-      items: [{ productId: '', quantitySold: 1, pricePerUnitSold: 0 }],
+      items: [{ 
+        productId: '', 
+        quantitySold: 1, 
+        pricePerUnitSold: 0,
+        soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece', // Default based on first product or 'piece'
+        baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece'
+      }],
       paymentMethod: 'cash',
+      customerName: '',
+      notes: '',
     },
   });
 
@@ -60,6 +68,29 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   });
 
   const watchItems = form.watch("items");
+  const watchSaleType = form.watch("saleType");
+
+  React.useEffect(() => {
+    watchItems.forEach((item, index) => {
+        const product = allProducts.find(p => p.id === item.productId);
+        if (product) {
+            const price = watchSaleType === 'wholesale' 
+                ? product.wholesalePricePerBaseUnit 
+                : product.retailPricePerBaseUnit;
+            
+            // If sold unit is purchase unit and differs from base unit, adjust price
+            let pricePerSoldUnit = price;
+            if (item.soldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor > 0) {
+                pricePerSoldUnit = price * product.purchaseUnitConversionFactor;
+            }
+            
+            if (form.getValues(`items.${index}.pricePerUnitSold`) !== pricePerSoldUnit) {
+                 form.setValue(`items.${index}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)));
+            }
+        }
+    });
+  }, [watchSaleType, watchItems, allProducts, form]);
+
 
   async function onSubmit(data: SaleFormData) {
     form.clearErrors();
@@ -77,13 +108,14 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       itemsForAction.push({
         ...item,
         productNameSnapshot: product.name,
-        unitSnapshot: product.unit,
         total: itemTotal,
       });
     }
     
     const payload: RecordSaleActionPayload = {
       ...data,
+      customerName: data.customerName || undefined,
+      notes: data.notes || undefined,
       items: itemsForAction,
       totalAmount,
     };
@@ -118,14 +150,40 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     const product = allProducts.find(p => p.id === productId);
     if (product) {
       form.setValue(`items.${itemIndex}.productId`, product.id);
+      form.setValue(`items.${itemIndex}.baseUnitSnapshot`, product.baseUnit);
+      // Default soldUnit to baseUnit, user can change if they sell in purchaseUnit
+      form.setValue(`items.${itemIndex}.soldUnit`, product.baseUnit); 
+      
       const currentSaleType = form.getValues("saleType");
-      const price = currentSaleType === 'wholesale' ? product.wholesalePrice : product.retailPrice;
-      form.setValue(`items.${itemIndex}.pricePerUnitSold`, price);
+      const pricePerBaseUnit = currentSaleType === 'wholesale' 
+          ? product.wholesalePricePerBaseUnit 
+          : product.retailPricePerBaseUnit;
+
+      form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerBaseUnit.toFixed(2)));
       form.trigger(`items.${itemIndex}.pricePerUnitSold`); 
+      form.trigger(`items.${itemIndex}.soldUnit`);
       form.clearErrors(`items.${itemIndex}.productId`); 
     }
   };
   
+  const handleSoldUnitChange = (itemIndex: number, newSoldUnit: ProductUnit) => {
+    form.setValue(`items.${index}.soldUnit`, newSoldUnit);
+    const product = allProducts.find(p => p.id === form.getValues(`items.${itemIndex}.productId`));
+    if (product) {
+        const currentSaleType = form.getValues("saleType");
+        const pricePerBaseUnit = currentSaleType === 'wholesale' 
+            ? product.wholesalePricePerBaseUnit 
+            : product.retailPricePerBaseUnit;
+        
+        let pricePerSoldUnit = pricePerBaseUnit;
+        if (newSoldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor > 0) {
+            pricePerSoldUnit = pricePerBaseUnit * product.purchaseUnitConversionFactor;
+        }
+        form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)));
+    }
+  };
+
+
   const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
 
   const calculateGrandTotal = () => {
@@ -152,14 +210,6 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                     onCheckedChange={(checked) => {
                       const newSaleType = checked ? 'wholesale' : 'retail';
                       field.onChange(newSaleType);
-                      // Update prices when sale type changes
-                      watchItems.forEach((item, index) => {
-                        const product = allProducts.find(p => p.id === item.productId);
-                        if (product) {
-                          const newPrice = newSaleType === 'wholesale' ? product.wholesalePrice : product.retailPrice;
-                          form.setValue(`items.${index}.pricePerUnitSold`, newPrice);
-                        }
-                      });
                     }}
                   />
                 </FormControl>
@@ -168,7 +218,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                     Wholesale Sale
                   </FormLabel>
                   <ShadFormDescription>
-                    Mark if this is a wholesale transaction.
+                    Mark if this is a wholesale transaction. Prices adjust automatically.
                   </ShadFormDescription>
                 </div>
                 <FormMessage />
@@ -228,7 +278,13 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         
         <div>
           <h3 className="text-lg font-medium text-foreground mb-2">Items</h3>
-          {fields.map((item, index) => (
+          {fields.map((item, index) => {
+            const selectedProduct = allProducts.find(p => p.id === watchItems[index]?.productId);
+            const availableUnits: ProductUnit[] = selectedProduct ? 
+                (selectedProduct.baseUnit === selectedProduct.purchaseUnit ? [selectedProduct.baseUnit] : [selectedProduct.baseUnit, selectedProduct.purchaseUnit]) 
+                : ['piece'];
+
+            return (
             <Card key={item.id} className="mb-4 p-4 space-y-3 bg-card/50 dark:bg-card/80">
               <FormField
                 control={form.control}
@@ -280,7 +336,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                                         : "opacity-0"
                                     )}
                                   />
-                                  {product.name} (Stock: {product.quantityInStock} {product.unit})
+                                  {product.name} (Stock: {product.quantityInStock} {product.baseUnit})
                                   {product.quantityInStock === 0 && <span className="ml-auto text-xs text-destructive">Out of Stock</span>}
                                 </CommandItem>
                               ))}
@@ -293,7 +349,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                   </FormItem>
                 )}
               />
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <FormField
                   control={form.control}
                   name={`items.${index}.quantitySold`}
@@ -301,8 +357,34 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                     <FormItem>
                       <FormLabel>Quantity</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 2" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)} />
+                        <Input type="number" placeholder="e.g., 2" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)} min="1" />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name={`items.${index}.soldUnit`}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Unit Sold</FormLabel>
+                      <Select 
+                        onValueChange={(value) => handleSoldUnitChange(index, value as ProductUnit)} 
+                        value={field.value}
+                        disabled={!selectedProduct}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select unit" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {availableUnits.map(unit => (
+                            <SelectItem key={unit} value={unit}>{unit}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -344,12 +426,19 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                 </Button>
               </div>
             </Card>
-          ))}
+            );
+          })}
           <Button
             type="button"
             variant="outline"
             className="w-full mt-2"
-            onClick={() => append({ productId: '', quantitySold: 1, pricePerUnitSold: 0 } as SaleItemFormData)}
+            onClick={() => append({ 
+                productId: '', 
+                quantitySold: 1, 
+                pricePerUnitSold: 0, 
+                soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece',
+                baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece'
+             })}
           >
             <PlusCircle className="h-4 w-4 mr-2" /> Add Another Item
           </Button>

@@ -5,10 +5,11 @@ import { revalidatePath } from 'next/cache';
 import { collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, Timestamp, query, orderBy, runTransaction } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { ValidatedProductFormData } from './schema';
-import type { Product } from '@/lib/types';
+import type { Product, Purchase } from '@/lib/types';
 import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from '@/lib/constants';
 
 const PRODUCTS_COLLECTION = 'products';
+const PURCHASES_COLLECTION = 'purchases'; // New collection for purchase records
 
 const mapDocToProduct = (document: import('firebase/firestore').DocumentSnapshot | import('firebase/firestore').QueryDocumentSnapshot): Product => {
   const data = document.data();
@@ -137,9 +138,14 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
     if (data.baseUnit !== undefined) updateData.baseUnit = data.baseUnit;
     if (data.purchaseUnit !== undefined) updateData.purchaseUnit = data.purchaseUnit;
     
-    // Determine the final conversion factor
-    const finalBaseUnit = data.baseUnit || (await getDoc(productRef)).data()?.baseUnit;
-    const finalPurchaseUnit = data.purchaseUnit || (await getDoc(productRef)).data()?.purchaseUnit;
+    const currentDocSnap = await getDoc(productRef);
+    if (!currentDocSnap.exists()) {
+        return { success: false, message: 'Product not found.' };
+    }
+    const currentProductData = currentDocSnap.data();
+
+    const finalBaseUnit = data.baseUnit || currentProductData?.baseUnit;
+    const finalPurchaseUnit = data.purchaseUnit || currentProductData?.purchaseUnit;
 
     if (finalBaseUnit === finalPurchaseUnit) {
         updateData.purchaseUnitConversionFactor = 1;
@@ -148,20 +154,14 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
     } else if (data.purchaseUnitConversionFactor !== undefined && data.purchaseUnitConversionFactor >= 1) {
         updateData.purchaseUnitConversionFactor = data.purchaseUnitConversionFactor;
     } else if (finalBaseUnit !== finalPurchaseUnit) {
-        // If units are different, and not dozen/piece, and factor is not provided or invalid,
-        // it's an issue unless it's already correctly set (this relies on schema validation for forms)
-        // For direct updates, this path assumes valid data or that schema validation covers it.
-        const currentDoc = await getDoc(productRef);
-        if (currentDoc.exists()) {
-            const currentProductData = currentDoc.data();
-            if (currentProductData.purchaseUnitConversionFactor && currentProductData.purchaseUnitConversionFactor >=1){
-                 // keep existing if not specified
-                 if (data.purchaseUnitConversionFactor === undefined) {
-                    updateData.purchaseUnitConversionFactor = currentProductData.purchaseUnitConversionFactor;
-                 }
-            } else {
+        if (currentProductData.purchaseUnitConversionFactor && currentProductData.purchaseUnitConversionFactor >=1){
+             if (data.purchaseUnitConversionFactor === undefined) { // if not being explicitly updated
+                updateData.purchaseUnitConversionFactor = currentProductData.purchaseUnitConversionFactor;
+             } else { // explicitly updated to something invalid (caught by schema for forms)
                  return { success: false, message: 'Conversion factor is required and must be >= 1 if base and purchase units differ (and not dozen/piece).' };
-            }
+             }
+        } else {
+             return { success: false, message: 'Conversion factor is required and must be >= 1 if base and purchase units differ (and not dozen/piece).' };
         }
     }
 
@@ -224,6 +224,7 @@ export async function addStockToProductAction(
 
   try {
     const productRef = doc(db, PRODUCTS_COLLECTION, productId);
+    const purchaseCollectionRef = collection(db, PURCHASES_COLLECTION);
 
     await runTransaction(db, async (transaction) => {
       const productDoc = await transaction.get(productRef);
@@ -231,31 +232,76 @@ export async function addStockToProductAction(
         throw new Error("Product not found.");
       }
 
-      const productData = productDoc.data() as Product; // Assuming Product type is correct
+      const productData = productDoc.data() as Product; // Use full Product type
       const conversionFactor = productData.purchaseUnitConversionFactor || 1;
       const quantityAddedInBaseUnits = quantityAddedInPurchaseUnits * conversionFactor;
 
       const newStockInBaseUnits = (productData.quantityInStock || 0) + quantityAddedInBaseUnits;
+      const nowISO = Timestamp.now().toDate().toISOString();
 
-      const updatePayload: any = {
+      const productUpdatePayload: any = {
         quantityInStock: newStockInBaseUnits,
-        updatedAt: Timestamp.now().toDate().toISOString(),
+        updatedAt: nowISO,
       };
 
+      let purchasePriceForRecord = productData.purchasePrice;
       if (newPurchasePricePerPurchaseUnit !== undefined && newPurchasePricePerPurchaseUnit >= 0) {
-        updatePayload.purchasePrice = newPurchasePricePerPurchaseUnit;
+        productUpdatePayload.purchasePrice = newPurchasePricePerPurchaseUnit;
+        purchasePriceForRecord = newPurchasePricePerPurchaseUnit;
       }
       
-      transaction.update(productRef, updatePayload);
+      transaction.update(productRef, productUpdatePayload);
+
+      // Create a purchase record
+      const purchaseRecord: Omit<Purchase, 'id'> = {
+        productId: productId,
+        productNameSnapshot: productData.name,
+        quantityPurchased: quantityAddedInPurchaseUnits,
+        purchaseUnitSnapshot: productData.purchaseUnit,
+        purchasePricePerUnitSnapshot: purchasePriceForRecord,
+        totalCost: quantityAddedInPurchaseUnits * purchasePriceForRecord,
+        purchaseDate: nowISO,
+        createdAt: nowISO,
+        updatedAt: nowISO,
+      };
+      transaction.set(doc(purchaseCollectionRef), purchaseRecord);
     });
 
     revalidatePath('/products');
     revalidatePath(`/products/${productId}/edit`);
-    revalidatePath('/dashboard');
+    revalidatePath('/dashboard'); // For purchase history chart
     
-    return { success: true, message: "Stock added successfully!" };
+    return { success: true, message: "Stock added and purchase recorded successfully!" };
   } catch (error) {
     console.error("Error adding stock to product:", error);
     return { success: false, message: `Failed to add stock: ${error instanceof Error ? error.message : "Unknown error"}` };
+  }
+}
+
+// Action to fetch purchase records
+export async function getPurchasesAction(): Promise<Purchase[]> {
+  try {
+    const q = query(collection(db, PURCHASES_COLLECTION), orderBy("purchaseDate", "desc"));
+    const querySnapshot = await getDocs(q);
+    const purchases = querySnapshot.docs.map(docSnap => {
+      const data = docSnap.data();
+      const nowAsISO = new Date().toISOString();
+      return {
+        id: docSnap.id,
+        productId: data.productId || '',
+        productNameSnapshot: data.productNameSnapshot || '',
+        quantityPurchased: data.quantityPurchased || 0,
+        purchaseUnitSnapshot: data.purchaseUnitSnapshot || 'piece',
+        purchasePricePerUnitSnapshot: data.purchasePricePerUnitSnapshot || 0,
+        totalCost: data.totalCost || 0,
+        purchaseDate: data.purchaseDate ? (data.purchaseDate.toDate ? data.purchaseDate.toDate().toISOString() : data.purchaseDate) : nowAsISO,
+        createdAt: data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().toISOString() : data.createdAt) : nowAsISO,
+        updatedAt: data.updatedAt ? (data.updatedAt.toDate ? data.updatedAt.toDate().toISOString() : data.updatedAt) : nowAsISO,
+      } as Purchase;
+    });
+    return purchases;
+  } catch (error) {
+    console.error("Error fetching purchases from Firestore:", error);
+    return [];
   }
 }

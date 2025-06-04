@@ -3,14 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Package, ShoppingCart, IndianRupee, PlusCircle, Search, TrendingUp, History } from "lucide-react";
-import { getProductsAction } from "../products/actions";
+import { getProductsAction, getPurchasesAction } from "../products/actions"; // Added getPurchasesAction
 import { getSalesAction } from "../sales/actions";
-import type { Product } from "@/lib/types";
+import type { Product, Purchase } from "@/lib/types"; // Added Purchase type
 import type { Sale } from "@/lib/types";
 import { LowStockWidget } from "./low-stock-widget";
 import { getSession, type SessionData } from "@/app/login/actions";
 import { DashboardProductSearchWidget } from "./dashboard-product-search-widget";
 import { SalesTrendChart } from "./sales-trend-chart";
+import { PurchaseHistoryChart } from "./purchase-history-chart"; // Import new chart
 
 
 export default async function DashboardPage() {
@@ -19,6 +20,7 @@ export default async function DashboardPage() {
 
   const products: Product[] = await getProductsAction();
   const sales: Sale[] = await getSalesAction();
+  const purchases: Purchase[] = await getPurchasesAction(); // Fetch purchases
 
   let totalRevenue = 0;
   let totalSalesUnits = 0;
@@ -104,23 +106,9 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-1"> {/* Changed to 1 column for now to give sales chart more space */}
+      <div className="grid gap-4 md:grid-cols-1">
         <SalesTrendChart sales={sales} />
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><History className="h-5 w-5" /> Purchase History</CardTitle>
-            <CardDescription>View trends in your product purchases over time.</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[300px] flex flex-col items-center justify-center">
-             <p className="text-muted-foreground text-center">
-                The "Purchase History" chart requires a dedicated purchase tracking feature to be implemented.
-             </p>
-             <p className="text-sm text-muted-foreground mt-2 text-center">
-                Currently, stock is added directly to products. To see purchase trends, we'll need to build a system for recording individual purchase orders/transactions.
-             </p>
-            {/* TODO: Implement Purchase Tracking feature, then add Chart component for purchase history */}
-          </CardContent>
-        </Card>
+        <PurchaseHistoryChart purchases={purchases} /> 
       </div>
        <Card>
           <CardHeader>
@@ -134,4 +122,3 @@ export default async function DashboardPage() {
     </div>
   );
 }
-

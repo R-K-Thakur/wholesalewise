@@ -25,12 +25,13 @@ const mapDocToSale = (document: import('firebase/firestore').DocumentSnapshot | 
       productNameSnapshot: typeof item.productNameSnapshot === 'string' ? item.productNameSnapshot : '',
       quantitySold: typeof item.quantitySold === 'number' ? item.quantitySold : 0,
       pricePerUnitSold: typeof item.pricePerUnitSold === 'number' ? item.pricePerUnitSold : 0,
-      unitSnapshot: typeof item.unitSnapshot === 'string' ? item.unitSnapshot as ProductUnit : 'piece', 
+      soldUnit: typeof item.soldUnit === 'string' ? item.soldUnit as ProductUnit : 'piece', 
+      baseUnitSnapshot: typeof item.baseUnitSnapshot === 'string' ? item.baseUnitSnapshot as ProductUnit : 'piece',
       total: typeof item.total === 'number' ? item.total : 0,
     })) : [],
     totalAmount: typeof data.totalAmount === 'number' ? data.totalAmount : 0,
     saleType: ['wholesale', 'retail'].includes(data.saleType) ? data.saleType : 'retail',
-    saleDate: typeof data.saleDate === 'string' ? data.saleDate : nowAsISO,
+    saleDate: typeof data.saleDate === 'string' ? data.saleDate : nowAsISO, // Should be data.saleDate (already string)
     customerName: typeof data.customerName === 'string' ? data.customerName : '',
     paymentMethod: ['cash', 'card', 'online'].includes(data.paymentMethod) ? data.paymentMethod as Sale['paymentMethod'] : undefined,
     notes: typeof data.notes === 'string' ? data.notes : '',
@@ -59,13 +60,19 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
 
         const product = productSnap.data() as Omit<Product, 'id'>;
 
-        if (product.quantityInStock < item.quantitySold) {
+        // The quantitySold is in 'soldUnit'. We need to convert it to baseUnits if soldUnit is purchaseUnit.
+        let quantitySoldInBaseUnits = item.quantitySold;
+        if (item.soldUnit === product.purchaseUnit && product.baseUnit !== product.purchaseUnit) {
+          quantitySoldInBaseUnits = item.quantitySold * (product.purchaseUnitConversionFactor || 1);
+        }
+        
+        if (product.quantityInStock < quantitySoldInBaseUnits) {
           throw new Error(
-            `Insufficient stock for "${item.productNameSnapshot}". Available: ${product.quantityInStock}, Requested: ${item.quantitySold}.`
+            `Insufficient stock for "${item.productNameSnapshot}". Available (base units): ${product.quantityInStock}, Requested (base units): ${quantitySoldInBaseUnits}.`
           );
         }
 
-        const newStock = product.quantityInStock - item.quantitySold;
+        const newStock = product.quantityInStock - quantitySoldInBaseUnits;
         transaction.update(productRef, { quantityInStock: newStock, updatedAt: Timestamp.now().toDate().toISOString() });
         
         saleItemsForDb.push({
@@ -73,7 +80,8 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
           productNameSnapshot: item.productNameSnapshot,
           quantitySold: item.quantitySold,
           pricePerUnitSold: item.pricePerUnitSold,
-          unitSnapshot: item.unitSnapshot,
+          soldUnit: item.soldUnit,
+          baseUnitSnapshot: item.baseUnitSnapshot,
           total: item.quantitySold * item.pricePerUnitSold,
         });
         calculatedTotalAmount += item.quantitySold * item.pricePerUnitSold;
@@ -86,7 +94,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
       const now = Timestamp.now().toDate().toISOString();
       const newSaleData: Omit<Sale, 'id'> = {
         customerName: data.customerName || '',
-        saleDate: data.saleDate, 
+        saleDate: data.saleDate, // This is already a string like "YYYY-MM-DD"
         saleType: data.saleType,
         paymentMethod: data.paymentMethod,
         items: saleItemsForDb,
@@ -112,7 +120,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
 
 export async function getSalesAction(): Promise<Sale[]> {
   try {
-    const q = query(collection(db, SALES_COLLECTION), orderBy("createdAt", "desc"));
+    const q = query(collection(db, SALES_COLLECTION), orderBy("saleDate", "desc")); // Order by saleDate
     const querySnapshot = await getDocs(q);
     const sales = querySnapshot.docs.map(mapDocToSale);
     return sales;
