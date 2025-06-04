@@ -6,7 +6,7 @@ import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, PlusCircle, Trash2, Loader2 } from "lucide-react"; // Removed Check, ChevronsUpDown
+import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, ChevronsUpDown } from "lucide-react"; // Added Check, ChevronsUpDown
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -17,6 +17,7 @@ import {
   Command,
   CommandEmpty,
   CommandGroup,
+  CommandInput as ShadCNCommandInput, // Renamed to avoid conflict if used
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
@@ -70,31 +71,32 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   const watchSaleType = form.watch("saleType");
 
   const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
+  // itemSearchTexts will hold the text typed by the user in each product input field.
   const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>(
-    form.getValues("items").map(() => "") 
-  );
-
-  React.useEffect(() => {
-    const currentFormItems = form.getValues("items");
-    // Initialize or sync search texts based on product IDs in the form
-    const newSearchTexts = currentFormItems.map((item, idx) => {
+    // Initialize based on existing product names if any, or empty strings
+    form.getValues("items").map(item => {
       if (item.productId) {
         const product = allProducts.find(p => p.id === item.productId);
-        return product ? product.name : (itemSearchTexts[idx] || '');
+        return product ? product.name : "";
       }
-      // Preserve existing search text if no productId is set (e.g., user is typing)
-      return itemSearchTexts[idx] || '';
-    });
+      return "";
+    })
+  );
 
-    // Prevent unnecessary re-renders if search texts haven't actually changed
-    if (JSON.stringify(newSearchTexts) !== JSON.stringify(itemSearchTexts)) {
-      setItemSearchTexts(newSearchTexts);
+  // Effect to update itemSearchTexts if items are added/removed or productIds change externally
+  React.useEffect(() => {
+    const currentFormItems = form.getValues("items");
+    if (currentFormItems.length !== itemSearchTexts.length) {
+      setItemSearchTexts(currentFormItems.map((item, idx) => {
+          if (item.productId) {
+            const product = allProducts.find(p => p.id === item.productId);
+            return product ? product.name : (itemSearchTexts[idx] || '');
+          }
+          return itemSearchTexts[idx] || '';
+        })
+      );
     }
-  // watchItems dependency is important for reacting to form.setValue on productId
-  // allProducts is needed if products load asynchronously
-  // form and itemSearchTexts themselves should not be deps here to avoid loops.
-  }, [watchItems, allProducts, form]);
-
+  }, [fields.length, form, allProducts]); // Watch fields.length for add/remove
 
   const handleAddItem = () => {
     append({ 
@@ -104,7 +106,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece',
       baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece'
     });
-    setItemSearchTexts(prev => [...prev, ""]);
+    setItemSearchTexts(prev => [...prev, ""]); // Add empty search text for the new item
   };
 
   const handleRemoveItem = (index: number) => {
@@ -142,28 +144,33 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     form.clearErrors();
     let totalAmount = 0;
     const itemsForAction: RecordSaleActionPayload['items'] = [];
+    let hasError = false;
 
     for (const [index, item] of data.items.entries()) {
+      if (!item.productId) { // Check if a product was actually selected
+        toast({ title: "Error", description: `Product not selected for item ${index + 1}. Please type and select a product from the list.`, variant: "destructive"});
+        form.setError(`items.${index}.productId`, {message: "Product selection is required."});
+        hasError = true;
+        continue; 
+      }
       const product = allProducts.find(p => p.id === item.productId);
       if (!product) {
-        // Check if search text for this item might have been intended as the product
-        if (itemSearchTexts[index] && itemSearchTexts[index].trim() !== "") {
-             toast({ title: "Error", description: `Product "${itemSearchTexts[index]}" not finalized. Please select a product from the list for item ${index + 1}.`, variant: "destructive"});
-        } else {
-             toast({ title: "Error", description: `Product not selected for item ${index + 1}.`, variant: "destructive"});
-        }
-        form.setError(`items.${index}.productId`, {message: "Product selection is required."});
-        return;
+        toast({ title: "Error", description: `Invalid product for item ${index + 1}.`, variant: "destructive"});
+        form.setError(`items.${index}.productId`, {message: "Invalid product selected."});
+        hasError = true;
+        continue;
       }
       const itemTotal = (item.quantitySold || 0) * (item.pricePerUnitSold || 0);
       totalAmount += itemTotal;
       itemsForAction.push({
         ...item,
-        productNameSnapshot: product.name,
+        productNameSnapshot: product.name, // Ensure productNameSnapshot is from the actual product
         total: itemTotal,
       });
     }
     
+    if (hasError) return;
+
     const payload: RecordSaleActionPayload = {
       ...data,
       customerName: data.customerName || undefined,
@@ -198,7 +205,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       });
     }
   }
-
+  
   const handleProductSelectInternal = (itemIndex: number, productId: string) => {
     const product = allProducts.find(p => p.id === productId);
     if (product) {
@@ -216,6 +223,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       form.trigger(`items.${itemIndex}.soldUnit`);
       form.clearErrors(`items.${itemIndex}.productId`);
 
+      // Update the search text to the selected product's name
       const newSearchTexts = [...itemSearchTexts];
       newSearchTexts[itemIndex] = product.name;
       setItemSearchTexts(newSearchTexts);
@@ -223,7 +231,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   };
   
   const handleSoldUnitChange = (itemIndex: number, newSoldUnit: ProductUnit) => {
-    form.setValue(`items.${itemIndex}.soldUnit`, newSoldUnit); // Use form.setValue to trigger watchItems effect
+    form.setValue(`items.${itemIndex}.soldUnit`, newSoldUnit);
     const product = allProducts.find(p => p.id === form.getValues(`items.${itemIndex}.productId`));
     if (product) {
         const currentSaleType = form.getValues("saleType");
@@ -331,56 +339,46 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         
         <div>
           <h3 className="text-lg font-medium text-foreground mb-2">Items</h3>
-          {fields.map((item, index) => {
+          {fields.map((fieldItem, index) => { // Renamed `item` to `fieldItem` to avoid conflict
             const selectedProductForUnits = allProducts.find(p => p.id === watchItems[index]?.productId);
             const availableUnits: ProductUnit[] = selectedProductForUnits ? 
                 (selectedProductForUnits.baseUnit === selectedProductForUnits.purchaseUnit ? [selectedProductForUnits.baseUnit] : [selectedProductForUnits.baseUnit, selectedProductForUnits.purchaseUnit]) 
                 : ['piece'];
 
             return (
-            <Card key={item.id} className="mb-4 p-4 space-y-3 bg-card/50 dark:bg-card/80">
+            <Card key={fieldItem.id} className="mb-4 p-4 space-y-3 bg-card/50 dark:bg-card/80">
               <FormField
                 control={form.control}
                 name={`items.${index}.productId`}
-                render={({ field: RHFfield }) => ( 
+                render={({ field: RHFfield }) => ( // RHFfield for react-hook-form's field object
                   <FormItem className="flex flex-col">
                     <FormLabel>Product</FormLabel>
                     <Popover 
                         open={openComboboxIndex === index} 
                         onOpenChange={(isOpen) => {
                             setOpenComboboxIndex(isOpen ? index : null);
-                            if (!isOpen && !RHFfield.value && itemSearchTexts[index]?.trim()) {
-                                // If popover closes, no product ID is set, but there was search text,
-                                // we might want to clear the search text or validate.
-                                // For now, rely on form validation on submit.
-                            }
                         }}
                     >
                       <PopoverTrigger asChild>
-                        <FormControl>
-                          <Input
-                            placeholder="Type to search product..."
-                            value={itemSearchTexts[index] || ""}
-                            onChange={(e) => {
-                              const newSearchTexts = [...itemSearchTexts];
-                              newSearchTexts[index] = e.target.value;
-                              setItemSearchTexts(newSearchTexts);
-                              RHFfield.onChange(''); // Clear actual productId hidden field while searching
-                              if (e.target.value.trim() !== "") {
-                                setOpenComboboxIndex(index); // Open popover on type if not empty
-                              } else {
-                                setOpenComboboxIndex(null); // Close if input cleared
+                        {/* This Input is the main text search field */}
+                        <Input
+                          placeholder="Type to search product..."
+                          value={itemSearchTexts[index] || ""}
+                          onChange={(e) => {
+                            const newSearchTexts = [...itemSearchTexts];
+                            newSearchTexts[index] = e.target.value;
+                            setItemSearchTexts(newSearchTexts);
+                            RHFfield.onChange(''); // Clear actual productId from form while user is typing
+                            setOpenComboboxIndex(index); // Keep/open popover while typing
+                          }}
+                          onFocus={() => {
+                              // Open popover on focus if there are products or existing search text
+                              if (allProducts.length > 0 || (itemSearchTexts[index] || "").trim()) {
+                                  setOpenComboboxIndex(index);
                               }
-                            }}
-                            onFocus={() => {
-                                // Open only if there are products or initial search text
-                                if (allProducts.length > 0 || itemSearchTexts[index]?.trim()) {
-                                     setOpenComboboxIndex(index);
-                                }
-                            }}
-                            className="w-full"
-                          />
-                        </FormControl>
+                          }}
+                          className="w-full"
+                        />
                       </PopoverTrigger>
                       <PopoverContent className="w-[--radix-popover-trigger-width)] p-0" align="start" side="bottom">
                         <Command>
@@ -392,25 +390,30 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                               {allProducts
                                 .filter(p => {
                                     const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                    if (!searchText) return true; // Show all if search is empty (or handle differently) - for now show if empty
+                                    if (!searchText) return true; // Show all if search is empty
                                     return p.name.toLowerCase().includes(searchText) ||
                                            (p.sku && p.sku.toLowerCase().includes(searchText));
                                   }
                                 )
-                                .slice(0, 10) // Limit results for performance
+                                .slice(0, 10) // Limit results
                                 .map((product) => (
                                 <CommandItem
-                                  value={product.name} 
+                                  value={product.name} // Keep this for CMDK
                                   key={product.id}
                                   onSelect={() => {
-                                    RHFfield.onChange(product.id); 
-                                    handleProductSelectInternal(index, product.id);
-                                    setOpenComboboxIndex(null); 
+                                    // RHFfield.onChange(product.id); // This sets the form's productId
+                                    handleProductSelectInternal(index, product.id); // Custom handler updates text & form
+                                    setOpenComboboxIndex(null); // Close popover
                                   }}
                                   disabled={product.quantityInStock === 0}
-                                  className="cursor-pointer"
+                                  className="cursor-pointer flex justify-between items-center"
                                 >
-                                  {product.name} (Stock: {product.quantityInStock} {product.baseUnit})
+                                  <span>
+                                    {product.name} (Stock: {product.quantityInStock} {product.baseUnit})
+                                  </span>
+                                  {RHFfield.value === product.id && ( // Check if this product is selected
+                                    <Check className="ml-2 h-4 w-4" />
+                                  )}
                                   {product.quantityInStock === 0 && <span className="ml-auto text-xs text-destructive">Out of Stock</span>}
                                 </CommandItem>
                               ))}
@@ -614,4 +617,3 @@ export default function NewSalePage() {
     </div>
   );
 }
-
