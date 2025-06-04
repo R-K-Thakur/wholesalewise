@@ -22,14 +22,13 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import type { Product } from "@/lib/types";
 import { deleteProductAction, addStockToProductAction } from "./actions";
-import { ChevronLeft, ChevronRight, PlusCircle, Edit, Trash2, PackagePlus, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, PlusCircle, Edit, Trash2, PackagePlus, Loader2, Search } from "lucide-react";
 
 const ITEMS_PER_PAGE_STORAGE_KEY = "app-items-per-page";
 const DEFAULT_ITEMS_PER_PAGE = 10;
@@ -41,8 +40,10 @@ interface ProductListClientContentProps {
 export function ProductListClientContent({ products: initialProducts }: ProductListClientContentProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const [products, setProducts] = React.useState<Product[]>(initialProducts);
   
+  const [searchTerm, setSearchTerm] = React.useState("");
+  const [filteredProducts, setFilteredProducts] = React.useState<Product[]>(initialProducts);
+
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [productToDelete, setProductToDelete] = React.useState<Product | null>(null);
 
@@ -51,7 +52,6 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   const [quantityToAdd, setQuantityToAdd] = React.useState<number | string>("");
   const [newPurchasePrice, setNewPurchasePrice] = React.useState<number | string>("");
   const [isSubmittingStock, setIsSubmittingStock] = React.useState(false);
-
 
   const [currentPage, setCurrentPage] = React.useState(1);
   const [itemsPerPage, setItemsPerPage] = React.useState(DEFAULT_ITEMS_PER_PAGE);
@@ -66,9 +66,18 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   }, []);
 
   React.useEffect(() => {
-    setProducts(initialProducts);
-    setCurrentPage(1); 
-  }, [initialProducts]);
+    const lowercasedSearchTerm = searchTerm.toLowerCase().trim();
+    const newFilteredProducts = lowercasedSearchTerm
+      ? initialProducts.filter(product => 
+          product.name.toLowerCase().includes(lowercasedSearchTerm) ||
+          product.category.toLowerCase().includes(lowercasedSearchTerm) ||
+          (product.sku && product.sku.toLowerCase().includes(lowercasedSearchTerm))
+        )
+      : initialProducts;
+    setFilteredProducts(newFilteredProducts);
+    setCurrentPage(1); // Reset to first page on new search or data change
+  }, [initialProducts, searchTerm]);
+
 
   const handleDeleteClick = (product: Product) => {
     setProductToDelete(product);
@@ -83,7 +92,6 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
           title: "Success!",
           description: result.message,
         });
-        // Instead of local filter, refresh data from server for consistency
         router.refresh(); 
       } else {
         toast({
@@ -124,16 +132,15 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     if (result.success) {
       toast({ title: "Success", description: result.message });
       setIsAddStockDialogOpen(false);
-      router.refresh(); // Refresh data from server
+      router.refresh(); 
     } else {
       toast({ title: "Error", description: result.message, variant: "destructive" });
     }
     setIsSubmittingStock(false);
   };
 
-
-  const totalPages = Math.ceil(products.length / itemsPerPage);
-  const paginatedProducts = products.slice(
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  const paginatedProducts = filteredProducts.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
@@ -147,33 +154,25 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   };
   
   if (!isMounted) {
-    return (
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-border">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Category</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Stock (Base Unit)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Purch. Price</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Retail Price</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Wholesale Price</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Units (Base/Purch)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-card divide-y divide-border">
-            <tr>
-              <td colSpan={8} className="px-6 py-4 text-center text-sm text-muted-foreground">Loading products...</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    );
+    // Simplified loading state to prevent layout shifts before client-side hydration
+    return <div className="py-10 text-center text-muted-foreground">Loading products list...</div>;
   }
 
   return (
     <>
+      <div className="mb-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Search products by name, category, or SKU..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10 w-full md:w-1/2 lg:w-1/3"
+          />
+        </div>
+      </div>
+
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-border">
           <thead className="bg-muted/50">
@@ -214,15 +213,17 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
                 </td>
               </tr>
             ))}
-            {products.length === 0 && (
-              <tr>
-                <td colSpan={8} className="px-6 py-4 text-center text-sm text-muted-foreground">No products found.</td>
-              </tr>
-            )}
-             {products.length > 0 && paginatedProducts.length === 0 && (
+            {filteredProducts.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-6 py-4 text-center text-sm text-muted-foreground">
-                  No products on this page. Try adjusting filters or page number.
+                    {searchTerm ? `No products found matching "${searchTerm}".` : "No products found."}
+                </td>
+              </tr>
+            )}
+             {filteredProducts.length > 0 && paginatedProducts.length === 0 && currentPage > 1 && (
+              <tr>
+                <td colSpan={8} className="px-6 py-4 text-center text-sm text-muted-foreground">
+                  No products on this page. Try adjusting your search or page number.
                 </td>
               </tr>
             )}
@@ -230,10 +231,10 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
         </table>
       </div>
 
-      {products.length > itemsPerPage && (
+      {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Page {currentPage} of {totalPages} ({products.length} total items)
+            Page {currentPage} of {totalPages} ({filteredProducts.length} total items)
           </p>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={handlePrevPage} disabled={currentPage === 1}>
@@ -323,3 +324,4 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     </>
   );
 }
+

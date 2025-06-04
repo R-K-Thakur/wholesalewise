@@ -3,8 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PlusCircle } from "lucide-react";
 import Link from "next/link";
-import { getProductsAction } from "./actions"; // Assuming getProductsAction is defined in actions.ts
-// import type { Product } from "@/lib/types"; // No longer directly used here
+import { getProductsAction } from "./actions";
 import { ProductListClientContent } from "./product-list-client-content";
 
 
@@ -26,16 +25,13 @@ export default async function ProductsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Product List</CardTitle>
-          <CardDescription>View, edit, and manage your product inventory. Use filters to narrow down your search.</CardDescription>
+          <CardDescription>View, edit, and manage your product inventory. Use the search below to filter products.</CardDescription>
         </CardHeader>
         <CardContent>
-          {/* TODO: Implement Product Filters component */}
-          <p className="text-muted-foreground mb-4">Product filters (category, stock level, etc.) placeholder</p>
-          
           <ProductListClientContent products={products} />
-          
         </CardContent>
       </Card>
     </div>
   );
 }
+
