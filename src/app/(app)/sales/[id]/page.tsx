@@ -22,6 +22,17 @@ interface jsPDFWithAutoTable extends jsPDF {
 const DEFAULT_INVOICE_COLOR_HEX = "#73A7B3"; 
 const DEFAULT_INVOICE_COLOR_RGB_ARRAY = [115, 167, 179]; 
 
+interface ShopDetails {
+  shopName?: string;
+  shopAddress?: string;
+  shopContact?: string;
+}
+
+interface PdfOptions {
+  primaryColor?: string;
+  shopDetails?: ShopDetails;
+}
+
 function hexToRgb(hex: string): [number, number, number] | null {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   return result ? [
@@ -68,29 +79,51 @@ export default function SaleDetailPage() {
     fetchData();
   }, [saleId]);
 
-  const generateInvoicePDF = (outputType: 'save' | 'datauristring' = 'save', options?: { primaryColor?: string }): string | void => {
+  const generateInvoicePDF = (outputType: 'save' | 'datauristring' = 'save', options?: PdfOptions): string | void => {
     if (!sale) return;
     setIsProcessingA4Pdf(true);
 
     const userPrimaryColorHex = options?.primaryColor || session?.invoicePrimaryColor || DEFAULT_INVOICE_COLOR_HEX;
     const headerColorRgb = hexToRgb(userPrimaryColorHex) || DEFAULT_INVOICE_COLOR_RGB_ARRAY;
+    const currentShopName = options?.shopDetails?.shopName || session?.shopName || APP_NAME;
+    const currentShopAddress = options?.shopDetails?.shopAddress || session?.shopAddress;
+    const currentShopContact = options?.shopDetails?.shopContact || session?.shopContact;
 
     try {
       const doc = new jsPDF() as jsPDFWithAutoTable;
       const pageHeight = doc.internal.pageSize.height || doc.internal.pageSize.getHeight();
       const pageWidth = doc.internal.pageSize.width || doc.internal.pageSize.getWidth();
-      let startY = 20;
+      let startY = 15;
       const leftMargin = 15;
       const rightMargin = pageWidth - 15;
 
-      doc.setFontSize(18);
+      // Shop Name
+      doc.setFontSize(16);
       doc.setFont(undefined, 'bold');
-      doc.text(APP_NAME, pageWidth / 2, startY, { align: 'center' });
-      startY += 8;
+      doc.text(currentShopName, pageWidth / 2, startY, { align: 'center' });
+      startY += 7;
+
+      // Shop Address (if available)
+      if (currentShopAddress) {
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'normal');
+        const addressLines = doc.splitTextToSize(currentShopAddress, pageWidth - (leftMargin * 2));
+        doc.text(addressLines, pageWidth / 2, startY, { align: 'center' });
+        startY += (addressLines.length * 4) + 3;
+      }
+
+      // Shop Contact (if available)
+      if (currentShopContact) {
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'normal');
+        doc.text(currentShopContact, pageWidth / 2, startY, { align: 'center' });
+        startY += 7;
+      }
 
       doc.setFontSize(14);
+      doc.setFont(undefined, 'bold');
       doc.text("INVOICE", pageWidth / 2, startY, { align: 'center' });
-      startY += 12;
+      startY += 10;
 
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
@@ -195,30 +228,53 @@ export default function SaleDetailPage() {
     }
   };
 
-  const generateThermalReceiptPDF = (outputType: 'save' | 'datauristring' = 'save'): string | void => {
+  const generateThermalReceiptPDF = (outputType: 'save' | 'datauristring' = 'save', options?: PdfOptions): string | void => {
     if (!sale) return;
     setIsProcessingThermalPdf(true);
 
+    const currentShopName = options?.shopDetails?.shopName || session?.shopName || APP_NAME;
+    const currentShopAddress = options?.shopDetails?.shopAddress || session?.shopAddress;
+    const currentShopContact = options?.shopDetails?.shopContact || session?.shopContact;
+
+
     try {
       const thermalWidthMm = 80;
-      const thermalWidthPt = thermalWidthMm * (72 / 25.4); // approx 226.77 pts
-      const marginPt = 10;
+      const thermalWidthPt = thermalWidthMm * (72 / 25.4); 
+      const marginPt = 8; // Reduced margin slightly for more content space
       const contentWidthPt = thermalWidthPt - 2 * marginPt;
-      const initialPageHeightPt = 800; // Start with a decent height, autotable will add more if needed
+      const initialPageHeightPt = 800; 
 
       const doc = new jsPDF({
         unit: 'pt',
         format: [thermalWidthPt, initialPageHeightPt],
       }) as jsPDFWithAutoTable;
 
-      let currentY = marginPt + 5; // Add a bit more top margin
+      let currentY = marginPt + 5;
 
       // Shop Name
-      doc.setFontSize(12);
+      doc.setFontSize(10); // Slightly smaller for thermal
       doc.setFont(undefined, 'bold');
-      doc.text(APP_NAME, thermalWidthPt / 2, currentY, { align: 'center' });
-      currentY += 15;
+      doc.text(currentShopName, thermalWidthPt / 2, currentY, { align: 'center', maxWidth: contentWidthPt });
+      currentY += doc.getTextDimensions(currentShopName, {fontSize: 10, maxWidth: contentWidthPt}).h + 2;
 
+
+      // Shop Address (if available) - smaller font
+      if (currentShopAddress) {
+        doc.setFontSize(7);
+        doc.setFont(undefined, 'normal');
+        const addressLines = doc.splitTextToSize(currentShopAddress, contentWidthPt);
+        doc.text(addressLines, thermalWidthPt / 2, currentY, { align: 'center' });
+        currentY += (addressLines.length * (doc.getTextDimensions('X', {fontSize: 7}).h)) + 2;
+      }
+
+      // Shop Contact (if available) - smaller font
+      if (currentShopContact) {
+        doc.setFontSize(7);
+        doc.setFont(undefined, 'normal');
+        doc.text(currentShopContact, thermalWidthPt / 2, currentY, { align: 'center', maxWidth: contentWidthPt });
+        currentY += doc.getTextDimensions(currentShopContact, {fontSize: 7, maxWidth: contentWidthPt}).h + 4;
+      }
+      
       // Sale Info
       doc.setFontSize(8);
       doc.setFont(undefined, 'normal');
@@ -226,25 +282,25 @@ export default function SaleDetailPage() {
       currentY += 10;
       
       const saleDate = new Date(sale.saleDate);
-      const saleTime = new Date(sale.createdAt); // Assuming createdAt has the time
+      const saleTime = new Date(sale.createdAt); 
       doc.text(`Date: ${saleDate.toLocaleDateString()} ${saleTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, marginPt, currentY);
       currentY += 10;
 
       if (sale.customerName) {
-        doc.text(`Customer: ${sale.customerName}`, marginPt, currentY);
-        currentY += 10;
+        doc.text(`Customer: ${sale.customerName}`, marginPt, currentY, {maxWidth: contentWidthPt - marginPt });
+        currentY += doc.getTextDimensions(sale.customerName, {fontSize: 8, maxWidth: contentWidthPt - marginPt}).h + 2;
       }
-      currentY += 5; // Extra space before items
+      currentY += 3; 
 
       // Separator
-      doc.text('-'.repeat(Math.floor(contentWidthPt / (doc.getStringUnitWidth('-') * 8) * 1.8)), thermalWidthPt / 2, currentY, { align: 'center' });
+      doc.text('-'.repeat(Math.floor(contentWidthPt / (doc.getStringUnitWidth('-') * 8 * 0.9))), thermalWidthPt / 2, currentY, { align: 'center' });
       currentY += 10;
 
       // Items Table
       const tableRows: (string | number)[][] = [];
       sale.items.forEach(item => {
         tableRows.push([
-          `${item.productNameSnapshot}`,
+          `${item.productNameSnapshot}`, // productName might wrap
           item.quantitySold,
           item.pricePerUnitSold.toFixed(2),
           item.total.toFixed(2)
@@ -258,20 +314,20 @@ export default function SaleDetailPage() {
         theme: 'plain',
         styles: {
           fontSize: 7,
-          cellPadding: {top: 1, right: 2, bottom: 1, left: 2},
+          cellPadding: {top: 1, right: 1, bottom: 1, left: 1}, // Tighter padding
           overflow: 'linebreak',
         },
         headStyles: {
-          fontSize: 8,
+          fontSize: 7.5, // Slightly smaller head
           fontStyle: 'bold',
-          fillColor: [255,255,255], // No background for head
+          fillColor: [255,255,255], 
           textColor: [0,0,0],
           lineWidth: 0.1,
-          lineColor: [180,180,180], // Light border for head
+          lineColor: [180,180,180], 
         },
         columnStyles: {
-          0: { cellWidth: contentWidthPt * 0.45, fontStyle: 'normal' }, // Item
-          1: { cellWidth: contentWidthPt * 0.15, halign: 'right' }, // Qty
+          0: { cellWidth: contentWidthPt * 0.48, fontStyle: 'normal' }, // Item (more space)
+          1: { cellWidth: contentWidthPt * 0.12, halign: 'right' }, // Qty (less space)
           2: { cellWidth: contentWidthPt * 0.20, halign: 'right' }, // Price
           3: { cellWidth: contentWidthPt * 0.20, halign: 'right' }, // Total
         },
@@ -283,11 +339,9 @@ export default function SaleDetailPage() {
       });
       currentY = (doc as any).lastAutoTable.finalY + 5;
 
-      // Separator
-      doc.text('-'.repeat(Math.floor(contentWidthPt / (doc.getStringUnitWidth('-') * 8) * 1.8)), thermalWidthPt / 2, currentY, { align: 'center' });
+      doc.text('-'.repeat(Math.floor(contentWidthPt / (doc.getStringUnitWidth('-') * 8 * 0.9))), thermalWidthPt / 2, currentY, { align: 'center' });
       currentY += 10;
 
-      // Grand Total
       doc.setFontSize(9);
       doc.setFont(undefined, 'bold');
       doc.text('Grand Total:', marginPt, currentY);
@@ -303,20 +357,20 @@ export default function SaleDetailPage() {
       }
 
       if (sale.notes) {
-        currentY += 5;
+        currentY += 3;
         doc.setFont(undefined, 'bold');
         doc.text("Notes:", marginPt, currentY);
         currentY += 8;
         doc.setFont(undefined, 'normal');
         const splitNotes = doc.splitTextToSize(sale.notes, contentWidthPt);
         doc.text(splitNotes, marginPt, currentY);
-        currentY += (splitNotes.length * 8) + 5;
+        currentY += (splitNotes.length * 8) + 3;
       }
       
-      currentY += 10;
+      currentY += 8;
       doc.setFontSize(8);
-      doc.text("Thank you for your business!", thermalWidthPt / 2, currentY, { align: 'center' });
-      currentY += 15;
+      doc.text("Thank you for your business!", thermalWidthPt / 2, currentY, { align: 'center', maxWidth: contentWidthPt });
+      currentY += 12;
       doc.text("***", thermalWidthPt / 2, currentY, { align: 'center' });
 
 
@@ -331,9 +385,15 @@ export default function SaleDetailPage() {
       setIsProcessingThermalPdf(false);
     }
   };
+  
+  const currentShopDetails: ShopDetails = {
+    shopName: session?.shopName,
+    shopAddress: session?.shopAddress,
+    shopContact: session?.shopContact,
+  };
 
   const handlePreviewA4Bill = () => {
-    const dataUri = generateInvoicePDF('datauristring', { primaryColor: session?.invoicePrimaryColor });
+    const dataUri = generateInvoicePDF('datauristring', { primaryColor: session?.invoicePrimaryColor, shopDetails: currentShopDetails });
     if (dataUri) {
       setA4PreviewPdfUrl(dataUri);
       setIsA4PreviewModalOpen(true);
@@ -341,11 +401,11 @@ export default function SaleDetailPage() {
   };
 
   const handleDownloadA4Pdf = () => {
-    generateInvoicePDF('save', { primaryColor: session?.invoicePrimaryColor });
+    generateInvoicePDF('save', { primaryColor: session?.invoicePrimaryColor, shopDetails: currentShopDetails });
   };
 
   const handlePreviewThermalReceipt = () => {
-    const dataUri = generateThermalReceiptPDF('datauristring');
+    const dataUri = generateThermalReceiptPDF('datauristring', { shopDetails: currentShopDetails });
     if (dataUri) {
       setThermalPreviewPdfUrl(dataUri);
       setIsThermalPreviewModalOpen(true);
@@ -353,7 +413,7 @@ export default function SaleDetailPage() {
   };
 
   const handleDownloadThermalReceipt = () => {
-    generateThermalReceiptPDF('save');
+    generateThermalReceiptPDF('save', { shopDetails: currentShopDetails });
   };
 
   if (isLoading) {
@@ -465,7 +525,6 @@ export default function SaleDetailPage() {
         </CardContent>
       </Card>
 
-      {/* A4 Invoice Preview Modal */}
       <Dialog open={isA4PreviewModalOpen} onOpenChange={setIsA4PreviewModalOpen}>
         <DialogContent className="max-w-3xl h-[90vh] flex flex-col p-0">
           <DialogHeader className="p-4 border-b">
@@ -490,9 +549,8 @@ export default function SaleDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Thermal Receipt Preview Modal */}
       <Dialog open={isThermalPreviewModalOpen} onOpenChange={setIsThermalPreviewModalOpen}>
-        <DialogContent className="max-w-xs sm:max-w-sm md:max-w-md h-[80vh] flex flex-col p-0"> {/* Adjusted max-width for narrower preview */}
+        <DialogContent className="max-w-xs sm:max-w-sm md:max-w-md h-[80vh] flex flex-col p-0"> 
           <DialogHeader className="p-4 border-b">
             <DialogTitle>Thermal Receipt Preview</DialogTitle>
           </DialogHeader>

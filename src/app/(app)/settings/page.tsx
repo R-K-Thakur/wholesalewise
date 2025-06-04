@@ -7,15 +7,16 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea'; // Added Textarea
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Settings, Moon, Sun, ListOrdered, CalendarDays, Palette, Save, Loader2 } from 'lucide-react';
+import { Settings, Moon, Sun, ListOrdered, CalendarDays, Palette, Save, Loader2, Store } from 'lucide-react';
 import { 
   DEFAULT_TREND_RANGE_STORAGE_KEY, 
   TREND_DATE_RANGE_OPTIONS,
   ITEMS_PER_PAGE_STORAGE_KEY
 } from '@/lib/constants';
-import { getSession, updateUserInvoiceColorAction, type SessionData } from "@/app/login/actions";
+import { getSession, updateUserInvoiceColorAction, updateShopDetailsAction, type SessionData, type ShopDetailsPayload } from "@/app/login/actions";
 import { useToast } from "@/hooks/use-toast";
 
 
@@ -34,6 +35,13 @@ export default function UserSettingsPage() {
   
   const [invoiceColor, setInvoiceColor] = useState(DEFAULT_INVOICE_COLOR_HEX);
   const [isSavingInvoiceColor, setIsSavingInvoiceColor] = useState(false);
+
+  // State for Shop Details
+  const [shopName, setShopName] = useState("");
+  const [shopAddress, setShopAddress] = useState("");
+  const [shopContact, setShopContact] = useState("");
+  const [isSavingShopDetails, setIsSavingShopDetails] = useState(false);
+
 
   useEffect(() => {
     setIsMounted(true);
@@ -62,8 +70,14 @@ export default function UserSettingsPage() {
         setDefaultTrendRange(storedDefaultTrendRange);
       }
       
-      if (currentSession?.invoicePrimaryColor) {
-        setInvoiceColor(currentSession.invoicePrimaryColor);
+      if (currentSession) {
+        if (currentSession.invoicePrimaryColor) {
+          setInvoiceColor(currentSession.invoicePrimaryColor);
+        }
+        // Initialize shop details from session
+        setShopName(currentSession.shopName || "");
+        setShopAddress(currentSession.shopAddress || "");
+        setShopContact(currentSession.shopContact || "");
       }
     }
     fetchInitialSettings();
@@ -103,13 +117,33 @@ export default function UserSettingsPage() {
     const result = await updateUserInvoiceColorAction(invoiceColor);
     if (result.success) {
       toast({ title: "Success", description: "Invoice color updated successfully." });
-      const updatedSession = await getSession(); // Re-fetch to get the latest session data
-      setSession(updatedSession); // Update local session state
+      const updatedSession = await getSession(); 
+      setSession(updatedSession); 
     } else {
       toast({ title: "Error", description: result.message || "Failed to update invoice color.", variant: "destructive" });
     }
     setIsSavingInvoiceColor(false);
   };
+
+  const handleShopDetailsSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsSavingShopDetails(true);
+    const payload: ShopDetailsPayload = {
+      shopName: shopName.trim(),
+      shopAddress: shopAddress.trim(),
+      shopContact: shopContact.trim(),
+    };
+    const result = await updateShopDetailsAction(payload);
+    if (result.success) {
+      toast({ title: "Success", description: "Shop details updated successfully." });
+      const updatedSession = await getSession();
+      setSession(updatedSession);
+    } else {
+      toast({ title: "Error", description: result.message || "Failed to update shop details.", variant: "destructive" });
+    }
+    setIsSavingShopDetails(false);
+  };
+
 
   if (!isMounted) {
     return (
@@ -152,6 +186,56 @@ export default function UserSettingsPage() {
           </p>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Store className="h-6 w-6" /> Shop Information</CardTitle>
+          <CardDescription>Set your shop details for invoices and receipts.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleShopDetailsSubmit} className="space-y-6">
+            <div>
+              <Label htmlFor="shopName">Shop Name</Label>
+              <Input 
+                id="shopName" 
+                value={shopName} 
+                onChange={(e) => setShopName(e.target.value)}
+                placeholder="Your Shop's Name"
+                disabled={isSavingShopDetails}
+                maxLength={100}
+              />
+            </div>
+            <div>
+              <Label htmlFor="shopAddress">Shop Address</Label>
+              <Textarea
+                id="shopAddress"
+                value={shopAddress}
+                onChange={(e) => setShopAddress(e.target.value)}
+                placeholder="123 Main Street, City, State, Zip Code"
+                rows={3}
+                disabled={isSavingShopDetails}
+                maxLength={250}
+              />
+            </div>
+            <div>
+              <Label htmlFor="shopContact">Shop Contact (Phone/Email)</Label>
+              <Input 
+                id="shopContact" 
+                value={shopContact} 
+                onChange={(e) => setShopContact(e.target.value)}
+                placeholder="e.g., (555) 123-4567 or shop@example.com"
+                disabled={isSavingShopDetails}
+                maxLength={100}
+              />
+            </div>
+            <Button type="submit" disabled={isSavingShopDetails} className="w-full sm:w-auto">
+              {isSavingShopDetails ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Shop Details
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
 
       <Card>
         <CardHeader>
@@ -264,3 +348,4 @@ export default function UserSettingsPage() {
     </div>
   );
 }
+

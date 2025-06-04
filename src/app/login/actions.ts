@@ -16,7 +16,11 @@ export interface SessionData {
   email: string;
   role: "owner" | "staff";
   name: string; 
-  invoicePrimaryColor?: string; // Added for invoice customization
+  invoicePrimaryColor?: string;
+  // New shop details
+  shopName?: string;
+  shopAddress?: string;
+  shopContact?: string;
 }
 
 interface RoleEmails {
@@ -87,6 +91,10 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
   let userDisplayName = userEmailLower;
   let userInvoicePrimaryColor: string | undefined = undefined;
+  let userShopName: string | undefined = undefined;
+  let userShopAddress: string | undefined = undefined;
+  let userShopContact: string | undefined = undefined;
+
 
   try {
     const userDocSnap = await getDoc(userDocRef);
@@ -95,16 +103,35 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
       if (userData.displayName && typeof userData.displayName === 'string' && userData.displayName.trim() !== "") {
         userDisplayName = userData.displayName;
       } else {
+        // Ensure displayName is set if missing, even if other fields exist
         await updateDoc(userDocRef, { displayName: userEmailLower, email: userEmailLower });
       }
       if (userData.invoicePrimaryColor && typeof userData.invoicePrimaryColor === 'string') {
         userInvoicePrimaryColor = userData.invoicePrimaryColor;
       }
+      if (userData.shopName && typeof userData.shopName === 'string') {
+        userShopName = userData.shopName;
+      }
+      if (userData.shopAddress && typeof userData.shopAddress === 'string') {
+        userShopAddress = userData.shopAddress;
+      }
+      if (userData.shopContact && typeof userData.shopContact === 'string') {
+        userShopContact = userData.shopContact;
+      }
     } else {
-      await setDoc(userDocRef, { email: userEmailLower, displayName: userEmailLower, invoicePrimaryColor: undefined });
+      // Create user doc with all potential fields initialized or undefined
+      await setDoc(userDocRef, { 
+        email: userEmailLower, 
+        displayName: userEmailLower, 
+        invoicePrimaryColor: undefined,
+        shopName: undefined,
+        shopAddress: undefined,
+        shopContact: undefined,
+      });
     }
   } catch (dbError) {
     console.error("Error accessing/creating user document in Firestore:", dbError);
+    // Potentially return an error or allow login with default/missing session data for these fields
   }
 
   const sessionData: SessionData = {
@@ -113,6 +140,9 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     role: userRole,
     name: userDisplayName,
     invoicePrimaryColor: userInvoicePrimaryColor,
+    shopName: userShopName,
+    shopAddress: userShopAddress,
+    shopContact: userShopContact,
   };
 
   const cookieSecure = true; 
@@ -219,7 +249,6 @@ export async function updateUserInvoiceColorAction(color: string): Promise<{ suc
     return { success: false, message: "No active session found. Please log in again." };
   }
 
-  // Basic hex color validation (e.g., #RRGGBB)
   if (!/^#[0-9A-F]{6}$/i.test(color)) {
     return { success: false, message: "Invalid color format. Please use a valid hex color code (e.g., #RRGGBB)." };
   }
@@ -254,5 +283,59 @@ export async function updateUserInvoiceColorAction(color: string): Promise<{ suc
   } catch (error) {
     console.error("Failed to update session cookie for invoice color:", error);
     return { success: false, message: "Invoice color was saved to the database, but failed to update your current session. Changes will reflect on next login." };
+  }
+}
+
+export interface ShopDetailsPayload {
+  shopName?: string;
+  shopAddress?: string;
+  shopContact?: string;
+}
+
+export async function updateShopDetailsAction(details: ShopDetailsPayload): Promise<{ success: boolean; message?: string }> {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, message: "No active session found. Please log in again." };
+  }
+
+  const userEmailLower = session.email.toLowerCase();
+  const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
+
+  const dataToUpdate: Partial<ShopDetailsPayload> = {};
+  if (details.shopName !== undefined) dataToUpdate.shopName = details.shopName.trim();
+  if (details.shopAddress !== undefined) dataToUpdate.shopAddress = details.shopAddress.trim();
+  if (details.shopContact !== undefined) dataToUpdate.shopContact = details.shopContact.trim();
+  
+  if (Object.keys(dataToUpdate).length === 0) {
+    return { success: true, message: "No shop details to update." };
+  }
+
+  try {
+    await updateDoc(userDocRef, dataToUpdate);
+  } catch (dbError) {
+    console.error("Error updating shop details in Firestore:", dbError);
+    return { success: false, message: "Failed to save shop details to the database. Please try again." };
+  }
+
+  const updatedSessionData: SessionData = {
+    ...session,
+    ...dataToUpdate, // Merge updated details into session
+  };
+
+  const cookieSecure = true;
+  const cookieSameSite = "none" as "none" | "lax" | "strict" | undefined;
+
+  try {
+    cookies().set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
+      httpOnly: true,
+      secure: cookieSecure,
+      maxAge: 60 * 60 * 24 * 7,
+      path: "/",
+      sameSite: cookieSameSite,
+    });
+    return { success: true, message: "Shop details updated successfully." };
+  } catch (error) {
+    console.error("Failed to update session cookie for shop details:", error);
+    return { success: false, message: "Shop details were saved, but failed to update your current session. Changes will reflect on next login." };
   }
 }
