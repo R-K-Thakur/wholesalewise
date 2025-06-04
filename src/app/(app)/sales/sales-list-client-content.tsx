@@ -6,8 +6,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { Sale } from "@/lib/types";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ITEMS_PER_PAGE_STORAGE_KEY } from "@/lib/constants";
 
-const ITEMS_PER_PAGE_STORAGE_KEY = "app-items-per-page";
 const DEFAULT_ITEMS_PER_PAGE = 10;
 
 interface SalesListClientContentProps {

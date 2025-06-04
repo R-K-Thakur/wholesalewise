@@ -9,19 +9,15 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Settings, Moon, Sun, ListOrdered, CalendarDays } from 'lucide-react';
+import { 
+  DEFAULT_TREND_RANGE_STORAGE_KEY, 
+  TREND_DATE_RANGE_OPTIONS,
+  ITEMS_PER_PAGE_STORAGE_KEY
+} from '@/lib/constants';
 
 const THEME_STORAGE_KEY = "app-theme";
-const ITEMS_PER_PAGE_STORAGE_KEY = "app-items-per-page";
-export const DEFAULT_TREND_RANGE_STORAGE_KEY = "app-default-trend-range"; 
-
+// ITEMS_PER_PAGE_OPTIONS is only used locally in this component for populating the Select.
 const ITEMS_PER_PAGE_OPTIONS = ["10", "25", "50"];
-export const TREND_DATE_RANGE_OPTIONS = [ 
-  { value: "7", label: "Last 7 Days" },
-  { value: "30", label: "Last 30 Days" },
-  { value: "90", label: "Last 90 Days" },
-  { value: "180", label: "Last 180 Days" },
-  { value: "365", label: "Last 365 Days" },
-];
 
 
 export default function UserSettingsPage() {
@@ -198,4 +194,3 @@ export default function UserSettingsPage() {
     </div>
   );
 }
-

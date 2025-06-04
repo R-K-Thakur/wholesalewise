@@ -29,8 +29,8 @@ import { useToast } from "@/hooks/use-toast";
 import type { Product } from "@/lib/types";
 import { deleteProductAction, addStockToProductAction } from "./actions";
 import { ChevronLeft, ChevronRight, PlusCircle, Edit, Trash2, PackagePlus, Loader2, Search } from "lucide-react";
+import { ITEMS_PER_PAGE_STORAGE_KEY } from "@/lib/constants";
 
-const ITEMS_PER_PAGE_STORAGE_KEY = "app-items-per-page";
 const DEFAULT_ITEMS_PER_PAGE = 10;
 
 interface ProductListClientContentProps {
@@ -324,4 +324,3 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     </>
   );
 }
-

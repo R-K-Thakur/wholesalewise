@@ -6,7 +6,7 @@ import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer } from 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import type { Sale } from "@/lib/types";
-import { TREND_DATE_RANGE_OPTIONS, DEFAULT_TREND_RANGE_STORAGE_KEY } from "@/app/(app)/settings/page"; // Assuming these are exported or accessible
+import { TREND_DATE_RANGE_OPTIONS, DEFAULT_TREND_RANGE_STORAGE_KEY } from "@/lib/constants"; 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { subDays, format, parseISO, startOfDay } from 'date-fns';
 import { Loader2 } from "lucide-react";
@@ -24,12 +24,7 @@ const chartConfig = {
 
 export function SalesTrendChart({ sales }: SalesTrendChartProps) {
   const [processedChartData, setProcessedChartData] = React.useState<Array<{ date: string; totalSales: number }>>([]);
-  const [selectedRange, setSelectedRange] = React.useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem(DEFAULT_TREND_RANGE_STORAGE_KEY) || TREND_DATE_RANGE_OPTIONS[1].value;
-    }
-    return TREND_DATE_RANGE_OPTIONS[1].value; // Default to "Last 30 Days"
-  });
+  const [selectedRange, setSelectedRange] = React.useState<string>(TREND_DATE_RANGE_OPTIONS[1].value); // Default to "Last 30 Days"
   const [isLoading, setIsLoading] = React.useState(true);
   const [isMounted, setIsMounted] = React.useState(false);
 
@@ -92,6 +87,11 @@ export function SalesTrendChart({ sales }: SalesTrendChartProps) {
         localStorage.setItem(DEFAULT_TREND_RANGE_STORAGE_KEY, value);
     }
   };
+  
+  const currentRangeLabel = isMounted ? 
+    (TREND_DATE_RANGE_OPTIONS.find(opt => opt.value === selectedRange)?.label || selectedRange + " Days") : 
+    (TREND_DATE_RANGE_OPTIONS.find(opt => opt.value === TREND_DATE_RANGE_OPTIONS[1].value)?.label);
+
 
   return (
     <Card>
@@ -99,10 +99,10 @@ export function SalesTrendChart({ sales }: SalesTrendChartProps) {
         <div>
             <CardTitle>Sales Trends</CardTitle>
             <CardDescription>
-                Showing total sales for the selected period. Current default is '{TREND_DATE_RANGE_OPTIONS.find(opt => opt.value === selectedRange)?.label || selectedRange + " Days"}'.
+                Showing total sales for the selected period. Current default is '{currentRangeLabel}'.
             </CardDescription>
         </div>
-        <Select value={selectedRange} onValueChange={handleRangeChange}>
+        <Select value={selectedRange} onValueChange={handleRangeChange} disabled={!isMounted}>
             <SelectTrigger className="w-full sm:w-[180px]" aria-label="Select sales trend date range">
                 <SelectValue placeholder="Select range" />
             </SelectTrigger>
