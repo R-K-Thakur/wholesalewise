@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -10,7 +11,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
-import { Sheet, SheetContent } from "@/components/ui/sheet"
+import { Sheet, SheetContent as UISheetContent, SheetHeader as UISheetHeader, SheetTitle as UISheetTitle } from "@/components/ui/sheet" // Aliased imports
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Tooltip,
@@ -18,6 +19,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { APP_NAME } from "@/lib/constants" // Import APP_NAME
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
@@ -195,10 +197,10 @@ const Sidebar = React.forwardRef<
     if (isMobile) {
       return (
         <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
-          <SheetContent
+          <UISheetContent
             data-sidebar="sidebar"
             data-mobile="true"
-            className="w-[--sidebar-width] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+            className="w-[--sidebar-width] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden flex flex-col" // Ensure flex column layout
             style={
               {
                 "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -206,8 +208,18 @@ const Sidebar = React.forwardRef<
             }
             side={side}
           >
-            <div className="flex h-full w-full flex-col">{children}</div>
-          </SheetContent>
+            {/* Accessible Title for the Dialog/Sheet - sr-only for screen readers */}
+            {/* This UISheetHeader itself won't take up visual space if its content is sr-only and it has no padding/borders */}
+            <UISheetHeader className="flex-shrink-0"> {/* Basic header styling, adjust if needed */}
+              <UISheetTitle className="sr-only">{APP_NAME} Menu</UISheetTitle>
+            </UISheetHeader>
+            
+            {/* The original children (SidebarHeader, SidebarContent, SidebarFooter) are rendered here */}
+            {/* The original SidebarHeader contains the visual title and icon */}
+            <div className="flex-1 flex flex-col overflow-y-auto"> {/* This div handles the actual content display and scrolling */}
+              {children}
+            </div>
+          </UISheetContent>
         </Sheet>
       )
     }
