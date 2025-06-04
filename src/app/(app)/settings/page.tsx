@@ -12,13 +12,15 @@ import { Settings, Moon, Sun, ListOrdered, CalendarDays } from 'lucide-react';
 
 const THEME_STORAGE_KEY = "app-theme";
 const ITEMS_PER_PAGE_STORAGE_KEY = "app-items-per-page";
-const DEFAULT_TREND_RANGE_STORAGE_KEY = "app-default-trend-range"; 
+export const DEFAULT_TREND_RANGE_STORAGE_KEY = "app-default-trend-range"; 
 
 const ITEMS_PER_PAGE_OPTIONS = ["10", "25", "50"];
-const TREND_DATE_RANGE_OPTIONS = [ 
+export const TREND_DATE_RANGE_OPTIONS = [ 
   { value: "7", label: "Last 7 Days" },
   { value: "30", label: "Last 30 Days" },
   { value: "90", label: "Last 90 Days" },
+  { value: "180", label: "Last 180 Days" },
+  { value: "365", label: "Last 365 Days" },
 ];
 
 
@@ -165,7 +167,7 @@ export default function UserSettingsPage() {
               </Label>
             </div>
             <Select value={defaultTrendRange} onValueChange={handleDefaultTrendRangeChange}>
-              <SelectTrigger id="default-trend-range-select" className="w-[150px]">
+              <SelectTrigger id="default-trend-range-select" className="w-[180px] sm:w-[200px]">
                 <SelectValue placeholder="Select range" />
               </SelectTrigger>
               <SelectContent>
@@ -196,3 +198,4 @@ export default function UserSettingsPage() {
     </div>
   );
 }
+

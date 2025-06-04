@@ -2,7 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Package, ShoppingCart, IndianRupee, PlusCircle, Search } from "lucide-react";
+import { Package, ShoppingCart, IndianRupee, PlusCircle, Search, TrendingUp, History } from "lucide-react";
 import { getProductsAction } from "../products/actions";
 import { getSalesAction } from "../sales/actions";
 import type { Product } from "@/lib/types";
@@ -10,6 +10,7 @@ import type { Sale } from "@/lib/types";
 import { LowStockWidget } from "./low-stock-widget";
 import { getSession, type SessionData } from "@/app/login/actions";
 import { DashboardProductSearchWidget } from "./dashboard-product-search-widget";
+import { SalesTrendChart } from "./sales-trend-chart";
 
 
 export default async function DashboardPage() {
@@ -103,23 +104,21 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-1"> {/* Changed to 1 column for now to give sales chart more space */}
+        <SalesTrendChart sales={sales} />
         <Card>
           <CardHeader>
-            <CardTitle>Sales Trends</CardTitle>
+            <CardTitle className="flex items-center gap-2"><History className="h-5 w-5" /> Purchase History</CardTitle>
+            <CardDescription>View trends in your product purchases over time.</CardDescription>
           </CardHeader>
-          <CardContent className="h-[300px] flex items-center justify-center">
-            <p className="text-muted-foreground">Sales trend chart placeholder</p>
-             {/* TODO: Add Chart component for sales trends */}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Purchase History</CardTitle>
-          </CardHeader>
-          <CardContent className="h-[300px] flex items-center justify-center">
-             <p className="text-muted-foreground">Purchase history chart placeholder</p>
-            {/* TODO: Add Chart component for purchase history */}
+          <CardContent className="h-[300px] flex flex-col items-center justify-center">
+             <p className="text-muted-foreground text-center">
+                The "Purchase History" chart requires a dedicated purchase tracking feature to be implemented.
+             </p>
+             <p className="text-sm text-muted-foreground mt-2 text-center">
+                Currently, stock is added directly to products. To see purchase trends, we'll need to build a system for recording individual purchase orders/transactions.
+             </p>
+            {/* TODO: Implement Purchase Tracking feature, then add Chart component for purchase history */}
           </CardContent>
         </Card>
       </div>
@@ -135,3 +134,4 @@ export default async function DashboardPage() {
     </div>
   );
 }
+
