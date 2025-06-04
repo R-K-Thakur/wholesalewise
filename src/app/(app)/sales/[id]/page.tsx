@@ -53,31 +53,37 @@ export default function SaleDetailPage() {
       const pageHeight = doc.internal.pageSize.height || doc.internal.pageSize.getHeight();
       const pageWidth = doc.internal.pageSize.width || doc.internal.pageSize.getWidth();
       let startY = 20;
+      const leftMargin = 15;
+      const rightMargin = pageWidth - 15;
 
+      // Header
       doc.setFontSize(18);
       doc.setFont(undefined, 'bold');
       doc.text(APP_NAME, pageWidth / 2, startY, { align: 'center' });
-      startY += 10;
+      startY += 8;
 
       doc.setFontSize(14);
       doc.text("INVOICE", pageWidth / 2, startY, { align: 'center' });
-      startY += 10;
+      startY += 12;
 
+      // Invoice Info & Customer Details
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
-      doc.text(`Invoice ID: ${sale.id}`, 15, startY);
-      doc.text(`Date: ${new Date(sale.saleDate).toLocaleDateString()}`, pageWidth - 15, startY, { align: 'right' });
+      
+      doc.text(`Invoice ID: ${sale.id}`, leftMargin, startY);
+      doc.text(`Date: ${new Date(sale.saleDate).toLocaleDateString()}`, rightMargin, startY, { align: 'right' });
       startY += 7;
 
       if (sale.customerName) {
-        doc.text(`Customer: ${sale.customerName}`, 15, startY);
+        doc.text(`Customer: ${sale.customerName}`, leftMargin, startY);
         startY += 7;
       }
       
-      doc.text(`Sale Type: ${sale.saleType.charAt(0).toUpperCase() + sale.saleType.slice(1)}`, 15, startY);
+      doc.text(`Sale Type: ${sale.saleType.charAt(0).toUpperCase() + sale.saleType.slice(1)}`, leftMargin, startY);
       startY += 10;
 
-      const tableColumn = ["Product Name", "Qty", "Unit", `Price/Unit (${String.fromCharCode(8377)})`, `Total (${String.fromCharCode(8377)})`];
+      // Items Table
+      const tableColumn = ["Product Name", "Qty", "Unit", "Price/Unit (Rs.)", "Total (Rs.)"];
       const tableRows: (string | number)[][] = [];
 
       sale.items.forEach(item => {
@@ -95,46 +101,67 @@ export default function SaleDetailPage() {
         head: [tableColumn],
         body: tableRows,
         startY: startY,
-        theme: 'striped',
-        headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
-        margin: { top: 10 },
+        theme: 'striped', // 'striped', 'grid', 'plain'
+        headStyles: { 
+            fillColor: [22, 160, 133], // A teal color
+            textColor: 255, 
+            fontStyle: 'bold',
+            halign: 'center'
+        },
+        columnStyles: {
+            0: { cellWidth: 'auto' }, // Product Name
+            1: { halign: 'right' }, // Qty
+            2: { halign: 'left' }, // Unit
+            3: { halign: 'right' }, // Price/Unit
+            4: { halign: 'right' }  // Total
+        },
+        margin: { top: 10, left: leftMargin, right: leftMargin },
+        tableWidth: 'auto', // Let the table decide its width based on content and margins
+        didDrawPage: (data) => {
+            // Reset startY for new pages if table spans multiple pages
+            startY = data.cursor?.y || 20;
+        }
       });
       
-      startY = (doc as any).lastAutoTable.finalY + 10;
+      startY = (doc as any).lastAutoTable.finalY + 12; // Add more space after table
 
+      // Totals Section
       doc.setFontSize(12);
       doc.setFont(undefined, 'bold');
-      doc.text(`Grand Total: ${String.fromCharCode(8377)} ${sale.totalAmount.toFixed(2)}`, pageWidth - 15, startY, { align: 'right' });
+      doc.text(`Grand Total: Rs. ${sale.totalAmount.toFixed(2)}`, rightMargin, startY, { align: 'right' });
       startY += 7;
       
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
       if (sale.paymentMethod) {
-        doc.text(`Payment Method: ${sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1)}`, pageWidth - 15, startY, { align: 'right' });
-        startY += 7;
+        doc.text(`Payment Method: ${sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1)}`, rightMargin, startY, { align: 'right' });
+        startY += 10;
       }
 
+      // Notes Section
       if (sale.notes) {
-        if (startY > pageHeight - 30) { 
+        if (startY > pageHeight - 40) { // Check if space for notes title + some content
             doc.addPage();
             startY = 20;
         }
         doc.setFontSize(10);
         doc.setFont(undefined, 'bold');
-        doc.text("Notes:", 15, startY);
+        doc.text("Notes:", leftMargin, startY);
         startY += 5;
         doc.setFont(undefined, 'normal');
-        const splitNotes = doc.splitTextToSize(sale.notes, pageWidth - 30);
-        doc.text(splitNotes, 15, startY);
-        startY += (splitNotes.length * 5) + 5;
+        const splitNotes = doc.splitTextToSize(sale.notes, rightMargin - leftMargin);
+        doc.text(splitNotes, leftMargin, startY);
+        startY += (splitNotes.length * 5) + 10; // Add space after notes
       }
 
-       if (startY > pageHeight - 20) {
+      // Footer
+      if (startY > pageHeight - 20) { // Check if space for footer
             doc.addPage();
             startY = 20;
-        }
+      }
       doc.setFontSize(10);
-      doc.text("Thank you for your business!", pageWidth / 2, startY, { align: 'center' });
+      doc.text("Thank you for your business!", pageWidth / 2, pageHeight - 15, { align: 'center' });
+
 
       if (outputType === 'datauristring') {
         return doc.output('datauristring');
@@ -143,6 +170,7 @@ export default function SaleDetailPage() {
       }
     } catch (error) {
         console.error("Error generating PDF:", error);
+        // Potentially show a toast notification for PDF generation error
     } finally {
         setIsProcessingPdf(false);
     }
