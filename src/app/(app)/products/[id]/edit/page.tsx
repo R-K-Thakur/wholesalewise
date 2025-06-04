@@ -18,7 +18,7 @@ import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from "@/lib/constants";
 import { useToast } from "@/hooks/use-toast";
 import { getProductByIdAction, updateProductAction } from "../../actions";
 import { productFormSchema, type ValidatedProductFormData } from "../../schema";
-import type { Product } from '@/lib/types';
+// import type { Product } from '@/lib/types'; // Not directly used
 
 export default function EditProductPage() {
   const router = useRouter();
@@ -37,16 +37,24 @@ export default function EditProductPage() {
 
   const watchedBaseUnit = useWatch({ control: form.control, name: "baseUnit" });
   const watchedPurchaseUnit = useWatch({ control: form.control, name: "purchaseUnit" });
-  const showConversionFactor = watchedBaseUnit !== watchedPurchaseUnit;
   
+  const showConversionFactorInput = React.useMemo(() => {
+    if (watchedBaseUnit === watchedPurchaseUnit) return false;
+    if (watchedPurchaseUnit === "dozen" && watchedBaseUnit === "piece") return false;
+    return true;
+  }, [watchedBaseUnit, watchedPurchaseUnit]);
+
   React.useEffect(() => {
-    if (watchedBaseUnit === watchedPurchaseUnit) {
+    if (watchedPurchaseUnit === "dozen" && watchedBaseUnit === "piece") {
+      form.setValue("purchaseUnitConversionFactor", 12, { shouldValidate: true });
+    } else if (watchedBaseUnit === watchedPurchaseUnit) {
       // Ensure conversion factor is 1 if units are the same
       const currentFactor = form.getValues("purchaseUnitConversionFactor");
       if (currentFactor !== 1) {
         form.setValue("purchaseUnitConversionFactor", 1, { shouldValidate: true });
       }
     }
+    // For other differing units, user inputs factor if showConversionFactorInput is true
   }, [watchedBaseUnit, watchedPurchaseUnit, form]);
 
 
@@ -57,12 +65,20 @@ export default function EditProductPage() {
         .then(product => {
           if (product) {
             setProductName(product.name);
+            // If loaded product is dozen/piece, ensure factor is 12 (new logic will handle this in other useEffect)
+            let conversionFactor = product.purchaseUnitConversionFactor;
+            if (product.purchaseUnit === "dozen" && product.baseUnit === "piece") {
+              conversionFactor = 12;
+            } else if (product.baseUnit === product.purchaseUnit) {
+              conversionFactor = 1;
+            }
+
             form.reset({
               productName: product.name,
               category: product.category,
               baseUnit: product.baseUnit,
               purchaseUnit: product.purchaseUnit,
-              purchaseUnitConversionFactor: product.purchaseUnitConversionFactor,
+              purchaseUnitConversionFactor: conversionFactor,
               purchasePrice: product.purchasePrice,
               retailPricePerBaseUnit: product.retailPricePerBaseUnit,
               wholesalePricePerBaseUnit: product.wholesalePricePerBaseUnit,
@@ -98,12 +114,19 @@ export default function EditProductPage() {
 
   async function onSubmit(data: ValidatedProductFormData) {
     let formData = {...data};
+    
+    // Ensure conversion factor is correctly set based on final unit selection
     if (formData.baseUnit === formData.purchaseUnit) {
       formData.purchaseUnitConversionFactor = 1;
+    } else if (formData.purchaseUnit === "dozen" && formData.baseUnit === "piece") {
+      formData.purchaseUnitConversionFactor = 12;
     }
-     if (!formData.purchaseUnitConversionFactor && formData.baseUnit !== formData.purchaseUnit) {
-        toast({ title: "Error", description: "Conversion factor is required if units differ.", variant: "destructive" });
-        form.setError("purchaseUnitConversionFactor", { type: "manual", message: "Conversion factor is required."});
+    
+    if (formData.baseUnit !== formData.purchaseUnit && 
+        !(formData.purchaseUnit === "dozen" && formData.baseUnit === "piece") &&
+        (!formData.purchaseUnitConversionFactor || formData.purchaseUnitConversionFactor < 1) ) {
+        toast({ title: "Error", description: "A valid conversion factor (>0) is required if units differ and are not dozen/piece.", variant: "destructive" });
+        form.setError("purchaseUnitConversionFactor", { type: "manual", message: "Conversion factor is required and must be > 0."});
         return;
     }
 
@@ -214,22 +237,6 @@ export default function EditProductPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
-                  name="baseUnit"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Base Unit (Smallest Sellable)</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl><SelectTrigger><SelectValue placeholder="Select base unit..." /></SelectTrigger></FormControl>
-                        <SelectContent>
-                          {PRODUCT_UNITS.map(unit => (<SelectItem key={`base-${unit}`} value={unit}>{unit}</SelectItem>))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
                   name="purchaseUnit"
                   render={({ field }) => (
                     <FormItem>
@@ -244,9 +251,25 @@ export default function EditProductPage() {
                     </FormItem>
                   )}
                 />
+                <FormField
+                  control={form.control}
+                  name="baseUnit"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Base Unit (Smallest Sellable)</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select base unit..." /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {PRODUCT_UNITS.map(unit => (<SelectItem key={`base-${unit}`} value={unit}>{unit}</SelectItem>))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
               
-              {showConversionFactor && (
+              {showConversionFactorInput && (
                 <FormField
                   control={form.control}
                   name="purchaseUnitConversionFactor"
@@ -260,6 +283,11 @@ export default function EditProductPage() {
                     </FormItem>
                   )}
                 />
+              )}
+              {(watchedPurchaseUnit === "dozen" && watchedBaseUnit === "piece") && (
+                <div className="text-sm text-muted-foreground p-2 border rounded-md bg-muted/50">
+                  Automatic conversion: 1 dozen = 12 pieces. Factor is set to 12.
+                </div>
               )}
 
               <FormField

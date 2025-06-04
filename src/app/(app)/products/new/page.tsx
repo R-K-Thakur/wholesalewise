@@ -40,23 +40,39 @@ export default function NewProductPage() {
   const { isSubmitting } = form.formState;
   const watchedBaseUnit = useWatch({ control: form.control, name: "baseUnit" });
   const watchedPurchaseUnit = useWatch({ control: form.control, name: "purchaseUnit" });
-  const showConversionFactor = watchedBaseUnit !== watchedPurchaseUnit;
+  
+  const showConversionFactorInput = React.useMemo(() => {
+    if (watchedBaseUnit === watchedPurchaseUnit) return false;
+    if (watchedPurchaseUnit === "dozen" && watchedBaseUnit === "piece") return false;
+    return true;
+  }, [watchedBaseUnit, watchedPurchaseUnit]);
 
   React.useEffect(() => {
-    if (watchedBaseUnit === watchedPurchaseUnit) {
+    if (watchedPurchaseUnit === "dozen" && watchedBaseUnit === "piece") {
+      form.setValue("purchaseUnitConversionFactor", 12, { shouldValidate: true });
+    } else if (watchedBaseUnit === watchedPurchaseUnit) {
       form.setValue("purchaseUnitConversionFactor", 1, { shouldValidate: true });
     }
+    // For other differing units, user inputs factor if showConversionFactorInput is true
   }, [watchedBaseUnit, watchedPurchaseUnit, form]);
 
 
   async function onSubmit(data: ValidatedProductFormData) {
     let formData = {...data};
+    
+    // Ensure conversion factor is correctly set based on final unit selection
     if (formData.baseUnit === formData.purchaseUnit) {
       formData.purchaseUnitConversionFactor = 1;
+    } else if (formData.purchaseUnit === "dozen" && formData.baseUnit === "piece") {
+      formData.purchaseUnitConversionFactor = 12;
     }
-    if (!formData.purchaseUnitConversionFactor && formData.baseUnit !== formData.purchaseUnit) {
-        toast({ title: "Error", description: "Conversion factor is required if units differ.", variant: "destructive" });
-        form.setError("purchaseUnitConversionFactor", { type: "manual", message: "Conversion factor is required."});
+
+    // SuperRefine in Zod already checks if factor is required for other differing units
+    if (formData.baseUnit !== formData.purchaseUnit && 
+        !(formData.purchaseUnit === "dozen" && formData.baseUnit === "piece") &&
+        (!formData.purchaseUnitConversionFactor || formData.purchaseUnitConversionFactor < 1) ) {
+        toast({ title: "Error", description: "A valid conversion factor (>0) is required if units differ and are not dozen/piece.", variant: "destructive" });
+        form.setError("purchaseUnitConversionFactor", { type: "manual", message: "Conversion factor is required and must be > 0."});
         return;
     }
 
@@ -178,7 +194,7 @@ export default function NewProductPage() {
                 />
               </div>
               
-              {showConversionFactor && (
+              {showConversionFactorInput && (
                 <FormField
                   control={form.control}
                   name="purchaseUnitConversionFactor"
@@ -193,6 +209,12 @@ export default function NewProductPage() {
                   )}
                 />
               )}
+               {(watchedPurchaseUnit === "dozen" && watchedBaseUnit === "piece") && (
+                <div className="text-sm text-muted-foreground p-2 border rounded-md bg-muted/50">
+                  Automatic conversion: 1 dozen = 12 pieces. Factor is set to 12.
+                </div>
+              )}
+
 
               <FormField
                 control={form.control}
