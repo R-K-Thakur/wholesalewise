@@ -147,12 +147,14 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2"> {/* Changed from md:grid-cols-1 to md:grid-cols-2 */}
-        <SalesTrendChart sales={sales} />
-        <PurchaseHistoryChart purchases={purchases} /> 
-      </div>
+      {userRole !== 'staff' && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <SalesTrendChart sales={sales} />
+          <PurchaseHistoryChart purchases={purchases} /> 
+        </div>
+      )}
       
-      <RecentActivityWidget activities={recentActivities} /> {/* Replaced placeholder */}
+      <RecentActivityWidget activities={recentActivities} />
        
     </div>
   );
