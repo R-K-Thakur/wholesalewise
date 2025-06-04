@@ -2,11 +2,16 @@
 "use client";
 
 import * as React from "react";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer } from "recharts";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"; // Removed ResponsiveContainer from here
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import {
+  ChartConfig,
+  ChartContainer,
+  ChartTooltip, // This is RechartsPrimitive.Tooltip from shadcn/ui/chart
+  ChartTooltipContent,
+} from "@/components/ui/chart";
 import type { Sale } from "@/lib/types";
-import { TREND_DATE_RANGE_OPTIONS, DEFAULT_TREND_RANGE_STORAGE_KEY } from "@/lib/constants"; 
+import { TREND_DATE_RANGE_OPTIONS, DEFAULT_TREND_RANGE_STORAGE_KEY } from "@/lib/constants";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { subDays, format, parseISO, startOfDay } from 'date-fns';
 import { Loader2 } from "lucide-react";
@@ -129,32 +134,30 @@ export function SalesTrendChart({ sales }: SalesTrendChartProps) {
             <p className="text-muted-foreground">No sales data available for the selected period.</p>
           </div>
         ) : (
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={processedChartData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  tickFormatter={(value) => value.slice(0, 6)} // Shorten date display if needed
-                />
-                <YAxis
-                  tickFormatter={(value) => `₹${value.toLocaleString()}`}
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  width={80}
-                />
-                <ChartTooltip
-                  cursor={false}
-                  content={<ChartTooltipContent indicator="dashed" />}
-                />
-                <Bar dataKey="totalSales" fill="var(--color-totalSales)" radius={4} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <ChartContainer config={chartConfig} className="h-[300px] w-full">
+            <BarChart data={processedChartData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis
+                dataKey="date"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                tickFormatter={(value) => value.slice(0, 6)} // Shorten date display if needed
+              />
+              <YAxis
+                tickFormatter={(value) => `₹${value.toLocaleString()}`}
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                width={80}
+              />
+              <ChartTooltip
+                cursor={false}
+                content={<ChartTooltipContent indicator="dashed" />}
+              />
+              <Bar dataKey="totalSales" fill="var(--color-totalSales)" radius={4} />
+            </BarChart>
+          </ChartContainer>
         )}
       </CardContent>
     </Card>
