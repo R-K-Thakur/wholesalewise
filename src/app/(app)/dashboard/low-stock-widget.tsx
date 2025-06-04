@@ -68,8 +68,8 @@ export function LowStockWidget({ products }: LowStockWidgetProps) {
             {lowStockInfo.items.length > 0 ? (
               <div className="max-h-[60vh] overflow-y-auto py-4 space-y-3 pr-2">
                 {lowStockInfo.items.map(product => (
-                  <div key={product.id} className="flex justify-between items-center p-3 border rounded-md hover:bg-muted/50 transition-colors">
-                    <div>
+                  <div key={product.id} className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 p-3 border rounded-md hover:bg-muted/50 transition-colors">
+                    <div className="flex-grow">
                       <p className="font-semibold">{product.name}</p>
                       <p className="text-sm text-muted-foreground">
                         Current Stock: {product.quantityInStock} {product.baseUnit}
@@ -83,7 +83,7 @@ export function LowStockWidget({ products }: LowStockWidgetProps) {
                         </p>
                       }
                     </div>
-                    <Button variant="outline" size="sm" asChild>
+                    <Button variant="outline" size="sm" asChild className="self-start sm:self-center flex-shrink-0">
                       <Link href={`/products/${product.id}/edit`}>View</Link>
                     </Button>
                   </div>

@@ -2,7 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Package, ShoppingCart, PlusCircle, Search, TrendingUp, History, PackagePlus, IndianRupee } from "lucide-react"; // Added IndianRupee
+import { Package, ShoppingCart, PlusCircle, Search, TrendingUp, History, PackagePlus, IndianRupee } from "lucide-react";
 import { getProductsAction, getPurchasesAction } from "../products/actions";
 import { getSalesAction } from "../sales/actions";
 import type { Product, Purchase, Sale, ActivityItem } from "@/lib/types";
@@ -51,7 +51,6 @@ export default async function DashboardPage() {
       description: `Sale of Rs. ${sale.totalAmount.toFixed(2)} to ${sale.customerName || 'N/A'}.`,
       amount: sale.totalAmount,
       link: `/sales/${sale.id}`,
-      // recordedByEmail will be undefined for sales unless we start tracking who records sales
     });
   });
 
@@ -80,9 +79,9 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-3xl font-bold tracking-tight font-headline">Dashboard Overview</h1>
+      <h1 className="text-2xl sm:text-3xl font-bold tracking-tight font-headline">Dashboard Overview</h1>
       
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {userRole !== 'staff' && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -156,4 +155,3 @@ export default async function DashboardPage() {
     </div>
   );
 }
-
