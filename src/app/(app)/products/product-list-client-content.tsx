@@ -93,7 +93,6 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   
   if (!isMounted) {
     // To prevent hydration mismatch for itemsPerPage from localStorage
-    // You can show a loader or a simplified version until mounted
     return (
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-border">
@@ -101,11 +100,11 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Category</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Stock</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Purchase (₹)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Wholesale (₹)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Retail (₹)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Unit</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Stock (Base Unit)</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Purchase (₹ per Purchase Unit)</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Wholesale (₹ per Base Unit)</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Retail (₹ per Base Unit)</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Units (Base/Purchase)</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
@@ -125,27 +124,30 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
         <table className="min-w-full divide-y divide-border">
           <thead className="bg-muted/50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Category</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Stock</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Purchase (₹)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Wholesale (₹)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Retail (₹)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Unit</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Category</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Stock</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Purch. Price</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Retail Price</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Wholesale Price</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Units</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-card divide-y divide-border">
             {paginatedProducts.map((product) => (
               <tr key={product.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{product.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.category}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.quantityInStock}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{(product.purchasePrice || 0).toFixed(2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{(product.wholesalePrice || 0).toFixed(2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{(product.retailPrice || 0).toFixed(2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.unit}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-foreground">{product.name}</td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.category}</td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.quantityInStock} {product.baseUnit}</td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{(product.purchasePrice || 0).toFixed(2)} <span className="text-xs">/{product.purchaseUnit}</span></td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{(product.retailPricePerBaseUnit || 0).toFixed(2)} <span className="text-xs">/{product.baseUnit}</span></td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{(product.wholesalePricePerBaseUnit || 0).toFixed(2)} <span className="text-xs">/{product.baseUnit}</span></td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground">
+                    {product.baseUnit} / {product.purchaseUnit}
+                    {product.baseUnit !== product.purchaseUnit && ` (${product.purchaseUnitConversionFactor}:1)`}
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
                   <Button variant="outline" size="sm" className="mr-2" asChild>
                     <Link href={`/products/${product.id}/edit`}>Edit</Link>
                   </Button>

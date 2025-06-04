@@ -7,22 +7,44 @@ export const productFormSchema = z.object({
   category: z.enum(PRODUCT_CATEGORIES, {
     errorMap: () => ({ message: 'Please select a valid category.' }),
   }),
+  baseUnit: z.enum(PRODUCT_UNITS, {
+    errorMap: () => ({ message: 'Please select a valid base unit.' }),
+  }),
+  purchaseUnit: z.enum(PRODUCT_UNITS, {
+    errorMap: () => ({ message: 'Please select a valid purchase unit.' }),
+  }),
+  purchaseUnitConversionFactor: z.coerce
+    .number({ invalid_type_error: 'Conversion factor must be a number.' })
+    .min(1, { message: 'Conversion factor must be at least 1.' })
+    .optional(), // Optional initially, will be refined
   purchasePrice: z.coerce
     .number({ invalid_type_error: 'Purchase price must be a number.' })
-    .positive({ message: 'Purchase price must be positive.' }),
-  retailPrice: z.coerce
+    .positive({ message: 'Purchase price (per purchase unit) must be positive.' }),
+  retailPricePerBaseUnit: z.coerce
     .number({ invalid_type_error: 'Retail price must be a number.' })
-    .positive({ message: 'Retail price must be positive.' }),
-  wholesalePrice: z.coerce
+    .positive({ message: 'Retail price (per base unit) must be positive.' }),
+  wholesalePricePerBaseUnit: z.coerce
     .number({ invalid_type_error: 'Wholesale price must be a number.' })
-    .positive({ message: 'Wholesale price must be positive.' }),
-  unit: z.enum(PRODUCT_UNITS, {
-    errorMap: () => ({ message: 'Please select a valid unit.' }),
-  }),
-  initialStock: z.coerce
-    .number({ invalid_type_error: 'Initial stock must be a number.' })
-    .int({ message: 'Initial stock must be a whole number.' })
-    .nonnegative({ message: 'Initial stock cannot be negative.' }),
+    .positive({ message: 'Wholesale price (per base unit) must be positive.' }),
+  initialStock: z.coerce // Represents quantityInStock for edit, or stock in purchase units for new
+    .number({ invalid_type_error: 'Stock quantity must be a number.' })
+    .int({ message: 'Stock quantity must be a whole number.' })
+    .nonnegative({ message: 'Stock quantity cannot be negative.' }),
+  reorderThreshold: z.coerce // In base units
+    .number({ invalid_type_error: 'Reorder threshold must be a number.' })
+    .int({ message: 'Reorder threshold must be a whole number.' })
+    .nonnegative({ message: 'Reorder threshold cannot be negative.' })
+    .optional(),
+}).superRefine((data, ctx) => {
+  if (data.baseUnit !== data.purchaseUnit && (data.purchaseUnitConversionFactor === undefined || data.purchaseUnitConversionFactor < 1)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Conversion factor is required and must be at least 1 when purchase unit differs from base unit.",
+      path: ["purchaseUnitConversionFactor"],
+    });
+  }
+  // If units are the same, conversion factor should ideally be 1.
+  // The actions.ts will handle setting it to 1 if not provided in this case.
 });
 
 export type ValidatedProductFormData = z.infer<typeof productFormSchema>;

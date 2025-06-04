@@ -3,15 +3,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Loader2 } from "lucide-react";
+import * as React from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from "@/lib/constants";
 import { useToast } from "@/hooks/use-toast";
@@ -26,27 +26,49 @@ export default function NewProductPage() {
     resolver: zodResolver(productFormSchema),
     defaultValues: {
       productName: "",
-      // category: undefined, // Zod will ensure it's selected
+      baseUnit: PRODUCT_UNITS[0],
+      purchaseUnit: PRODUCT_UNITS[0],
+      purchaseUnitConversionFactor: 1,
       purchasePrice: '' as unknown as number, 
-      retailPrice: '' as unknown as number, 
-      wholesalePrice: '' as unknown as number,
-      unit: PRODUCT_UNITS[0], 
+      retailPricePerBaseUnit: '' as unknown as number, 
+      wholesalePricePerBaseUnit: '' as unknown as number,
       initialStock: '' as unknown as number, 
+      reorderThreshold: 0,
     },
   });
 
   const { isSubmitting } = form.formState;
+  const watchedBaseUnit = useWatch({ control: form.control, name: "baseUnit" });
+  const watchedPurchaseUnit = useWatch({ control: form.control, name: "purchaseUnit" });
+  const showConversionFactor = watchedBaseUnit !== watchedPurchaseUnit;
+
+  React.useEffect(() => {
+    if (watchedBaseUnit === watchedPurchaseUnit) {
+      form.setValue("purchaseUnitConversionFactor", 1, { shouldValidate: true });
+    }
+  }, [watchedBaseUnit, watchedPurchaseUnit, form]);
+
 
   async function onSubmit(data: ValidatedProductFormData) {
+    let formData = {...data};
+    if (formData.baseUnit === formData.purchaseUnit) {
+      formData.purchaseUnitConversionFactor = 1;
+    }
+    if (!formData.purchaseUnitConversionFactor && formData.baseUnit !== formData.purchaseUnit) {
+        toast({ title: "Error", description: "Conversion factor is required if units differ.", variant: "destructive" });
+        form.setError("purchaseUnitConversionFactor", { type: "manual", message: "Conversion factor is required."});
+        return;
+    }
+
     try {
-      const result = await addProduct(data);
+      const result = await addProduct(formData);
       if (result.success) {
         toast({
           title: "Success!",
           description: result.message,
         });
         form.reset(); 
-        router.push('/products'); // Redirect to product list page
+        router.push('/products');
       } else {
         toast({
           title: "Error",
@@ -124,40 +146,62 @@ export default function NewProductPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
-                  name="purchasePrice"
+                  name="baseUnit"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Purchase Price (₹)</FormLabel>
-                      <FormControl>
-                        <Input type="number" placeholder="e.g., 350.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')}/>
-                      </FormControl>
+                      <FormLabel>Base Unit (Smallest Sellable)</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select base unit..." /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {PRODUCT_UNITS.map(unit => (<SelectItem key={`base-${unit}`} value={unit}>{unit}</SelectItem>))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
                 <FormField
                   control={form.control}
-                  name="retailPrice"
+                  name="purchaseUnit"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Retail Price (₹)</FormLabel>
-                      <FormControl>
-                        <Input type="number" placeholder="e.g., 700.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
-                      </FormControl>
+                      <FormLabel>Purchase Unit (Bought As)</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select purchase unit..." /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {PRODUCT_UNITS.map(unit => (<SelectItem key={`purchase-${unit}`} value={unit}>{unit}</SelectItem>))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
+              
+              {showConversionFactor && (
+                <FormField
+                  control={form.control}
+                  name="purchaseUnitConversionFactor"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Conversion Factor ({watchedBaseUnit}s per {watchedPurchaseUnit})</FormLabel>
+                      <FormControl>
+                        <Input type="number" placeholder="e.g., 12" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || '')} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}
-                name="wholesalePrice"
+                name="purchasePrice"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Wholesale Price (₹)</FormLabel>
+                    <FormLabel>Purchase Price (₹ per {watchedPurchaseUnit || 'Purchase Unit'})</FormLabel>
                     <FormControl>
-                      <Input type="number" placeholder="e.g., 525.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
+                      <Input type="number" placeholder="e.g., 350.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')}/>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -167,25 +211,12 @@ export default function NewProductPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
-                  name="unit"
+                  name="retailPricePerBaseUnit"
                   render={({ field }) => (
-                    <FormItem className="space-y-3">
-                      <FormLabel>Unit</FormLabel>
+                    <FormItem>
+                      <FormLabel>Retail Price (₹ per {watchedBaseUnit || 'Base Unit'})</FormLabel>
                       <FormControl>
-                        <RadioGroup
-                          onValueChange={field.onChange}
-                          defaultValue={field.value}
-                          className="flex flex-wrap gap-x-4 gap-y-2"
-                        >
-                          {PRODUCT_UNITS.map((unit) => (
-                            <FormItem key={unit} className="flex items-center space-x-2 space-y-0">
-                              <FormControl>
-                                <RadioGroupItem value={unit} />
-                              </FormControl>
-                              <FormLabel className="font-normal">{unit}</FormLabel>
-                            </FormItem>
-                          ))}
-                        </RadioGroup>
+                        <Input type="number" placeholder="e.g., 50.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -193,12 +224,41 @@ export default function NewProductPage() {
                 />
                 <FormField
                   control={form.control}
+                  name="wholesalePricePerBaseUnit"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Wholesale Price (₹ per {watchedBaseUnit || 'Base Unit'})</FormLabel>
+                      <FormControl>
+                        <Input type="number" placeholder="e.g., 40.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormField
+                  control={form.control}
                   name="initialStock"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Initial Stock Quantity</FormLabel>
+                      <FormLabel>Initial Stock (in {watchedPurchaseUnit || 'Purchase Units'})</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 100" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || '')} />
+                        <Input type="number" placeholder="e.g., 10" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || '')} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="reorderThreshold"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Reorder Threshold (in {watchedBaseUnit || 'Base Units'})</FormLabel>
+                      <FormControl>
+                        <Input type="number" placeholder="e.g., 24" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

@@ -1,18 +1,18 @@
 
 "use client";
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { useForm } from "react-hook-form";
+import { useEffect, useState }_react from "react";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Loader2 } from "lucide-react";
+import * as React from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from "@/lib/constants";
 import { useToast } from "@/hooks/use-toast";
@@ -25,29 +25,49 @@ export default function EditProductPage() {
   const params = useParams();
   const productId = params.id as string;
   const { toast } = useToast();
-  const [isLoadingProduct, setIsLoadingProduct] = useState(true);
-  const [productNotFound, setProductNotFound] = useState(false);
+  const [isLoadingProduct, setIsLoadingProduct] = React.useState(true);
+  const [productNotFound, setProductNotFound] = React.useState(false);
+  const [productName, setProductName] = React.useState("Product");
+
 
   const form = useForm<ValidatedProductFormData>({
     resolver: zodResolver(productFormSchema),
     // Default values will be set by useEffect after fetching product
   });
 
-  useEffect(() => {
+  const watchedBaseUnit = useWatch({ control: form.control, name: "baseUnit" });
+  const watchedPurchaseUnit = useWatch({ control: form.control, name: "purchaseUnit" });
+  const showConversionFactor = watchedBaseUnit !== watchedPurchaseUnit;
+  
+  React.useEffect(() => {
+    if (watchedBaseUnit === watchedPurchaseUnit) {
+      // Ensure conversion factor is 1 if units are the same
+      const currentFactor = form.getValues("purchaseUnitConversionFactor");
+      if (currentFactor !== 1) {
+        form.setValue("purchaseUnitConversionFactor", 1, { shouldValidate: true });
+      }
+    }
+  }, [watchedBaseUnit, watchedPurchaseUnit, form]);
+
+
+  React.useEffect(() => {
     if (productId) {
       setIsLoadingProduct(true);
       getProductByIdAction(productId)
         .then(product => {
           if (product) {
-            // Map Product fields to ValidatedProductFormData fields
+            setProductName(product.name);
             form.reset({
               productName: product.name,
               category: product.category,
+              baseUnit: product.baseUnit,
+              purchaseUnit: product.purchaseUnit,
+              purchaseUnitConversionFactor: product.purchaseUnitConversionFactor,
               purchasePrice: product.purchasePrice,
-              retailPrice: product.retailPrice,
-              wholesalePrice: product.wholesalePrice,
-              unit: product.unit,
-              initialStock: product.quantityInStock, // 'initialStock' here refers to current stock for editing
+              retailPricePerBaseUnit: product.retailPricePerBaseUnit,
+              wholesalePricePerBaseUnit: product.wholesalePricePerBaseUnit,
+              initialStock: product.quantityInStock, // 'initialStock' here refers to current stock in base units
+              reorderThreshold: product.reorderThreshold ?? 0,
             });
             setProductNotFound(false);
           } else {
@@ -77,8 +97,18 @@ export default function EditProductPage() {
   const { isSubmitting } = form.formState;
 
   async function onSubmit(data: ValidatedProductFormData) {
+    let formData = {...data};
+    if (formData.baseUnit === formData.purchaseUnit) {
+      formData.purchaseUnitConversionFactor = 1;
+    }
+     if (!formData.purchaseUnitConversionFactor && formData.baseUnit !== formData.purchaseUnit) {
+        toast({ title: "Error", description: "Conversion factor is required if units differ.", variant: "destructive" });
+        form.setError("purchaseUnitConversionFactor", { type: "manual", message: "Conversion factor is required."});
+        return;
+    }
+
     try {
-      const result = await updateProductAction(productId, data);
+      const result = await updateProductAction(productId, formData);
       if (result.success) {
         toast({
           title: "Success!",
@@ -133,13 +163,13 @@ export default function EditProductPage() {
             <span className="sr-only">Back to Products</span>
           </Link>
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight font-headline">Edit Product: {form.getValues('productName')}</h1>
+        <h1 className="text-3xl font-bold tracking-tight font-headline">Edit Product: {productName}</h1>
       </div>
       
       <Card className="max-w-2xl mx-auto w-full">
         <CardHeader>
           <CardTitle>Edit Product Details</CardTitle>
-          <CardDescription>Modify the information for product: {form.getValues('productName')}.</CardDescription>
+          <CardDescription>Modify the information for product: {productName}.</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -180,44 +210,66 @@ export default function EditProductPage() {
                   </FormItem>
                 )}
               />
-
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
-                  name="purchasePrice"
+                  name="baseUnit"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Purchase Price (₹)</FormLabel>
-                      <FormControl>
-                        <Input type="number" placeholder="e.g., 350.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')}/>
-                      </FormControl>
+                      <FormLabel>Base Unit (Smallest Sellable)</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select base unit..." /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {PRODUCT_UNITS.map(unit => (<SelectItem key={`base-${unit}`} value={unit}>{unit}</SelectItem>))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
                 <FormField
                   control={form.control}
-                  name="retailPrice"
+                  name="purchaseUnit"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Retail Price (₹)</FormLabel>
-                      <FormControl>
-                        <Input type="number" placeholder="e.g., 700.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
-                      </FormControl>
+                      <FormLabel>Purchase Unit (Bought As)</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select purchase unit..." /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {PRODUCT_UNITS.map(unit => (<SelectItem key={`purchase-${unit}`} value={unit}>{unit}</SelectItem>))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
+              
+              {showConversionFactor && (
+                <FormField
+                  control={form.control}
+                  name="purchaseUnitConversionFactor"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Conversion Factor ({watchedBaseUnit}s per {watchedPurchaseUnit})</FormLabel>
+                      <FormControl>
+                        <Input type="number" placeholder="e.g., 12" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || '')} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}
-                name="wholesalePrice"
+                name="purchasePrice"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Wholesale Price (₹)</FormLabel>
+                    <FormLabel>Purchase Price (₹ per {watchedPurchaseUnit || 'Purchase Unit'})</FormLabel>
                     <FormControl>
-                      <Input type="number" placeholder="e.g., 525.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
+                      <Input type="number" placeholder="e.g., 350.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')}/>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -227,25 +279,12 @@ export default function EditProductPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
-                  name="unit"
+                  name="retailPricePerBaseUnit"
                   render={({ field }) => (
-                    <FormItem className="space-y-3">
-                      <FormLabel>Unit</FormLabel>
+                    <FormItem>
+                      <FormLabel>Retail Price (₹ per {watchedBaseUnit || 'Base Unit'})</FormLabel>
                       <FormControl>
-                        <RadioGroup
-                          onValueChange={field.onChange}
-                          value={field.value}
-                          className="flex flex-wrap gap-x-4 gap-y-2"
-                        >
-                          {PRODUCT_UNITS.map((unit) => (
-                            <FormItem key={unit} className="flex items-center space-x-2 space-y-0">
-                              <FormControl>
-                                <RadioGroupItem value={unit} />
-                              </FormControl>
-                              <FormLabel className="font-normal">{unit}</FormLabel>
-                            </FormItem>
-                          ))}
-                        </RadioGroup>
+                        <Input type="number" placeholder="e.g., 50.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -253,12 +292,41 @@ export default function EditProductPage() {
                 />
                 <FormField
                   control={form.control}
-                  name="initialStock" // This field name is from schema, maps to quantityInStock for edit
+                  name="wholesalePricePerBaseUnit"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Current Stock Quantity</FormLabel>
+                      <FormLabel>Wholesale Price (₹ per {watchedBaseUnit || 'Base Unit'})</FormLabel>
+                      <FormControl>
+                        <Input type="number" placeholder="e.g., 40.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormField
+                  control={form.control}
+                  name="initialStock" // This is quantityInStock (base units) for edit
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Current Stock (in {watchedBaseUnit || 'Base Units'})</FormLabel>
                       <FormControl>
                         <Input type="number" placeholder="e.g., 100" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || '')} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                 <FormField
+                  control={form.control}
+                  name="reorderThreshold"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Reorder Threshold (in {watchedBaseUnit || 'Base Units'})</FormLabel>
+                      <FormControl>
+                        <Input type="number" placeholder="e.g., 24" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

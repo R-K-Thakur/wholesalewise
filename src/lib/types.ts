@@ -5,15 +5,25 @@ export interface Product {
   id: string;
   name: string;
   category: ProductCategory;
-  purchasePrice: number; // Price bought from vendor per unit
-  wholesalePrice: number; // Price sold to other shops per unit
-  retailPrice: number; // Price sold to end-user per unit
-  unit: ProductUnit;
-  quantityInStock: number; // Current stock level
-  sku?: string; // Stock Keeping Unit, optional
-  barcode?: string; // Optional
-  reorderThreshold?: number; // Optional, for alerts
-  vendor?: string; // Optional, main vendor
+
+  baseUnit: ProductUnit; // Smallest sellable unit (e.g., "piece")
+  purchaseUnit: ProductUnit; // Unit product is bought in (e.g., "dozen")
+  // Conversion factor: how many baseUnits are in one purchaseUnit.
+  // E.g., if purchaseUnit is "dozen" and baseUnit is "piece", factor is 12.
+  // If purchaseUnit is "piece" and baseUnit is "piece", factor is 1.
+  purchaseUnitConversionFactor: number;
+
+  purchasePrice: number; // Price per purchaseUnit
+
+  retailPricePerBaseUnit: number;
+  wholesalePricePerBaseUnit: number;
+
+  quantityInStock: number; // Current stock level IN BASE UNITS
+
+  sku?: string;
+  barcode?: string;
+  reorderThreshold?: number; // In BASE UNITS
+  vendor?: string;
   createdAt: string; // ISO Date string
   updatedAt: string; // ISO Date string
 }
@@ -22,8 +32,8 @@ export interface Purchase {
   id:string;
   productId: string;
   productNameSnapshot: string; // Snapshot of product name at time of purchase
-  quantityPurchased: number;
-  purchasePricePerUnit: number;
+  quantityPurchased: number; // In purchaseUnits of the product
+  purchasePricePerUnitSnapshot: number; // Price per purchaseUnit
   totalCost: number;
   purchaseDate: string; // ISO Date string
   vendor?: string;
@@ -32,7 +42,7 @@ export interface Purchase {
 
 export interface Sale {
   id: string;
-  items: SaleItem[]; // Support for multiple items in a single sale
+  items: SaleItem[];
   totalAmount: number;
   saleType: 'wholesale' | 'retail';
   saleDate: string; // ISO Date string
@@ -45,17 +55,19 @@ export interface Sale {
 
 export interface SaleItem {
   productId: string;
-  productNameSnapshot: string; // Snapshot of product name at time of sale
-  quantitySold: number;
-  pricePerUnitSold: number; // Actual price it was sold at
-  unitSnapshot: ProductUnit; // Snapshot of product unit
+  productNameSnapshot: string;
+  quantitySold: number; // Quantity in soldUnit
+  pricePerUnitSold: number; // Price for the soldUnit
+  soldUnit: ProductUnit; // Unit the item was sold in (baseUnit or purchaseUnit)
+  baseUnitSnapshot: ProductUnit; // Base unit of the product at time of sale
   total: number;
 }
 
 // For forms - typically omit id, createdAt, updatedAt, and snapshots
-export type ProductFormData = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'quantityInStock'> & { initialStock: number };
+export type ProductFormData = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'quantityInStock'> & { initialStockInPurchaseUnits: number }; // initialStock is in purchase units for new product form
 export type PurchaseFormData = Omit<Purchase, 'id' | 'productNameSnapshot' | 'totalCost' | 'purchaseDate'> & { purchaseDate?: Date };
-export type SaleItemFormData = Omit<SaleItem, 'productNameSnapshot' | 'unitSnapshot' | 'total'>;
+
+export type SaleItemFormData = Omit<SaleItem, 'productNameSnapshot' | 'baseUnitSnapshot' | 'total' | 'pricePerUnitSold'> & { pricePerUnitSold?: number }; // pricePerUnitSold is optional as it will be set
 export type SaleFormData = {
   items: SaleItemFormData[];
   saleType: 'wholesale' | 'retail';
