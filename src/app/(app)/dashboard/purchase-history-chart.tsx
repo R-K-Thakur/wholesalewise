@@ -33,7 +33,7 @@ interface PurchaseHistoryChartProps {
 
 const chartConfig = {
   totalPurchases: {
-    label: "Purchases (\u20B9)", // Using chart-2 color for differentiation
+    label: `Purchases (${String.fromCharCode(8377)})`, // Using chart-2 color for differentiation
     color: "hsl(var(--chart-2))",
   },
 } satisfies ChartConfig;
@@ -158,7 +158,7 @@ export function PurchaseHistoryChart({ purchases }: PurchaseHistoryChartProps) {
                 tickFormatter={(value) => value.slice(0, 6)}
               />
               <YAxis
-                tickFormatter={(value) => `\u20B9${value.toLocaleString()}`}
+                tickFormatter={(value) => `${String.fromCharCode(8377)}${value.toLocaleString()}`}
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
@@ -176,3 +176,4 @@ export function PurchaseHistoryChart({ purchases }: PurchaseHistoryChartProps) {
     </Card>
   );
 }
+

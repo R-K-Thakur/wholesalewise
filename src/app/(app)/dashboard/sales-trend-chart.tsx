@@ -21,7 +21,7 @@ interface SalesTrendChartProps {
 
 const chartConfig = {
   totalSales: {
-    label: "Sales (\u20B9)",
+    label: `Sales (${String.fromCharCode(8377)})`,
     color: "hsl(var(--chart-1))",
   },
 } satisfies ChartConfig;
@@ -144,7 +144,7 @@ export function SalesTrendChart({ sales }: SalesTrendChartProps) {
                 tickFormatter={(value) => value.slice(0, 6)} 
               />
               <YAxis
-                tickFormatter={(value) => `\u20B9${value.toLocaleString()}`}
+                tickFormatter={(value) => `${String.fromCharCode(8377)}${value.toLocaleString()}`}
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
@@ -162,3 +162,4 @@ export function SalesTrendChart({ sales }: SalesTrendChartProps) {
     </Card>
   );
 }
+

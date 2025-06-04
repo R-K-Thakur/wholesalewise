@@ -193,9 +193,9 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
                 <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-foreground">{product.name}</td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.category}</td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.quantityInStock} {product.baseUnit}</td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">\u20B9{(product.purchasePrice || 0).toFixed(2)} <span className="text-xs">/{product.purchaseUnit}</span></td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">\u20B9{(product.retailPricePerBaseUnit || 0).toFixed(2)} <span className="text-xs">/{product.baseUnit}</span></td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">\u20B9{(product.wholesalePricePerBaseUnit || 0).toFixed(2)} <span className="text-xs">/{product.baseUnit}</span></td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{String.fromCharCode(8377)}{(product.purchasePrice || 0).toFixed(2)} <span className="text-xs">/{product.purchaseUnit}</span></td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{String.fromCharCode(8377)}{(product.retailPricePerBaseUnit || 0).toFixed(2)} <span className="text-xs">/{product.baseUnit}</span></td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{String.fromCharCode(8377)}{(product.wholesalePricePerBaseUnit || 0).toFixed(2)} <span className="text-xs">/{product.baseUnit}</span></td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground">
                     {product.baseUnit} / {product.purchaseUnit}
                     {product.baseUnit !== product.purchaseUnit && ` (${product.purchaseUnitConversionFactor}:1)`}
@@ -293,7 +293,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="newPurchasePrice" className="text-right col-span-1">
-                    Price / {productForStockAdd.purchaseUnit} (\u20B9)
+                    Price / {productForStockAdd.purchaseUnit} ({String.fromCharCode(8377)})
                   </Label>
                   <Input
                     id="newPurchasePrice"
@@ -301,7 +301,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
                     value={newPurchasePrice}
                     onChange={(e) => setNewPurchasePrice(e.target.value)}
                     className="col-span-3"
-                    placeholder={`Optional: Current is \u20B9${(productForStockAdd.purchasePrice || 0).toFixed(2)}`}
+                    placeholder={`Optional: Current is ${String.fromCharCode(8377)}${(productForStockAdd.purchasePrice || 0).toFixed(2)}`}
                     step="0.01"
                     min="0"
                     disabled={isSubmittingStock}
@@ -324,3 +324,4 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     </>
   );
 }
+

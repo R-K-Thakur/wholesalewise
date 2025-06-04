@@ -48,7 +48,7 @@ export default async function DashboardPage() {
       id: sale.id,
       type: 'sale',
       date: sale.createdAt, 
-      description: `Sale of ₹${sale.totalAmount.toFixed(2)} to ${sale.customerName || 'N/A'}.`,
+      description: `Sale of ${String.fromCharCode(8377)}${sale.totalAmount.toFixed(2)} to ${sale.customerName || 'N/A'}.`,
       amount: sale.totalAmount,
       link: `/sales/${sale.id}`,
       // recordedByEmail will be undefined for sales unless we start tracking who records sales
@@ -91,7 +91,7 @@ export default async function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                ₹{summaryData.totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {String.fromCharCode(8377)}{summaryData.totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </CardContent>
           </Card>

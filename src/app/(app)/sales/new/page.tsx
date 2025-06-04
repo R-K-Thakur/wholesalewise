@@ -6,14 +6,13 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, PlusCircle, Trash2, Loader2, Check } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, ChevronDown } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
   Form,
   FormControl,
@@ -67,7 +66,6 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>([]);
 
   React.useEffect(() => {
-    // Initialize or update itemSearchTexts based on the number of fields
     const newSearchTexts = form.getValues("items").map((item, i) => {
       const product = allProducts.find(p => p.id === item.productId);
       return product ? product.name : (itemSearchTexts[i] || "");
@@ -76,17 +74,16 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       setItemSearchTexts(newSearchTexts);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields.length, form.getValues("items").map(i => i.productId).join(',')]); // Re-run if product IDs change (e.g., on initial load)
+  }, [fields.length, form.getValues("items").map(i => i.productId).join(',')]);
 
   React.useEffect(() => {
-    // Ensure itemSearchTexts array has the same length as fields array
     if (fields.length !== itemSearchTexts.length) {
       setItemSearchTexts(currentSearchTexts => {
         const newTexts = [...currentSearchTexts];
         while (newTexts.length < fields.length) {
-          newTexts.push(""); // Add empty strings for new items
+          newTexts.push(""); 
         }
-        return newTexts.slice(0, fields.length); // Truncate if items were removed
+        return newTexts.slice(0, fields.length); 
       });
     }
   }, [fields.length]);
@@ -100,7 +97,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : PRODUCT_UNITS[0],
       baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : PRODUCT_UNITS[0]
     });
-    setItemSearchTexts(prev => [...prev, ""]); // Add new empty search text
+    setItemSearchTexts(prev => [...prev, ""]); 
   };
 
   const handleRemoveItem = (index: number) => {
@@ -363,7 +360,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                                 const newSearchTexts = [...itemSearchTexts];
                                 newSearchTexts[index] = currentVal;
                                 setItemSearchTexts(newSearchTexts);
-                                if (RHFfield.value) { RHFfield.onChange(''); } // Clear selection if typing
+                                if (RHFfield.value) { RHFfield.onChange(''); } 
                                 setOpenComboboxIndex(index);
                             }}
                             onFocus={() => {
@@ -374,50 +371,71 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                             className="w-full"
                         />
                       </PopoverTrigger>
-                      <PopoverContent className="w-[--radix-popover-trigger-width)] p-0" align="start" side="bottom">
-                        <Command
-                            filter={(value, search) => {
-                                return 1; // Allow manual filtering
-                            }}
-                        >
-                          <CommandList>
-                            <CommandEmpty>No product found.</CommandEmpty>
-                            <CommandGroup>
-                              {allProducts
-                                .filter(p => {
-                                    const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                    if (!searchText) return true;
-                                    return p.name.toLowerCase().includes(searchText) ||
-                                        (p.sku && p.sku.toLowerCase().includes(searchText));
-                                })
-                                .slice(0,10)
-                                .map((product) => (
-                                <CommandItem
-                                  key={product.id}
-                                  value={product.name}
-                                  onSelect={() => {
-                                    if (product.quantityInStock === 0) {
-                                        toast({ title: "Out of Stock", description: `${product.name} is currently out of stock.`, variant: "destructive"});
-                                        return;
-                                    }
-                                    handleProductSelectInternal(index, product.id);
-                                  }}
-                                  disabled={product.quantityInStock === 0}
-                                  className={cn(product.quantityInStock === 0 && "opacity-50 cursor-not-allowed")}
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-4 w-4",
-                                      RHFfield.value === product.id ? "opacity-100" : "opacity-0"
-                                    )}
-                                  />
-                                  {product.name} (Stock: {product.quantityInStock} {product.baseUnit})
-                                  {product.quantityInStock === 0 && <span className="ml-auto text-xs text-destructive">Out of Stock</span>}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
+                      <PopoverContent 
+                        className="w-[--radix-popover-trigger-width] p-0 max-h-60 overflow-y-auto" 
+                        align="start" 
+                        side="bottom"
+                       >
+                        <div className="py-1">
+                          {allProducts
+                            .filter(p => {
+                                const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
+                                if (!searchText) return true;
+                                return p.name.toLowerCase().includes(searchText) ||
+                                    (p.sku && p.sku.toLowerCase().includes(searchText));
+                            })
+                            .slice(0,10)
+                            .map((product) => (
+                            <div
+                              key={product.id}
+                              onClick={() => {
+                                if (product.quantityInStock === 0) {
+                                    toast({ title: "Out of Stock", description: `${product.name} is currently out of stock.`, variant: "destructive"});
+                                    return;
+                                }
+                                handleProductSelectInternal(index, product.id);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  if (product.quantityInStock === 0) {
+                                    toast({ title: "Out of Stock", description: `${product.name} is currently out of stock.`, variant: "destructive"});
+                                    return;
+                                  }
+                                  handleProductSelectInternal(index, product.id);
+                                }
+                              }}
+                              role="button"
+                              tabIndex={0}
+                              aria-pressed={RHFfield.value === product.id}
+                              className={cn(
+                                "flex items-center justify-between px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground",
+                                RHFfield.value === product.id && "bg-accent text-accent-foreground",
+                                product.quantityInStock === 0 && "opacity-50 cursor-not-allowed"
+                              )}
+                            >
+                              <div className="flex items-center gap-2">
+                                <Check
+                                  className={cn(
+                                    "h-4 w-4",
+                                    RHFfield.value === product.id ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                <span>{product.name} (Stock: {product.quantityInStock} {product.baseUnit})</span>
+                              </div>
+                              {product.quantityInStock === 0 && <span className="text-xs text-destructive">Out of Stock</span>}
+                            </div>
+                          ))}
+                          {allProducts.filter(p => {
+                                const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
+                                if (!searchText) return true; // show all if no search text
+                                return p.name.toLowerCase().includes(searchText) ||
+                                    (p.sku && p.sku.toLowerCase().includes(searchText));
+                            }).length === 0 && (
+                               <div className="px-3 py-2 text-sm text-muted-foreground">No product found.</div>
+                            )
+                          }
+                        </div>
                       </PopoverContent>
                     </Popover>
                     <FormMessage />
@@ -469,7 +487,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                   name={`items.${index}.pricePerUnitSold`}
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Price/Unit (\u20B9)</FormLabel>
+                      <FormLabel>Price/Unit ({String.fromCharCode(8377)})</FormLabel>
                       <FormControl>
                         <Input type="number" placeholder="e.g., 700.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
                       </FormControl>
@@ -478,7 +496,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                   )}
                 />
                  <div className="flex flex-col justify-end">
-                    <FormLabel>Item Total (\u20B9)</FormLabel>
+                    <FormLabel>Item Total ({String.fromCharCode(8377)})</FormLabel>
                     <Input
                         type="text"
                         readOnly
@@ -516,7 +534,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
 
         <div className="mt-6 pt-4 border-t">
             <p className="text-xl font-semibold text-right">
-                Grand Total: \u20B9{calculateGrandTotal().toFixed(2)}
+                Grand Total: {String.fromCharCode(8377)}{calculateGrandTotal().toFixed(2)}
             </p>
         </div>
 
@@ -615,3 +633,4 @@ export default function NewSalePage() {
     </div>
   );
 }
+

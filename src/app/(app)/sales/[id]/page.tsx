@@ -81,18 +81,19 @@ export default async function SaleDetailPage({ params }: SaleDetailPageProps) {
                     <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-foreground">{item.productNameSnapshot}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{item.quantitySold}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{item.soldUnit}</td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">\u20B9{item.pricePerUnitSold.toFixed(2)}</td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">\u20B9{item.total.toFixed(2)}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">{String.fromCharCode(8377)}{item.pricePerUnitSold.toFixed(2)}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">{String.fromCharCode(8377)}{item.total.toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <div className="mt-4 text-right">
-            <p className="text-lg font-semibold">Grand Total: \u20B9{sale.totalAmount.toFixed(2)}</p>
+            <p className="text-lg font-semibold">Grand Total: {String.fromCharCode(8377)}{sale.totalAmount.toFixed(2)}</p>
           </div>
         </CardContent>
       </Card>
     </div>
   );
 }
+
