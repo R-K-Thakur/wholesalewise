@@ -1,19 +1,19 @@
 
-"use client"; // This page needs to be a client component for PDF generation
+"use client"; 
 
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { ArrowLeft, Printer, Loader2 } from 'lucide-react';
-import { getSaleByIdAction } from '../actions'; // Import the action
-import type { Sale } from '@/lib/types'; // Use the Sale type
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ArrowLeft, Printer, Eye, Loader2 } from 'lucide-react';
+import { getSaleByIdAction } from '../actions'; 
+import type { Sale } from '@/lib/types'; 
 import { APP_NAME } from '@/lib/constants';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 
-// Define a type for the jspdf instance with autoTable
 interface jsPDFWithAutoTable extends jsPDF {
   autoTable: (options: any) => jsPDFWithAutoTable;
 }
@@ -21,9 +21,11 @@ interface jsPDFWithAutoTable extends jsPDF {
 export default function SaleDetailPage() {
   const params = useParams();
   const saleId = params.id as string;
-  const [sale, setSale] = useState<Sale | undefined | null>(null); // null for loading state
+  const [sale, setSale] = useState<Sale | undefined | null>(null); 
   const [isLoading, setIsLoading] = useState(true);
-  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isProcessingPdf, setIsProcessingPdf] = useState(false);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (saleId) {
@@ -34,7 +36,7 @@ export default function SaleDetailPage() {
         })
         .catch(err => {
           console.error("Failed to fetch sale details:", err);
-          setSale(undefined); // Mark as not found on error
+          setSale(undefined); 
         })
         .finally(() => {
           setIsLoading(false);
@@ -42,9 +44,9 @@ export default function SaleDetailPage() {
     }
   }, [saleId]);
 
-  const generateInvoicePDF = () => {
+  const generateInvoicePDF = (outputType: 'save' | 'datauristring' = 'save'): string | void => {
     if (!sale) return;
-    setIsGeneratingPdf(true);
+    setIsProcessingPdf(true);
 
     try {
       const doc = new jsPDF() as jsPDFWithAutoTable;
@@ -52,18 +54,15 @@ export default function SaleDetailPage() {
       const pageWidth = doc.internal.pageSize.width || doc.internal.pageSize.getWidth();
       let startY = 20;
 
-      // Shop Name
       doc.setFontSize(18);
       doc.setFont(undefined, 'bold');
       doc.text(APP_NAME, pageWidth / 2, startY, { align: 'center' });
       startY += 10;
 
-      // Invoice Title
       doc.setFontSize(14);
       doc.text("INVOICE", pageWidth / 2, startY, { align: 'center' });
       startY += 10;
 
-      // Sale Details
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
       doc.text(`Invoice ID: ${sale.id}`, 15, startY);
@@ -78,9 +77,7 @@ export default function SaleDetailPage() {
       doc.text(`Sale Type: ${sale.saleType.charAt(0).toUpperCase() + sale.saleType.slice(1)}`, 15, startY);
       startY += 10;
 
-
-      // Items Table
-      const tableColumn = ["Product Name", "Qty", "Unit", "Price/Unit (Rs.)", "Total (Rs.)"];
+      const tableColumn = ["Product Name", "Qty", "Unit", `Price/Unit (${String.fromCharCode(8377)})`, `Total (${String.fromCharCode(8377)})`];
       const tableRows: (string | number)[][] = [];
 
       sale.items.forEach(item => {
@@ -103,14 +100,11 @@ export default function SaleDetailPage() {
         margin: { top: 10 },
       });
       
-      // Get Y position after table
       startY = (doc as any).lastAutoTable.finalY + 10;
 
-
-      // Grand Total
       doc.setFontSize(12);
       doc.setFont(undefined, 'bold');
-      doc.text(`Grand Total: Rs. ${sale.totalAmount.toFixed(2)}`, pageWidth - 15, startY, { align: 'right' });
+      doc.text(`Grand Total: ${String.fromCharCode(8377)} ${sale.totalAmount.toFixed(2)}`, pageWidth - 15, startY, { align: 'right' });
       startY += 7;
       
       doc.setFontSize(10);
@@ -120,10 +114,8 @@ export default function SaleDetailPage() {
         startY += 7;
       }
 
-
-      // Notes
       if (sale.notes) {
-        if (startY > pageHeight - 30) { // Add new page if not enough space
+        if (startY > pageHeight - 30) { 
             doc.addPage();
             startY = 20;
         }
@@ -137,7 +129,6 @@ export default function SaleDetailPage() {
         startY += (splitNotes.length * 5) + 5;
       }
 
-      // Thank you message
        if (startY > pageHeight - 20) {
             doc.addPage();
             startY = 20;
@@ -145,13 +136,28 @@ export default function SaleDetailPage() {
       doc.setFontSize(10);
       doc.text("Thank you for your business!", pageWidth / 2, startY, { align: 'center' });
 
-      doc.save(`invoice-${sale.id}.pdf`);
+      if (outputType === 'datauristring') {
+        return doc.output('datauristring');
+      } else {
+        doc.save(`invoice-${sale.id}.pdf`);
+      }
     } catch (error) {
         console.error("Error generating PDF:", error);
-        // Consider adding a user-facing toast notification here
     } finally {
-        setIsGeneratingPdf(false);
+        setIsProcessingPdf(false);
     }
+  };
+
+  const handlePreviewBill = () => {
+    const dataUri = generateInvoicePDF('datauristring');
+    if (dataUri) {
+      setPreviewPdfUrl(dataUri);
+      setIsPreviewModalOpen(true);
+    }
+  };
+
+  const handleDownloadPdf = () => {
+    generateInvoicePDF('save');
   };
 
   if (isLoading) {
@@ -190,10 +196,16 @@ export default function SaleDetailPage() {
             Sale Details
           </h1>
         </div>
-        <Button onClick={generateInvoicePDF} disabled={isGeneratingPdf} className="w-full sm:w-auto">
-          {isGeneratingPdf ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
-          Print Bill
-        </Button>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Button onClick={handlePreviewBill} disabled={isProcessingPdf} variant="outline" className="w-full sm:w-auto">
+            {isProcessingPdf && previewPdfUrl === null ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}
+            Preview Bill
+          </Button>
+          <Button onClick={handleDownloadPdf} disabled={isProcessingPdf} className="w-full sm:w-auto">
+            {isProcessingPdf && previewPdfUrl !== null ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+            Download PDF
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -248,6 +260,32 @@ export default function SaleDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={isPreviewModalOpen} onOpenChange={setIsPreviewModalOpen}>
+        <DialogContent className="max-w-3xl h-[90vh] flex flex-col p-0">
+          <DialogHeader className="p-4 border-b">
+            <DialogTitle>Invoice Preview</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 p-0 m-0 overflow-hidden">
+            {previewPdfUrl ? (
+              <iframe
+                src={previewPdfUrl}
+                width="100%"
+                height="100%"
+                className="border-0"
+                title="Invoice Preview"
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="ml-2">Loading preview...</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
+    
