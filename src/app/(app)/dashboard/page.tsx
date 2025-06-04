@@ -48,7 +48,7 @@ export default async function DashboardPage() {
       id: sale.id,
       type: 'sale',
       date: sale.createdAt, 
-      description: `Sale of ${String.fromCharCode(8377)}${sale.totalAmount.toFixed(2)} to ${sale.customerName || 'N/A'}.`,
+      description: `Sale of Rs. ${sale.totalAmount.toFixed(2)} to ${sale.customerName || 'N/A'}.`,
       amount: sale.totalAmount,
       link: `/sales/${sale.id}`,
       // recordedByEmail will be undefined for sales unless we start tracking who records sales
@@ -87,11 +87,12 @@ export default async function DashboardPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-              <IndianRupee className="h-5 w-5 text-muted-foreground" />
+              {/* Using a generic currency icon as IndianRupee was part of the issue. Can be re-evaluated. */}
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-muted-foreground"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {String.fromCharCode(8377)}{summaryData.totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                Rs. {summaryData.totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </CardContent>
           </Card>

@@ -487,7 +487,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                   name={`items.${index}.pricePerUnitSold`}
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Price/Unit ({String.fromCharCode(8377)})</FormLabel>
+                      <FormLabel>Price/Unit (Rs.)</FormLabel>
                       <FormControl>
                         <Input type="number" placeholder="e.g., 700.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
                       </FormControl>
@@ -496,7 +496,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                   )}
                 />
                  <div className="flex flex-col justify-end">
-                    <FormLabel>Item Total ({String.fromCharCode(8377)})</FormLabel>
+                    <FormLabel>Item Total (Rs.)</FormLabel>
                     <Input
                         type="text"
                         readOnly
@@ -534,7 +534,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
 
         <div className="mt-6 pt-4 border-t">
             <p className="text-xl font-semibold text-right">
-                Grand Total: {String.fromCharCode(8377)}{calculateGrandTotal().toFixed(2)}
+                Grand Total: Rs. {calculateGrandTotal().toFixed(2)}
             </p>
         </div>
 

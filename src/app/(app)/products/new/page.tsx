@@ -221,7 +221,7 @@ export default function NewProductPage() {
                 name="purchasePrice"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Purchase Price (₹ per {watchedPurchaseUnit || 'Purchase Unit'})</FormLabel>
+                    <FormLabel>Purchase Price (Rs. per {watchedPurchaseUnit || 'Purchase Unit'})</FormLabel>
                     <FormControl>
                       <Input type="number" placeholder="e.g., 350.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')}/>
                     </FormControl>
@@ -236,7 +236,7 @@ export default function NewProductPage() {
                   name="retailPricePerBaseUnit"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Retail Price (₹ per {watchedBaseUnit || 'Base Unit'})</FormLabel>
+                      <FormLabel>Retail Price (Rs. per {watchedBaseUnit || 'Base Unit'})</FormLabel>
                       <FormControl>
                         <Input type="number" placeholder="e.g., 50.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
                       </FormControl>
@@ -249,7 +249,7 @@ export default function NewProductPage() {
                   name="wholesalePricePerBaseUnit"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Wholesale Price (₹ per {watchedBaseUnit || 'Base Unit'})</FormLabel>
+                      <FormLabel>Wholesale Price (Rs. per {watchedBaseUnit || 'Base Unit'})</FormLabel>
                       <FormControl>
                         <Input type="number" placeholder="e.g., 40.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
                       </FormControl>
@@ -304,3 +304,4 @@ export default function NewProductPage() {
     </div>
   );
 }
+

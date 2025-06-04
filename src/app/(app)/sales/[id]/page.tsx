@@ -71,8 +71,8 @@ export default async function SaleDetailPage({ params }: SaleDetailPageProps) {
                   <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Product Name</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Unit</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Price/Unit</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Total</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Price/Unit (Rs.)</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Total (Rs.)</th>
                 </tr>
               </thead>
               <tbody className="bg-card divide-y divide-border">
@@ -81,15 +81,15 @@ export default async function SaleDetailPage({ params }: SaleDetailPageProps) {
                     <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-foreground">{item.productNameSnapshot}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{item.quantitySold}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{item.soldUnit}</td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">{String.fromCharCode(8377)}{item.pricePerUnitSold.toFixed(2)}</td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">{String.fromCharCode(8377)}{item.total.toFixed(2)}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">Rs. {item.pricePerUnitSold.toFixed(2)}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">Rs. {item.total.toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <div className="mt-4 text-right">
-            <p className="text-lg font-semibold">Grand Total: {String.fromCharCode(8377)}{sale.totalAmount.toFixed(2)}</p>
+            <p className="text-lg font-semibold">Grand Total: Rs. {sale.totalAmount.toFixed(2)}</p>
           </div>
         </CardContent>
       </Card>
