@@ -13,9 +13,23 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { getSession, type SessionData } from '@/app/login/actions'; // Import getSession
 
 interface jsPDFWithAutoTable extends jsPDF {
   autoTable: (options: any) => jsPDFWithAutoTable;
+}
+
+const DEFAULT_INVOICE_COLOR_HEX = "#73A7B3"; // Muted Teal from constants if defined, or hardcode
+const DEFAULT_INVOICE_COLOR_RGB_ARRAY = [115, 167, 179]; // RGB for Muted Teal
+
+// Helper to convert hex to RGB array
+function hexToRgb(hex: string): [number, number, number] | null {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? [
+    parseInt(result[1], 16),
+    parseInt(result[2], 16),
+    parseInt(result[3], 16)
+  ] : null;
 }
 
 export default function SaleDetailPage() {
@@ -23,30 +37,38 @@ export default function SaleDetailPage() {
   const saleId = params.id as string;
   const [sale, setSale] = useState<Sale | undefined | null>(null); 
   const [isLoading, setIsLoading] = useState(true);
+  const [session, setSession] = useState<SessionData | null>(null);
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (saleId) {
+    async function fetchData() {
       setIsLoading(true);
-      getSaleByIdAction(saleId)
-        .then(fetchedSale => {
+      if (saleId) {
+        try {
+          const [fetchedSale, currentSession] = await Promise.all([
+            getSaleByIdAction(saleId),
+            getSession()
+          ]);
           setSale(fetchedSale);
-        })
-        .catch(err => {
-          console.error("Failed to fetch sale details:", err);
+          setSession(currentSession);
+        } catch (err) {
+          console.error("Failed to fetch sale details or session:", err);
           setSale(undefined); 
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
+        }
+      }
+      setIsLoading(false);
     }
+    fetchData();
   }, [saleId]);
 
-  const generateInvoicePDF = (outputType: 'save' | 'datauristring' = 'save'): string | void => {
+  const generateInvoicePDF = (outputType: 'save' | 'datauristring' = 'save', options?: { primaryColor?: string }): string | void => {
     if (!sale) return;
     setIsProcessingPdf(true);
+
+    const userPrimaryColorHex = options?.primaryColor || session?.invoicePrimaryColor || DEFAULT_INVOICE_COLOR_HEX;
+    const headerColorRgb = hexToRgb(userPrimaryColorHex) || DEFAULT_INVOICE_COLOR_RGB_ARRAY;
 
     try {
       const doc = new jsPDF() as jsPDFWithAutoTable;
@@ -56,7 +78,6 @@ export default function SaleDetailPage() {
       const leftMargin = 15;
       const rightMargin = pageWidth - 15;
 
-      // Header
       doc.setFontSize(18);
       doc.setFont(undefined, 'bold');
       doc.text(APP_NAME, pageWidth / 2, startY, { align: 'center' });
@@ -66,7 +87,6 @@ export default function SaleDetailPage() {
       doc.text("INVOICE", pageWidth / 2, startY, { align: 'center' });
       startY += 12;
 
-      // Invoice Info & Customer Details
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
       
@@ -82,7 +102,6 @@ export default function SaleDetailPage() {
       doc.text(`Sale Type: ${sale.saleType.charAt(0).toUpperCase() + sale.saleType.slice(1)}`, leftMargin, startY);
       startY += 10;
 
-      // Items Table
       const tableColumn = ["Product Name", "Qty", "Unit", "Price/Unit (Rs.)", "Total (Rs.)"];
       const tableRows: (string | number)[][] = [];
 
@@ -101,31 +120,29 @@ export default function SaleDetailPage() {
         head: [tableColumn],
         body: tableRows,
         startY: startY,
-        theme: 'striped', // 'striped', 'grid', 'plain'
+        theme: 'striped',
         headStyles: { 
-            fillColor: [22, 160, 133], // A teal color
+            fillColor: headerColorRgb, 
             textColor: 255, 
             fontStyle: 'bold',
             halign: 'center'
         },
         columnStyles: {
-            0: { cellWidth: 'auto' }, // Product Name
-            1: { halign: 'right' }, // Qty
-            2: { halign: 'left' }, // Unit
-            3: { halign: 'right' }, // Price/Unit
-            4: { halign: 'right' }  // Total
+            0: { cellWidth: 'auto' }, 
+            1: { halign: 'right' }, 
+            2: { halign: 'left' }, 
+            3: { halign: 'right' }, 
+            4: { halign: 'right' }  
         },
         margin: { top: 10, left: leftMargin, right: leftMargin },
-        tableWidth: 'auto', // Let the table decide its width based on content and margins
+        tableWidth: 'auto', 
         didDrawPage: (data) => {
-            // Reset startY for new pages if table spans multiple pages
             startY = data.cursor?.y || 20;
         }
       });
       
-      startY = (doc as any).lastAutoTable.finalY + 12; // Add more space after table
+      startY = (doc as any).lastAutoTable.finalY + 12; 
 
-      // Totals Section
       doc.setFontSize(12);
       doc.setFont(undefined, 'bold');
       doc.text(`Grand Total: Rs. ${sale.totalAmount.toFixed(2)}`, rightMargin, startY, { align: 'right' });
@@ -138,9 +155,8 @@ export default function SaleDetailPage() {
         startY += 10;
       }
 
-      // Notes Section
       if (sale.notes) {
-        if (startY > pageHeight - 40) { // Check if space for notes title + some content
+        if (startY > pageHeight - 40) { 
             doc.addPage();
             startY = 20;
         }
@@ -151,11 +167,10 @@ export default function SaleDetailPage() {
         doc.setFont(undefined, 'normal');
         const splitNotes = doc.splitTextToSize(sale.notes, rightMargin - leftMargin);
         doc.text(splitNotes, leftMargin, startY);
-        startY += (splitNotes.length * 5) + 10; // Add space after notes
+        startY += (splitNotes.length * 5) + 10; 
       }
 
-      // Footer
-      if (startY > pageHeight - 20) { // Check if space for footer
+      if (startY > pageHeight - 20) { 
             doc.addPage();
             startY = 20;
       }
@@ -170,14 +185,13 @@ export default function SaleDetailPage() {
       }
     } catch (error) {
         console.error("Error generating PDF:", error);
-        // Potentially show a toast notification for PDF generation error
     } finally {
         setIsProcessingPdf(false);
     }
   };
 
   const handlePreviewBill = () => {
-    const dataUri = generateInvoicePDF('datauristring');
+    const dataUri = generateInvoicePDF('datauristring', { primaryColor: session?.invoicePrimaryColor });
     if (dataUri) {
       setPreviewPdfUrl(dataUri);
       setIsPreviewModalOpen(true);
@@ -185,7 +199,7 @@ export default function SaleDetailPage() {
   };
 
   const handleDownloadPdf = () => {
-    generateInvoicePDF('save');
+    generateInvoicePDF('save', { primaryColor: session?.invoicePrimaryColor });
   };
 
   if (isLoading) {
@@ -315,5 +329,3 @@ export default function SaleDetailPage() {
     </div>
   );
 }
-
-    

@@ -9,13 +9,14 @@ import { db } from "@/lib/firebase";
 const SESSION_COOKIE_NAME = "auth-session";
 const APP_SETTINGS_COLLECTION = "app_settings";
 const ROLE_MANAGEMENT_DOC = "role_management";
-const USERS_COLLECTION = "users"; // New collection for user profiles
+const USERS_COLLECTION = "users";
 
 export interface SessionData {
   username: string; 
   email: string;
   role: "owner" | "staff";
-  name: string; // This will serve as the display name
+  name: string; 
+  invoicePrimaryColor?: string; // Added for invoice customization
 }
 
 interface RoleEmails {
@@ -83,9 +84,9 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     return { error: "Login failed: This email address is not authorized to access the application." };
   }
 
-  // Fetch or create user profile from Firestore
   const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
-  let userDisplayName = userEmailLower; // Default display name
+  let userDisplayName = userEmailLower;
+  let userInvoicePrimaryColor: string | undefined = undefined;
 
   try {
     const userDocSnap = await getDoc(userDocRef);
@@ -94,23 +95,24 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
       if (userData.displayName && typeof userData.displayName === 'string' && userData.displayName.trim() !== "") {
         userDisplayName = userData.displayName;
       } else {
-        // Document exists but no valid displayName, update it with email
-        await updateDoc(userDocRef, { displayName: userEmailLower, email: userEmailLower }); // ensure email is also there
+        await updateDoc(userDocRef, { displayName: userEmailLower, email: userEmailLower });
+      }
+      if (userData.invoicePrimaryColor && typeof userData.invoicePrimaryColor === 'string') {
+        userInvoicePrimaryColor = userData.invoicePrimaryColor;
       }
     } else {
-      // User document doesn't exist, create it with email as displayName
-      await setDoc(userDocRef, { email: userEmailLower, displayName: userEmailLower });
+      await setDoc(userDocRef, { email: userEmailLower, displayName: userEmailLower, invoicePrimaryColor: undefined });
     }
   } catch (dbError) {
     console.error("Error accessing/creating user document in Firestore:", dbError);
-    // Proceed with email as display name, but log the error. Don't fail login.
   }
 
   const sessionData: SessionData = {
     username: email, 
     email: email,
     role: userRole,
-    name: userDisplayName, // Use fetched/default display name
+    name: userDisplayName,
+    invoicePrimaryColor: userInvoicePrimaryColor,
   };
 
   const cookieSecure = true; 
@@ -176,21 +178,18 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
   const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
 
   try {
-    // Update Firestore document
     const userDocSnap = await getDoc(userDocRef);
     if (userDocSnap.exists()) {
       await updateDoc(userDocRef, { displayName: newTrimmedName });
     } else {
-      // This case should ideally not happen if sign-in creates the doc, but handle defensively
       await setDoc(userDocRef, { email: userEmailLower, displayName: newTrimmedName });
-      console.warn(`User document for ${userEmailLower} was created during display name update. This might indicate an issue with the sign-in flow not creating the user document initially.`);
+      console.warn(`User document for ${userEmailLower} was created during display name update.`);
     }
   } catch (dbError) {
     console.error("Error updating user displayName in Firestore:", dbError);
     return { success: false, message: "Failed to save display name to the database. Please try again." };
   }
 
-  // Update session cookie
   const updatedSessionData: SessionData = {
     ...session,
     name: newTrimmedName, 
@@ -203,15 +202,57 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
       httpOnly: true,
       secure: cookieSecure,
-      maxAge: 60 * 60 * 24 * 7, // 1 week
+      maxAge: 60 * 60 * 24 * 7, 
       path: "/",
       sameSite: cookieSameSite,
     });
     return { success: true, message: "Display name updated successfully." };
   } catch (error) {
     console.error("Failed to update session cookie for display name:", error);
-    // Note: Firestore update succeeded, but cookie update failed. This could lead to inconsistency until next login.
     return { success: false, message: "Display name was saved to the database, but failed to update your current session. Changes will reflect on next login." };
   }
 }
 
+export async function updateUserInvoiceColorAction(color: string): Promise<{ success: boolean; message?: string }> {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, message: "No active session found. Please log in again." };
+  }
+
+  // Basic hex color validation (e.g., #RRGGBB)
+  if (!/^#[0-9A-F]{6}$/i.test(color)) {
+    return { success: false, message: "Invalid color format. Please use a valid hex color code (e.g., #RRGGBB)." };
+  }
+
+  const userEmailLower = session.email.toLowerCase();
+  const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
+
+  try {
+    await updateDoc(userDocRef, { invoicePrimaryColor: color });
+  } catch (dbError) {
+    console.error("Error updating user invoicePrimaryColor in Firestore:", dbError);
+    return { success: false, message: "Failed to save invoice color to the database. Please try again." };
+  }
+
+  const updatedSessionData: SessionData = {
+    ...session,
+    invoicePrimaryColor: color,
+  };
+
+  const cookieSecure = true;
+  const cookieSameSite = "none" as "none" | "lax" | "strict" | undefined;
+
+  try {
+    cookies().set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
+      httpOnly: true,
+      secure: cookieSecure,
+      maxAge: 60 * 60 * 24 * 7,
+      path: "/",
+      sameSite: cookieSameSite,
+    });
+    return { success: true, message: "Invoice color updated successfully." };
+  } catch (error) {
+    console.error("Failed to update session cookie for invoice color:", error);
+    return { success: false, message: "Invoice color was saved to the database, but failed to update your current session. Changes will reflect on next login." };
+  }
+}
