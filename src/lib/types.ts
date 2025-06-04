@@ -6,41 +6,39 @@ export interface Product {
   name: string;
   category: ProductCategory;
 
-  baseUnit: ProductUnit; // Smallest sellable unit (e.g., "piece")
-  purchaseUnit: ProductUnit; // Unit product is bought in (e.g., "dozen")
-  // Conversion factor: how many baseUnits are in one purchaseUnit.
-  // E.g., if purchaseUnit is "dozen" and baseUnit is "piece", factor is 12.
-  // If purchaseUnit is "piece" and baseUnit is "piece", factor is 1.
+  baseUnit: ProductUnit; 
+  purchaseUnit: ProductUnit; 
   purchaseUnitConversionFactor: number;
 
-  purchasePrice: number; // Price per purchaseUnit
+  purchasePrice: number; 
 
   retailPricePerBaseUnit: number;
   wholesalePricePerBaseUnit: number;
 
-  quantityInStock: number; // Current stock level IN BASE UNITS
+  quantityInStock: number; 
 
   sku?: string;
   barcode?: string;
-  reorderThreshold?: number; // In BASE UNITS
+  reorderThreshold?: number; 
   vendor?: string;
-  createdAt: string; // ISO Date string
-  updatedAt: string; // ISO Date string
+  createdAt: string; 
+  updatedAt: string; 
+  createdByEmail?: string;
+  lastStockUpdateByEmail?: string;
 }
 
 export interface Purchase {
   id: string;
   productId: string;
-  productNameSnapshot: string; // Snapshot of product name at time of purchase
-  quantityPurchased: number; // In purchaseUnits of the product
-  purchaseUnitSnapshot: ProductUnit; // Snapshot of the product's purchaseUnit
-  purchasePricePerUnitSnapshot: number; // Price per purchaseUnit at time of purchase
+  productNameSnapshot: string; 
+  quantityPurchased: number; 
+  purchaseUnitSnapshot: ProductUnit; 
+  purchasePricePerUnitSnapshot: number; 
   totalCost: number;
-  purchaseDate: string; // ISO Date string - effectively the event date for the purchase
-  // vendor?: string; // Kept minimal for now based on current "Add Stock"
-  // notes?: string;  // Kept minimal
-  createdAt: string; // ISO Date string - when the record was created in DB
-  updatedAt: string; // ISO Date string
+  purchaseDate: string; 
+  createdAt: string; 
+  updatedAt: string; 
+  recordedByEmail?: string;
 }
 
 export interface Sale {
@@ -48,27 +46,26 @@ export interface Sale {
   items: SaleItem[];
   totalAmount: number;
   saleType: 'wholesale' | 'retail';
-  saleDate: string; // ISO Date string - the date the sale occurred
+  saleDate: string; 
   customerName?: string;
   paymentMethod?: 'cash' | 'card' | 'online';
   notes?: string;
-  createdAt: string; // ISO Date string - when the record was created in DB
-  updatedAt: string; // ISO Date string
+  createdAt: string; 
+  updatedAt: string; 
 }
 
 export interface SaleItem {
   productId: string;
   productNameSnapshot: string;
-  quantitySold: number; // Quantity in soldUnit
-  pricePerUnitSold: number; // Price for the soldUnit
-  soldUnit: ProductUnit; // Unit the item was sold in (baseUnit or purchaseUnit)
-  baseUnitSnapshot: ProductUnit; // Base unit of the product at time of sale
+  quantitySold: number; 
+  pricePerUnitSold: number; 
+  soldUnit: ProductUnit; 
+  baseUnitSnapshot: ProductUnit; 
   total: number;
 }
 
-// For forms - typically omit id, createdAt, updatedAt, and snapshots
-export type ProductFormData = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'quantityInStock'> & { initialStockInPurchaseUnits: number }; // initialStock is in purchase units for new product form
-export type PurchaseFormData = Omit<Purchase, 'id' | 'productNameSnapshot' | 'totalCost' | 'purchaseDate' | 'purchaseUnitSnapshot' | 'createdAt' | 'updatedAt'> & { purchaseDate?: Date };
+export type ProductFormData = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'quantityInStock' | 'createdByEmail' | 'lastStockUpdateByEmail'> & { initialStockInPurchaseUnits: number }; 
+export type PurchaseFormData = Omit<Purchase, 'id' | 'productNameSnapshot' | 'totalCost' | 'purchaseDate' | 'purchaseUnitSnapshot' | 'createdAt' | 'updatedAt' | 'recordedByEmail'> & { purchaseDate?: Date };
 
 
 export type SaleItemFormData = Omit<SaleItem, 'productNameSnapshot' | 'total' | 'pricePerUnitSold'> & { pricePerUnitSold?: number };
@@ -81,10 +78,9 @@ export type SaleFormData = {
   notes?: string;
 };
 
-// Summary types for dashboard
 export interface StockSummary {
   totalProducts: number;
-  totalStockValue: number; // Based on purchase price
+  totalStockValue: number; 
   lowStockItems: number;
 }
 
@@ -94,17 +90,18 @@ export interface SalesTrend {
 }
 
 export interface PurchaseTrend {
-  date: string; // Formatted date string for chart (e.g., "MMM d")
-  totalPurchases: number; // Total cost of purchases on this date
-  fullDate?: string; // Original full date for sorting if needed (e.g., "yyyy-MM-dd")
+  date: string; 
+  totalPurchases: number; 
+  fullDate?: string; 
 }
 
-// For Recent Activity Widget
 export interface ActivityItem {
-  id: string; // Unique ID, can be sale.id, purchase.id
-  type: 'sale' | 'purchase'; // 'new_product' can be inferred from purchase context
-  date: string; // ISO Date string for sorting (typically createdAt of the event record)
+  id: string; 
+  type: 'sale' | 'purchase'; 
+  date: string; 
   description: string;
-  amount?: number; // For sales or purchase totalCost
-  link?: string; // e.g., to /sales/[id] or /products/[id]/edit
+  amount?: number; 
+  link?: string; 
+  recordedByEmail?: string; // Added to show who recorded a purchase/stock update
 }
+

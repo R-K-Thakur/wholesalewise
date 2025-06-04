@@ -41,7 +41,7 @@ export function RecentActivityWidget({ activities }: RecentActivityWidgetProps) 
         <ScrollArea className="h-[350px] pr-3">
           <div className="space-y-3">
             {activities.map((activity) => {
-              const IconComponent = typeToIconMap[activity.type] || PackagePlus; // Default icon
+              const IconComponent = typeToIconMap[activity.type] || PackagePlus; 
               let timeAgo = 'some time ago';
               try {
                 if (activity.date) {
@@ -51,13 +51,18 @@ export function RecentActivityWidget({ activities }: RecentActivityWidgetProps) 
                 console.warn(`Error parsing date for activity ${activity.id}: ${activity.date}`, e);
               }
 
+              let descriptionWithUser = activity.description;
+              if (activity.type === 'purchase' && activity.recordedByEmail) {
+                descriptionWithUser += ` by ${activity.recordedByEmail}`;
+              }
+
               return (
                 <div key={`${activity.type}-${activity.id}`} className="flex items-start gap-3 p-3 border rounded-lg shadow-sm hover:bg-muted/30 transition-colors">
                   <div className="flex-shrink-0 mt-1">
                     <IconComponent className="h-5 w-5 text-primary" />
                   </div>
-                  <div className="flex-grow min-w-0"> {/* Added min-w-0 for text truncation */}
-                    <p className="text-sm font-medium text-foreground truncate">{activity.description}</p>
+                  <div className="flex-grow min-w-0"> 
+                    <p className="text-sm font-medium text-foreground truncate">{descriptionWithUser}</p>
                     <p className="text-xs text-muted-foreground">{timeAgo}</p>
                   </div>
                   {activity.link && (
@@ -76,3 +81,4 @@ export function RecentActivityWidget({ activities }: RecentActivityWidgetProps) 
     </Card>
   );
 }
+

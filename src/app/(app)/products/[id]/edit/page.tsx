@@ -6,8 +6,9 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, UserCircle, CalendarDays } from "lucide-react"; // Added icons
 import * as React from "react";
+import { format } from "date-fns";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -18,7 +19,7 @@ import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from "@/lib/constants";
 import { useToast } from "@/hooks/use-toast";
 import { getProductByIdAction, updateProductAction } from "../../actions";
 import { productFormSchema, type ValidatedProductFormData } from "../../schema";
-// import type { Product } from '@/lib/types'; // Not directly used
+import type { Product } from '@/lib/types'; // Import Product for type hints
 
 export default function EditProductPage() {
   const router = useRouter();
@@ -28,11 +29,11 @@ export default function EditProductPage() {
   const [isLoadingProduct, setIsLoadingProduct] = React.useState(true);
   const [productNotFound, setProductNotFound] = React.useState(false);
   const [productName, setProductName] = React.useState("Product");
+  const [productDetails, setProductDetails] = React.useState<Product | null>(null);
 
 
   const form = useForm<ValidatedProductFormData>({
     resolver: zodResolver(productFormSchema),
-    // Default values will be set by useEffect after fetching product
   });
 
   const watchedBaseUnit = useWatch({ control: form.control, name: "baseUnit" });
@@ -48,13 +49,11 @@ export default function EditProductPage() {
     if (watchedPurchaseUnit === "dozen" && watchedBaseUnit === "piece") {
       form.setValue("purchaseUnitConversionFactor", 12, { shouldValidate: true });
     } else if (watchedBaseUnit === watchedPurchaseUnit) {
-      // Ensure conversion factor is 1 if units are the same
       const currentFactor = form.getValues("purchaseUnitConversionFactor");
       if (currentFactor !== 1) {
         form.setValue("purchaseUnitConversionFactor", 1, { shouldValidate: true });
       }
     }
-    // For other differing units, user inputs factor if showConversionFactorInput is true
   }, [watchedBaseUnit, watchedPurchaseUnit, form]);
 
 
@@ -65,7 +64,7 @@ export default function EditProductPage() {
         .then(product => {
           if (product) {
             setProductName(product.name);
-            // If loaded product is dozen/piece, ensure factor is 12 (new logic will handle this in other useEffect)
+            setProductDetails(product); // Store full product details
             let conversionFactor = product.purchaseUnitConversionFactor;
             if (product.purchaseUnit === "dozen" && product.baseUnit === "piece") {
               conversionFactor = 12;
@@ -82,7 +81,7 @@ export default function EditProductPage() {
               purchasePrice: product.purchasePrice,
               retailPricePerBaseUnit: product.retailPricePerBaseUnit,
               wholesalePricePerBaseUnit: product.wholesalePricePerBaseUnit,
-              initialStock: product.quantityInStock, // 'initialStock' here refers to current stock in base units
+              initialStock: product.quantityInStock, 
               reorderThreshold: product.reorderThreshold ?? 0,
             });
             setProductNotFound(false);
@@ -115,7 +114,6 @@ export default function EditProductPage() {
   async function onSubmit(data: ValidatedProductFormData) {
     let formData = {...data};
     
-    // Ensure conversion factor is correctly set based on final unit selection
     if (formData.baseUnit === formData.purchaseUnit) {
       formData.purchaseUnitConversionFactor = 1;
     } else if (formData.purchaseUnit === "dozen" && formData.baseUnit === "piece") {
@@ -197,6 +195,7 @@ export default function EditProductPage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              {/* Product Info Fields Here... */}
               <FormField
                 control={form.control}
                 name="productName"
@@ -336,7 +335,7 @@ export default function EditProductPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
-                  name="initialStock" // This is quantityInStock (base units) for edit
+                  name="initialStock" 
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Current Stock (in {watchedBaseUnit || 'Base Units'})</FormLabel>
@@ -373,8 +372,41 @@ export default function EditProductPage() {
               </div>
             </form>
           </Form>
+          
+          {productDetails && (
+            <div className="mt-8 pt-6 border-t">
+              <h3 className="text-base font-medium mb-3 text-foreground">Product History</h3>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                {productDetails.createdByEmail && (
+                  <div className="flex items-center gap-2">
+                    <UserCircle className="h-4 w-4" />
+                    <span>Created by: {productDetails.createdByEmail}</span>
+                    <CalendarDays className="h-4 w-4 ml-auto" />
+                    <span>{format(new Date(productDetails.createdAt), "PPp")}</span>
+                  </div>
+                )}
+                {productDetails.lastStockUpdateByEmail && productDetails.lastStockUpdateByEmail !== productDetails.createdByEmail && (
+                   <div className="flex items-center gap-2">
+                    <UserCircle className="h-4 w-4" />
+                    <span>Last stock updated by: {productDetails.lastStockUpdateByEmail}</span>
+                    <CalendarDays className="h-4 w-4 ml-auto" />
+                    <span>{format(new Date(productDetails.updatedAt), "PPp")}</span>
+                  </div>
+                )}
+                 {productDetails.lastStockUpdateByEmail && productDetails.lastStockUpdateByEmail === productDetails.createdByEmail && productDetails.updatedAt !== productDetails.createdAt && (
+                   <div className="flex items-center gap-2">
+                    <UserCircle className="h-4 w-4" />
+                    <span>Stock updated by: {productDetails.lastStockUpdateByEmail}</span>
+                    <CalendarDays className="h-4 w-4 ml-auto" />
+                    <span>{format(new Date(productDetails.updatedAt), "PPp")}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
+

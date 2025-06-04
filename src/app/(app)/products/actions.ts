@@ -7,6 +7,7 @@ import { db } from '@/lib/firebase';
 import type { ValidatedProductFormData } from './schema';
 import type { Product, Purchase } from '@/lib/types';
 import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from '@/lib/constants';
+import { getSession } from '@/app/login/actions'; // Import getSession
 
 const PRODUCTS_COLLECTION = 'products';
 const PURCHASES_COLLECTION = 'purchases';
@@ -28,18 +29,20 @@ const mapDocToProduct = (document: import('firebase/firestore').DocumentSnapshot
     purchaseUnit: PRODUCT_UNITS.includes(data.purchaseUnit) ? data.purchaseUnit : PRODUCT_UNITS[0],
     purchaseUnitConversionFactor: typeof data.purchaseUnitConversionFactor === 'number' ? data.purchaseUnitConversionFactor : 1,
     
-    purchasePrice: typeof data.purchasePrice === 'number' ? data.purchasePrice : 0, // Per purchase unit
+    purchasePrice: typeof data.purchasePrice === 'number' ? data.purchasePrice : 0, 
     retailPricePerBaseUnit: typeof data.retailPricePerBaseUnit === 'number' ? data.retailPricePerBaseUnit : 0,
     wholesalePricePerBaseUnit: typeof data.wholesalePricePerBaseUnit === 'number' ? data.wholesalePricePerBaseUnit : 0,
     
-    quantityInStock: typeof data.quantityInStock === 'number' ? data.quantityInStock : 0, // In base units
+    quantityInStock: typeof data.quantityInStock === 'number' ? data.quantityInStock : 0, 
     
     sku: typeof data.sku === 'string' ? data.sku : '',
     barcode: typeof data.barcode === 'string' ? data.barcode : '',
-    reorderThreshold: typeof data.reorderThreshold === 'number' ? data.reorderThreshold : 0, // In base units
+    reorderThreshold: typeof data.reorderThreshold === 'number' ? data.reorderThreshold : 0, 
     vendor: typeof data.vendor === 'string' ? data.vendor : '',
     createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (data.createdAt || nowAsISO),
     updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : (data.updatedAt || nowAsISO),
+    createdByEmail: typeof data.createdByEmail === 'string' ? data.createdByEmail : undefined,
+    lastStockUpdateByEmail: typeof data.lastStockUpdateByEmail === 'string' ? data.lastStockUpdateByEmail : undefined,
   };
 };
 
@@ -51,6 +54,9 @@ export async function addProduct(data: ValidatedProductFormData) {
     return { success: false, message: 'Simulated error: Product name cannot be "Fail".' };
   }
 
+  const session = await getSession();
+  const userEmail = session?.email || 'system'; // Fallback, though session should exist for logged-in actions
+
   try {
     const now = Timestamp.now().toDate().toISOString();
     
@@ -60,39 +66,35 @@ export async function addProduct(data: ValidatedProductFormData) {
     } else if (data.purchaseUnit === "dozen" && data.baseUnit === "piece") {
       conversionFactor = 12;
     } else if (!conversionFactor || conversionFactor < 1) {
-      // This case should be caught by schema validation, but double check
       return { success: false, message: 'Invalid conversion factor.' };
     }
 
-    // Initial stock from form is in purchase units. Convert to base units for storage.
     const quantityInBaseUnits = data.initialStock * conversionFactor;
 
-    const newProductData = {
+    const newProductData: Omit<Product, 'id'> = {
       name: data.productName,
       category: data.category,
       baseUnit: data.baseUnit,
       purchaseUnit: data.purchaseUnit,
       purchaseUnitConversionFactor: conversionFactor,
-      purchasePrice: data.purchasePrice, // This is per purchase unit
+      purchasePrice: data.purchasePrice, 
       retailPricePerBaseUnit: data.retailPricePerBaseUnit,
       wholesalePricePerBaseUnit: data.wholesalePricePerBaseUnit,
-      quantityInStock: quantityInBaseUnits, // Stored in base units
+      quantityInStock: quantityInBaseUnits, 
       reorderThreshold: data.reorderThreshold ?? 0,
       sku: '', 
       barcode: '',
       vendor: '',
       createdAt: now,
       updatedAt: now,
+      createdByEmail: userEmail, // Record who created the product
+      lastStockUpdateByEmail: userEmail, // Also set for initial stock
     };
     
-    // Use a transaction to add the product and its initial purchase record
     const productDocRef = await runTransaction(db, async (transaction) => {
-      const newProductRef = doc(collection(db, PRODUCTS_COLLECTION)); // Generate a new ref for product
+      const newProductRef = doc(collection(db, PRODUCTS_COLLECTION)); 
       transaction.set(newProductRef, newProductData);
 
-      // Create a purchase record for the initial stock
-      // data.initialStock is in purchaseUnits
-      // data.purchasePrice is per purchaseUnit
       const initialPurchaseRecord: Omit<Purchase, 'id'> = {
         productId: newProductRef.id,
         productNameSnapshot: data.productName,
@@ -100,21 +102,22 @@ export async function addProduct(data: ValidatedProductFormData) {
         purchaseUnitSnapshot: data.purchaseUnit,
         purchasePricePerUnitSnapshot: data.purchasePrice,
         totalCost: data.initialStock * data.purchasePrice,
-        purchaseDate: now, // Use the same creation date as the product for this initial "purchase"
+        purchaseDate: now, 
         createdAt: now,
         updatedAt: now,
+        recordedByEmail: userEmail, // Record who logged this initial "purchase"
       };
       const purchaseDocRef = doc(collection(db, PURCHASES_COLLECTION));
       transaction.set(purchaseDocRef, initialPurchaseRecord);
       
-      return newProductRef; // Return the product reference
+      return newProductRef; 
     });
 
     revalidatePath('/products');
-    revalidatePath('/dashboard'); // For low stock, product search, and purchase history
+    revalidatePath('/dashboard'); 
 
     const productToReturn: Product = {
-      id: productDocRef.id, // Use the ID from the transaction result
+      id: productDocRef.id, 
       ...newProductData, 
     };
 
@@ -155,6 +158,9 @@ export async function getProductByIdAction(id: string): Promise<Product | undefi
 }
 
 export async function updateProductAction(id: string, data: Partial<ValidatedProductFormData>) {
+  const session = await getSession(); // Get session for user email
+  const userEmail = session?.email || 'system';
+
   try {
     const productRef = doc(db, PRODUCTS_COLLECTION, id);
     
@@ -181,9 +187,9 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
         updateData.purchaseUnitConversionFactor = data.purchaseUnitConversionFactor;
     } else if (finalBaseUnit !== finalPurchaseUnit) {
         if (currentProductData.purchaseUnitConversionFactor && currentProductData.purchaseUnitConversionFactor >=1){
-             if (data.purchaseUnitConversionFactor === undefined) { // if not being explicitly updated
+             if (data.purchaseUnitConversionFactor === undefined) { 
                 updateData.purchaseUnitConversionFactor = currentProductData.purchaseUnitConversionFactor;
-             } else { // explicitly updated to something invalid (caught by schema for forms)
+             } else { 
                  return { success: false, message: 'Conversion factor is required and must be >= 1 if base and purchase units differ (and not dozen/piece).' };
              }
         } else {
@@ -195,8 +201,17 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
     if (data.purchasePrice !== undefined) updateData.purchasePrice = data.purchasePrice;
     if (data.retailPricePerBaseUnit !== undefined) updateData.retailPricePerBaseUnit = data.retailPricePerBaseUnit;
     if (data.wholesalePricePerBaseUnit !== undefined) updateData.wholesalePricePerBaseUnit = data.wholesalePricePerBaseUnit;
-    // 'initialStock' from form maps to 'quantityInStock' (base units) for editing
-    if (data.initialStock !== undefined) updateData.quantityInStock = data.initialStock; 
+    
+    if (data.initialStock !== undefined) { // 'initialStock' from form is current stock for edit
+        updateData.quantityInStock = data.initialStock; 
+        // Note: This specific updateProductAction is for general edits, not necessarily stock *additions*.
+        // If quantityInStock is changed here, it's a direct adjustment.
+        // The addStockToProductAction is specifically for *adding* stock and logging a purchase.
+        // For this general update, we will update lastStockUpdateByEmail if quantity changes.
+        if (data.initialStock !== currentProductData?.quantityInStock) {
+            updateData.lastStockUpdateByEmail = userEmail;
+        }
+    }
     if (data.reorderThreshold !== undefined) updateData.reorderThreshold = data.reorderThreshold;
 
 
@@ -248,9 +263,11 @@ export async function addStockToProductAction(
     return { success: false, message: "Quantity to add must be positive." };
   }
 
+  const session = await getSession();
+  const userEmail = session?.email || 'system';
+
   try {
     const productRef = doc(db, PRODUCTS_COLLECTION, productId);
-    // const purchaseCollectionRef = collection(db, PURCHASES_COLLECTION); // Not needed if doc ref is generated inside transaction
 
     await runTransaction(db, async (transaction) => {
       const productDoc = await transaction.get(productRef);
@@ -258,7 +275,7 @@ export async function addStockToProductAction(
         throw new Error("Product not found.");
       }
 
-      const productData = productDoc.data(); // Raw data, mapDocToProduct isn't easily usable in transaction directly
+      const productData = productDoc.data(); 
       if (!productData) throw new Error("Product data is missing.");
 
       const conversionFactor = productData.purchaseUnitConversionFactor || 1;
@@ -270,6 +287,7 @@ export async function addStockToProductAction(
       const productUpdatePayload: any = {
         quantityInStock: newStockInBaseUnits,
         updatedAt: nowISO,
+        lastStockUpdateByEmail: userEmail, // Record who added stock
       };
 
       let purchasePriceForRecord = productData.purchasePrice;
@@ -280,26 +298,25 @@ export async function addStockToProductAction(
       
       transaction.update(productRef, productUpdatePayload);
 
-      // Create a purchase record
       const purchaseRecord: Omit<Purchase, 'id'> = {
         productId: productId,
-        productNameSnapshot: productData.name || 'Unknown Product', // Fallback if name somehow missing
+        productNameSnapshot: productData.name || 'Unknown Product', 
         quantityPurchased: quantityAddedInPurchaseUnits,
-        purchaseUnitSnapshot: productData.purchaseUnit || PRODUCT_UNITS[0], // Fallback
+        purchaseUnitSnapshot: productData.purchaseUnit || PRODUCT_UNITS[0], 
         purchasePricePerUnitSnapshot: purchasePriceForRecord,
         totalCost: quantityAddedInPurchaseUnits * purchasePriceForRecord,
         purchaseDate: nowISO,
         createdAt: nowISO,
         updatedAt: nowISO,
+        recordedByEmail: userEmail, // Record who logged this purchase
       };
-      // Generate a new doc ref for the purchase record within the transaction
       const purchaseDocRef = doc(collection(db, PURCHASES_COLLECTION));
       transaction.set(purchaseDocRef, purchaseRecord);
     });
 
     revalidatePath('/products');
     revalidatePath(`/products/${productId}/edit`);
-    revalidatePath('/dashboard'); // For purchase history chart and low stock widget
+    revalidatePath('/dashboard'); 
     
     return { success: true, message: "Stock added and purchase recorded successfully!" };
   } catch (error) {
@@ -308,7 +325,6 @@ export async function addStockToProductAction(
   }
 }
 
-// Action to fetch purchase records
 export async function getPurchasesAction(): Promise<Purchase[]> {
   try {
     const q = query(collection(db, PURCHASES_COLLECTION), orderBy("purchaseDate", "desc"));
@@ -316,12 +332,11 @@ export async function getPurchasesAction(): Promise<Purchase[]> {
     const purchases = querySnapshot.docs.map(docSnap => {
       const data = docSnap.data();
       const nowAsISO = new Date().toISOString();
-      // Ensure purchaseDate is handled correctly, whether it's a Firestore Timestamp or already a string
       let purchaseDateString = nowAsISO;
       if (data.purchaseDate) {
         if (typeof data.purchaseDate === 'string') {
           purchaseDateString = data.purchaseDate;
-        } else if (data.purchaseDate.toDate) { // Check if it's a Firestore Timestamp
+        } else if (data.purchaseDate.toDate) { 
           purchaseDateString = data.purchaseDate.toDate().toISOString();
         }
       }
@@ -355,6 +370,7 @@ export async function getPurchasesAction(): Promise<Purchase[]> {
         purchaseDate: purchaseDateString,
         createdAt: createdAtString,
         updatedAt: updatedAtString,
+        recordedByEmail: typeof data.recordedByEmail === 'string' ? data.recordedByEmail : undefined,
       } as Purchase;
     });
     return purchases;

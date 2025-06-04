@@ -40,7 +40,6 @@ export default async function DashboardPage() {
     totalProducts: totalProducts,
   };
 
-  // Prepare recent activity data
   const MAX_ACTIVITY_ITEMS = 7;
   const activityItems: ActivityItem[] = [];
 
@@ -48,10 +47,11 @@ export default async function DashboardPage() {
     activityItems.push({
       id: sale.id,
       type: 'sale',
-      date: sale.createdAt, // Use createdAt for recency of the record
+      date: sale.createdAt, 
       description: `Sale of ₹${sale.totalAmount.toFixed(2)} to ${sale.customerName || 'N/A'}.`,
       amount: sale.totalAmount,
       link: `/sales/${sale.id}`,
+      // recordedByEmail will be undefined for sales unless we start tracking who records sales
     });
   });
 
@@ -59,21 +59,18 @@ export default async function DashboardPage() {
     const product = products.find(p => p.id === purchase.productId);
     let desc = `Stock added for ${purchase.productNameSnapshot}: ${purchase.quantityPurchased} ${purchase.purchaseUnitSnapshot}.`;
     
-    // Check if this purchase was for a new product's initial stock
-    if (product && product.createdAt === purchase.createdAt) {
-      // A more robust check might involve comparing purchase.purchaseDate with product.createdAt if timestamps are exact
-      // Or checking if this is the *only* purchase for this product created at the same time as the product.
-      // For simplicity, if purchase record createdAt matches product createdAt, we assume initial stock.
+    if (product && product.createdAt === purchase.createdAt && product.createdByEmail === purchase.recordedByEmail) {
        desc = `Initial stock for ${purchase.productNameSnapshot}: ${purchase.quantityPurchased} ${purchase.purchaseUnitSnapshot}.`;
     }
   
     activityItems.push({
       id: purchase.id, 
       type: 'purchase',
-      date: purchase.createdAt, // Use createdAt for recency of the record
+      date: purchase.createdAt, 
       description: desc,
       amount: purchase.totalCost,
       link: product ? `/products/${product.id}/edit` : undefined,
+      recordedByEmail: purchase.recordedByEmail,
     });
   });
 
@@ -159,3 +156,4 @@ export default async function DashboardPage() {
     </div>
   );
 }
+
