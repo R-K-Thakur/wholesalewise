@@ -6,7 +6,7 @@ import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, PlusCircle, Trash2, Check, ChevronsUpDown, Loader2 } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trash2, Loader2 } from "lucide-react"; // Removed Check, ChevronsUpDown
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -17,7 +17,6 @@ import {
   Command,
   CommandEmpty,
   CommandGroup,
-  CommandInput,
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
@@ -53,7 +52,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         productId: '', 
         quantitySold: 1, 
         pricePerUnitSold: 0,
-        soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece', // Default based on first product or 'piece'
+        soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece',
         baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece'
       }],
       paymentMethod: 'cash',
@@ -70,6 +69,54 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   const watchItems = form.watch("items");
   const watchSaleType = form.watch("saleType");
 
+  const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
+  const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>(
+    form.getValues("items").map(() => "") 
+  );
+
+  React.useEffect(() => {
+    const currentFormItems = form.getValues("items");
+    // Initialize or sync search texts based on product IDs in the form
+    const newSearchTexts = currentFormItems.map((item, idx) => {
+      if (item.productId) {
+        const product = allProducts.find(p => p.id === item.productId);
+        return product ? product.name : (itemSearchTexts[idx] || '');
+      }
+      // Preserve existing search text if no productId is set (e.g., user is typing)
+      return itemSearchTexts[idx] || '';
+    });
+
+    // Prevent unnecessary re-renders if search texts haven't actually changed
+    if (JSON.stringify(newSearchTexts) !== JSON.stringify(itemSearchTexts)) {
+      setItemSearchTexts(newSearchTexts);
+    }
+  // watchItems dependency is important for reacting to form.setValue on productId
+  // allProducts is needed if products load asynchronously
+  // form and itemSearchTexts themselves should not be deps here to avoid loops.
+  }, [watchItems, allProducts, form]);
+
+
+  const handleAddItem = () => {
+    append({ 
+      productId: '', 
+      quantitySold: 1, 
+      pricePerUnitSold: 0, 
+      soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece',
+      baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece'
+    });
+    setItemSearchTexts(prev => [...prev, ""]);
+  };
+
+  const handleRemoveItem = (index: number) => {
+    if (fields.length <= 1) {
+      toast({ title: "Cannot remove last item", description: "A sale must have at least one item.", variant: "destructive" });
+      return;
+    }
+    remove(index);
+    setItemSearchTexts(prev => prev.filter((_, i) => i !== index));
+  };
+
+
   React.useEffect(() => {
     watchItems.forEach((item, index) => {
         const product = allProducts.find(p => p.id === item.productId);
@@ -78,7 +125,6 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                 ? product.wholesalePricePerBaseUnit 
                 : product.retailPricePerBaseUnit;
             
-            // If sold unit is purchase unit and differs from base unit, adjust price
             let pricePerSoldUnit = price;
             if (item.soldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor > 0) {
                 pricePerSoldUnit = price * product.purchaseUnitConversionFactor;
@@ -97,10 +143,16 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     let totalAmount = 0;
     const itemsForAction: RecordSaleActionPayload['items'] = [];
 
-    for (const item of data.items) {
+    for (const [index, item] of data.items.entries()) {
       const product = allProducts.find(p => p.id === item.productId);
       if (!product) {
-        toast({ title: "Error", description: `Product details not found for one of the items.`, variant: "destructive"});
+        // Check if search text for this item might have been intended as the product
+        if (itemSearchTexts[index] && itemSearchTexts[index].trim() !== "") {
+             toast({ title: "Error", description: `Product "${itemSearchTexts[index]}" not finalized. Please select a product from the list for item ${index + 1}.`, variant: "destructive"});
+        } else {
+             toast({ title: "Error", description: `Product not selected for item ${index + 1}.`, variant: "destructive"});
+        }
+        form.setError(`items.${index}.productId`, {message: "Product selection is required."});
         return;
       }
       const itemTotal = (item.quantitySold || 0) * (item.pricePerUnitSold || 0);
@@ -128,6 +180,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
           description: result.message,
         });
         form.reset(); 
+        setItemSearchTexts(form.getValues("items").map(() => "")); // Reset search texts
         router.push('/sales'); 
       } else {
         toast({
@@ -146,12 +199,11 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     }
   }
 
-  const handleProductSelect = (itemIndex: number, productId: string) => {
+  const handleProductSelectInternal = (itemIndex: number, productId: string) => {
     const product = allProducts.find(p => p.id === productId);
     if (product) {
       form.setValue(`items.${itemIndex}.productId`, product.id);
       form.setValue(`items.${itemIndex}.baseUnitSnapshot`, product.baseUnit);
-      // Default soldUnit to baseUnit, user can change if they sell in purchaseUnit
       form.setValue(`items.${itemIndex}.soldUnit`, product.baseUnit); 
       
       const currentSaleType = form.getValues("saleType");
@@ -162,12 +214,16 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerBaseUnit.toFixed(2)));
       form.trigger(`items.${itemIndex}.pricePerUnitSold`); 
       form.trigger(`items.${itemIndex}.soldUnit`);
-      form.clearErrors(`items.${itemIndex}.productId`); 
+      form.clearErrors(`items.${itemIndex}.productId`);
+
+      const newSearchTexts = [...itemSearchTexts];
+      newSearchTexts[itemIndex] = product.name;
+      setItemSearchTexts(newSearchTexts);
     }
   };
   
   const handleSoldUnitChange = (itemIndex: number, newSoldUnit: ProductUnit) => {
-    form.setValue(`items.${index}.soldUnit`, newSoldUnit);
+    form.setValue(`items.${itemIndex}.soldUnit`, newSoldUnit); // Use form.setValue to trigger watchItems effect
     const product = allProducts.find(p => p.id === form.getValues(`items.${itemIndex}.productId`));
     if (product) {
         const currentSaleType = form.getValues("saleType");
@@ -182,9 +238,6 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)));
     }
   };
-
-
-  const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
 
   const calculateGrandTotal = () => {
     return watchItems.reduce((sum, item) => {
@@ -279,9 +332,9 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         <div>
           <h3 className="text-lg font-medium text-foreground mb-2">Items</h3>
           {fields.map((item, index) => {
-            const selectedProduct = allProducts.find(p => p.id === watchItems[index]?.productId);
-            const availableUnits: ProductUnit[] = selectedProduct ? 
-                (selectedProduct.baseUnit === selectedProduct.purchaseUnit ? [selectedProduct.baseUnit] : [selectedProduct.baseUnit, selectedProduct.purchaseUnit]) 
+            const selectedProductForUnits = allProducts.find(p => p.id === watchItems[index]?.productId);
+            const availableUnits: ProductUnit[] = selectedProductForUnits ? 
+                (selectedProductForUnits.baseUnit === selectedProductForUnits.purchaseUnit ? [selectedProductForUnits.baseUnit] : [selectedProductForUnits.baseUnit, selectedProductForUnits.purchaseUnit]) 
                 : ['piece'];
 
             return (
@@ -289,53 +342,74 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
               <FormField
                 control={form.control}
                 name={`items.${index}.productId`}
-                render={({ field }) => (
+                render={({ field: RHFfield }) => ( 
                   <FormItem className="flex flex-col">
                     <FormLabel>Product</FormLabel>
-                    <Popover open={openComboboxIndex === index} onOpenChange={(isOpen) => setOpenComboboxIndex(isOpen ? index : null)}>
+                    <Popover 
+                        open={openComboboxIndex === index} 
+                        onOpenChange={(isOpen) => {
+                            setOpenComboboxIndex(isOpen ? index : null);
+                            if (!isOpen && !RHFfield.value && itemSearchTexts[index]?.trim()) {
+                                // If popover closes, no product ID is set, but there was search text,
+                                // we might want to clear the search text or validate.
+                                // For now, rely on form validation on submit.
+                            }
+                        }}
+                    >
                       <PopoverTrigger asChild>
                         <FormControl>
-                          <Button
-                            variant="outline"
-                            role="combobox"
-                            className={cn(
-                              "w-full justify-between",
-                              !field.value && "text-muted-foreground"
-                            )}
-                          >
-                            {field.value
-                              ? allProducts.find(
-                                  (p) => p.id === field.value
-                                )?.name
-                              : "Select a product..."}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
+                          <Input
+                            placeholder="Type to search product..."
+                            value={itemSearchTexts[index] || ""}
+                            onChange={(e) => {
+                              const newSearchTexts = [...itemSearchTexts];
+                              newSearchTexts[index] = e.target.value;
+                              setItemSearchTexts(newSearchTexts);
+                              RHFfield.onChange(''); // Clear actual productId hidden field while searching
+                              if (e.target.value.trim() !== "") {
+                                setOpenComboboxIndex(index); // Open popover on type if not empty
+                              } else {
+                                setOpenComboboxIndex(null); // Close if input cleared
+                              }
+                            }}
+                            onFocus={() => {
+                                // Open only if there are products or initial search text
+                                if (allProducts.length > 0 || itemSearchTexts[index]?.trim()) {
+                                     setOpenComboboxIndex(index);
+                                }
+                            }}
+                            className="w-full"
+                          />
                         </FormControl>
                       </PopoverTrigger>
-                      <PopoverContent className="w-[--radix-popover-trigger-width)] p-0" align="start">
+                      <PopoverContent className="w-[--radix-popover-trigger-width)] p-0" align="start" side="bottom">
                         <Command>
-                          <CommandInput placeholder="Search product..." />
                           <CommandList>
-                            <CommandEmpty>No product found.</CommandEmpty>
+                            <CommandEmpty>
+                              {(itemSearchTexts[index] || "").trim() ? "No product found." : "Type to search..."}
+                            </CommandEmpty>
                             <CommandGroup>
-                              {allProducts.map((product) => (
+                              {allProducts
+                                .filter(p => {
+                                    const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
+                                    if (!searchText) return true; // Show all if search is empty (or handle differently) - for now show if empty
+                                    return p.name.toLowerCase().includes(searchText) ||
+                                           (p.sku && p.sku.toLowerCase().includes(searchText));
+                                  }
+                                )
+                                .slice(0, 10) // Limit results for performance
+                                .map((product) => (
                                 <CommandItem
-                                  value={product.name}
+                                  value={product.name} 
                                   key={product.id}
                                   onSelect={() => {
-                                    handleProductSelect(index, product.id);
-                                    setOpenComboboxIndex(null);
+                                    RHFfield.onChange(product.id); 
+                                    handleProductSelectInternal(index, product.id);
+                                    setOpenComboboxIndex(null); 
                                   }}
                                   disabled={product.quantityInStock === 0}
+                                  className="cursor-pointer"
                                 >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-4 w-4",
-                                      product.id === field.value
-                                        ? "opacity-100"
-                                        : "opacity-0"
-                                    )}
-                                  />
                                   {product.name} (Stock: {product.quantityInStock} {product.baseUnit})
                                   {product.quantityInStock === 0 && <span className="ml-auto text-xs text-destructive">Out of Stock</span>}
                                 </CommandItem>
@@ -372,7 +446,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                       <Select 
                         onValueChange={(value) => handleSoldUnitChange(index, value as ProductUnit)} 
                         value={field.value}
-                        disabled={!selectedProduct}
+                        disabled={!selectedProductForUnits}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -419,7 +493,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                   variant="ghost"
                   size="sm"
                   className="text-destructive hover:bg-destructive/10"
-                  onClick={() => fields.length > 1 ? remove(index) : toast({ title: "Cannot remove last item", description: "A sale must have at least one item.", variant: "destructive"})}
+                  onClick={() => handleRemoveItem(index)}
                   disabled={fields.length <= 1}
                 >
                   <Trash2 className="h-4 w-4 mr-1" /> Remove Item
@@ -432,13 +506,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
             type="button"
             variant="outline"
             className="w-full mt-2"
-            onClick={() => append({ 
-                productId: '', 
-                quantitySold: 1, 
-                pricePerUnitSold: 0, 
-                soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece',
-                baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece'
-             })}
+            onClick={handleAddItem}
           >
             <PlusCircle className="h-4 w-4 mr-2" /> Add Another Item
           </Button>
@@ -546,3 +614,4 @@ export default function NewSalePage() {
     </div>
   );
 }
+
