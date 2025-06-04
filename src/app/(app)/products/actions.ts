@@ -2,7 +2,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, Timestamp, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, Timestamp, query, orderBy, runTransaction } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { ValidatedProductFormData } from './schema';
 import type { Product } from '@/lib/types';
@@ -56,8 +56,9 @@ export async function addProduct(data: ValidatedProductFormData) {
     let conversionFactor = data.purchaseUnitConversionFactor;
     if (data.baseUnit === data.purchaseUnit) {
       conversionFactor = 1;
+    } else if (data.purchaseUnit === "dozen" && data.baseUnit === "piece") {
+      conversionFactor = 12;
     } else if (!conversionFactor || conversionFactor < 1) {
-      // This should be caught by Zod, but as a fallback:
       return { success: false, message: 'Invalid conversion factor.' };
     }
 
@@ -136,38 +137,30 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
     if (data.baseUnit !== undefined) updateData.baseUnit = data.baseUnit;
     if (data.purchaseUnit !== undefined) updateData.purchaseUnit = data.purchaseUnit;
     
-    if (data.baseUnit && data.purchaseUnit && data.baseUnit === data.purchaseUnit) {
+    // Determine the final conversion factor
+    const finalBaseUnit = data.baseUnit || (await getDoc(productRef)).data()?.baseUnit;
+    const finalPurchaseUnit = data.purchaseUnit || (await getDoc(productRef)).data()?.purchaseUnit;
+
+    if (finalBaseUnit === finalPurchaseUnit) {
         updateData.purchaseUnitConversionFactor = 1;
+    } else if (finalPurchaseUnit === "dozen" && finalBaseUnit === "piece") {
+        updateData.purchaseUnitConversionFactor = 12;
     } else if (data.purchaseUnitConversionFactor !== undefined && data.purchaseUnitConversionFactor >= 1) {
         updateData.purchaseUnitConversionFactor = data.purchaseUnitConversionFactor;
-    } else if (data.baseUnit && data.purchaseUnit && data.baseUnit !== data.purchaseUnit && data.purchaseUnitConversionFactor === undefined) {
-        // If units differ and factor is not provided on update, keep existing or error?
-        // For now, let's assume if units are updated, factor must be provided if they differ.
-        // This logic might need refinement based on how the form enforces it.
-        // Zod refine should handle if units differ and factor is missing on NEW product.
-        // On EDIT, if units are changed to be different, factor must be supplied.
-        // If only factor is changed, it's fine.
-        // If units changed to be same, action sets factor to 1.
-        // If units are same and factor is provided but not 1, it's an issue.
-        // The form should control this or Zod schema.
-        // Let's fetch current doc to ensure factor is consistent if units are not changing but factor is.
+    } else if (finalBaseUnit !== finalPurchaseUnit) {
+        // If units are different, and not dozen/piece, and factor is not provided or invalid,
+        // it's an issue unless it's already correctly set (this relies on schema validation for forms)
+        // For direct updates, this path assumes valid data or that schema validation covers it.
         const currentDoc = await getDoc(productRef);
         if (currentDoc.exists()) {
             const currentProductData = currentDoc.data();
-            const finalBaseUnit = data.baseUnit || currentProductData.baseUnit;
-            const finalPurchaseUnit = data.purchaseUnit || currentProductData.purchaseUnit;
-            if (finalBaseUnit === finalPurchaseUnit) {
-                updateData.purchaseUnitConversionFactor = 1;
-            } else if (data.purchaseUnitConversionFactor !== undefined && data.purchaseUnitConversionFactor >=1) {
-                 updateData.purchaseUnitConversionFactor = data.purchaseUnitConversionFactor;
-            } else if (finalBaseUnit !== finalPurchaseUnit && currentProductData.purchaseUnitConversionFactor) {
-                // If units differ and no new factor given, retain old one IF it's valid (>=1).
-                // This case is tricky. Simplest is to require factor if units differ.
-                // The schema's superRefine handles this for the whole object.
-                // If units differ, factor must be provided.
-                if(data.purchaseUnitConversionFactor === undefined && (data.baseUnit !== undefined || data.purchaseUnit !== undefined)){
-                   return { success: false, message: 'Conversion factor is required if base and purchase units differ.' };
-                }
+            if (currentProductData.purchaseUnitConversionFactor && currentProductData.purchaseUnitConversionFactor >=1){
+                 // keep existing if not specified
+                 if (data.purchaseUnitConversionFactor === undefined) {
+                    updateData.purchaseUnitConversionFactor = currentProductData.purchaseUnitConversionFactor;
+                 }
+            } else {
+                 return { success: false, message: 'Conversion factor is required and must be >= 1 if base and purchase units differ (and not dozen/piece).' };
             }
         }
     }
@@ -214,5 +207,55 @@ export async function deleteProductAction(id: string) {
   } catch (error) {
     console.error("Error deleting product from Firestore:", error);
     return { success: false, message: `Failed to delete product: ${error instanceof Error ? error.message : 'Unknown error'}` };
+  }
+}
+
+export async function addStockToProductAction(
+  productId: string, 
+  quantityAddedInPurchaseUnits: number, 
+  newPurchasePricePerPurchaseUnit?: number
+): Promise<{ success: boolean; message: string }> {
+  if (!productId) {
+    return { success: false, message: "Product ID is required." };
+  }
+  if (quantityAddedInPurchaseUnits <= 0) {
+    return { success: false, message: "Quantity to add must be positive." };
+  }
+
+  try {
+    const productRef = doc(db, PRODUCTS_COLLECTION, productId);
+
+    await runTransaction(db, async (transaction) => {
+      const productDoc = await transaction.get(productRef);
+      if (!productDoc.exists()) {
+        throw new Error("Product not found.");
+      }
+
+      const productData = productDoc.data() as Product; // Assuming Product type is correct
+      const conversionFactor = productData.purchaseUnitConversionFactor || 1;
+      const quantityAddedInBaseUnits = quantityAddedInPurchaseUnits * conversionFactor;
+
+      const newStockInBaseUnits = (productData.quantityInStock || 0) + quantityAddedInBaseUnits;
+
+      const updatePayload: any = {
+        quantityInStock: newStockInBaseUnits,
+        updatedAt: Timestamp.now().toDate().toISOString(),
+      };
+
+      if (newPurchasePricePerPurchaseUnit !== undefined && newPurchasePricePerPurchaseUnit >= 0) {
+        updatePayload.purchasePrice = newPurchasePricePerPurchaseUnit;
+      }
+      
+      transaction.update(productRef, updatePayload);
+    });
+
+    revalidatePath('/products');
+    revalidatePath(`/products/${productId}/edit`);
+    revalidatePath('/dashboard');
+    
+    return { success: true, message: "Stock added successfully!" };
+  } catch (error) {
+    console.error("Error adding stock to product:", error);
+    return { success: false, message: `Failed to add stock: ${error instanceof Error ? error.message : "Unknown error"}` };
   }
 }

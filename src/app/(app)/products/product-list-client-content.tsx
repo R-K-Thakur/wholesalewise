@@ -15,10 +15,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import type { Product } from "@/lib/types";
-import { deleteProductAction } from "./actions";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { deleteProductAction, addStockToProductAction } from "./actions";
+import { ChevronLeft, ChevronRight, PlusCircle, Edit, Trash2, PackagePlus, Loader2 } from "lucide-react";
 
 const ITEMS_PER_PAGE_STORAGE_KEY = "app-items-per-page";
 const DEFAULT_ITEMS_PER_PAGE = 10;
@@ -31,8 +42,16 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   const router = useRouter();
   const { toast } = useToast();
   const [products, setProducts] = React.useState<Product[]>(initialProducts);
+  
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [productToDelete, setProductToDelete] = React.useState<Product | null>(null);
+
+  const [isAddStockDialogOpen, setIsAddStockDialogOpen] = React.useState(false);
+  const [productForStockAdd, setProductForStockAdd] = React.useState<Product | null>(null);
+  const [quantityToAdd, setQuantityToAdd] = React.useState<number | string>("");
+  const [newPurchasePrice, setNewPurchasePrice] = React.useState<number | string>("");
+  const [isSubmittingStock, setIsSubmittingStock] = React.useState(false);
+
 
   const [currentPage, setCurrentPage] = React.useState(1);
   const [itemsPerPage, setItemsPerPage] = React.useState(DEFAULT_ITEMS_PER_PAGE);
@@ -48,7 +67,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
 
   React.useEffect(() => {
     setProducts(initialProducts);
-    setCurrentPage(1); // Reset to first page if products change
+    setCurrentPage(1); 
   }, [initialProducts]);
 
   const handleDeleteClick = (product: Product) => {
@@ -64,7 +83,8 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
           title: "Success!",
           description: result.message,
         });
-        setProducts(prevProducts => prevProducts.filter(p => p.id !== productToDelete.id));
+        // Instead of local filter, refresh data from server for consistency
+        router.refresh(); 
       } else {
         toast({
           title: "Error",
@@ -76,6 +96,41 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     setProductToDelete(null);
     setIsDeleteDialogOpen(false);
   };
+
+  const handleAddStockClick = (product: Product) => {
+    setProductForStockAdd(product);
+    setQuantityToAdd("");
+    setNewPurchasePrice(product.purchasePrice !== undefined ? product.purchasePrice.toString() : "");
+    setIsAddStockDialogOpen(true);
+  };
+
+  const handleConfirmAddStock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!productForStockAdd || quantityToAdd === "" || Number(quantityToAdd) <= 0) {
+      toast({ title: "Input Error", description: "Please enter a valid quantity to add.", variant: "destructive" });
+      return;
+    }
+    setIsSubmittingStock(true);
+    const qty = Number(quantityToAdd);
+    const price = newPurchasePrice === "" ? undefined : Number(newPurchasePrice);
+
+    if (price !== undefined && price < 0) {
+        toast({ title: "Input Error", description: "Purchase price cannot be negative.", variant: "destructive" });
+        setIsSubmittingStock(false);
+        return;
+    }
+
+    const result = await addStockToProductAction(productForStockAdd.id, qty, price);
+    if (result.success) {
+      toast({ title: "Success", description: result.message });
+      setIsAddStockDialogOpen(false);
+      router.refresh(); // Refresh data from server
+    } else {
+      toast({ title: "Error", description: result.message, variant: "destructive" });
+    }
+    setIsSubmittingStock(false);
+  };
+
 
   const totalPages = Math.ceil(products.length / itemsPerPage);
   const paginatedProducts = products.slice(
@@ -92,7 +147,6 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   };
   
   if (!isMounted) {
-    // To prevent hydration mismatch for itemsPerPage from localStorage
     return (
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-border">
@@ -101,10 +155,10 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
               <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Category</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Stock (Base Unit)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Purchase (₹ per Purchase Unit)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Wholesale (₹ per Base Unit)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Retail (₹ per Base Unit)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Units (Base/Purchase)</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Purch. Price</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Retail Price</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Wholesale Price</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Units (Base/Purch)</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
@@ -131,7 +185,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
               <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Retail Price</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Wholesale Price</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Units</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-card divide-y divide-border">
@@ -147,12 +201,15 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
                     {product.baseUnit} / {product.purchaseUnit}
                     {product.baseUnit !== product.purchaseUnit && ` (${product.purchaseUnitConversionFactor}:1)`}
                 </td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
-                  <Button variant="outline" size="sm" className="mr-2" asChild>
-                    <Link href={`/products/${product.id}/edit`}>Edit</Link>
+                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-center space-x-1">
+                  <Button variant="outline" size="sm" onClick={() => handleAddStockClick(product)} title="Add Stock">
+                    <PackagePlus className="h-4 w-4" />
                   </Button>
-                  <Button variant="destructive" size="sm" onClick={() => handleDeleteClick(product)}>
-                    Delete
+                  <Button variant="outline" size="sm" asChild title="Edit Product">
+                    <Link href={`/products/${product.id}/edit`}><Edit className="h-4 w-4" /></Link>
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => handleDeleteClick(product)} title="Delete Product">
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 </td>
               </tr>
@@ -176,7 +233,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
       {products.length > itemsPerPage && (
         <div className="mt-4 flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Page {currentPage} of {totalPages}
+            Page {currentPage} of {totalPages} ({products.length} total items)
           </p>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={handlePrevPage} disabled={currentPage === 1}>
@@ -205,6 +262,63 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+      )}
+
+      {productForStockAdd && (
+        <Dialog open={isAddStockDialogOpen} onOpenChange={setIsAddStockDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <form onSubmit={handleConfirmAddStock}>
+              <DialogHeader>
+                <DialogTitle>Add Stock for: {productForStockAdd.name}</DialogTitle>
+                <DialogDescription>
+                  Current Stock: {productForStockAdd.quantityInStock} {productForStockAdd.baseUnit}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="quantityToAdd" className="text-right col-span-1">
+                    Quantity (in {productForStockAdd.purchaseUnit})
+                  </Label>
+                  <Input
+                    id="quantityToAdd"
+                    type="number"
+                    value={quantityToAdd}
+                    onChange={(e) => setQuantityToAdd(e.target.value)}
+                    className="col-span-3"
+                    min="1"
+                    required
+                    disabled={isSubmittingStock}
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="newPurchasePrice" className="text-right col-span-1">
+                    Price / {productForStockAdd.purchaseUnit} (₹)
+                  </Label>
+                  <Input
+                    id="newPurchasePrice"
+                    type="number"
+                    value={newPurchasePrice}
+                    onChange={(e) => setNewPurchasePrice(e.target.value)}
+                    className="col-span-3"
+                    placeholder="Optional: Current is ₹{(productForStockAdd.purchasePrice || 0).toFixed(2)}"
+                    step="0.01"
+                    min="0"
+                    disabled={isSubmittingStock}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsAddStockDialogOpen(false)} disabled={isSubmittingStock}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isSubmittingStock || quantityToAdd === "" || Number(quantityToAdd) <=0}>
+                  {isSubmittingStock && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Add Stock
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       )}
     </>
   );
