@@ -7,7 +7,7 @@ import { db } from '@/lib/firebase';
 import type { ValidatedProductFormData } from './schema';
 import type { Product, Purchase } from '@/lib/types';
 import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from '@/lib/constants';
-import { getSession } from '@/app/login/actions'; // Import getSession
+import { getSession, type SessionData } from '@/app/login/actions'; // Import getSession
 
 const PRODUCTS_COLLECTION = 'products';
 const PURCHASES_COLLECTION = 'purchases';
@@ -55,7 +55,7 @@ export async function addProduct(data: ValidatedProductFormData) {
   }
 
   const session = await getSession();
-  const userEmail = session?.email || 'system'; // Fallback, though session should exist for logged-in actions
+  const userEmail = session?.email || 'system'; 
 
   try {
     const now = Timestamp.now().toDate().toISOString();
@@ -87,25 +87,27 @@ export async function addProduct(data: ValidatedProductFormData) {
       vendor: '',
       createdAt: now,
       updatedAt: now,
-      createdByEmail: userEmail, // Record who created the product
-      lastStockUpdateByEmail: userEmail, // Also set for initial stock
+      createdByEmail: userEmail,
+      lastStockUpdateByEmail: userEmail, 
     };
     
     const productDocRef = await runTransaction(db, async (transaction) => {
       const newProductRef = doc(collection(db, PRODUCTS_COLLECTION)); 
       transaction.set(newProductRef, newProductData);
 
+      // The initialStock from the form is in purchaseUnits.
+      // The initialPurchaseRecord should log this quantity in purchaseUnits.
       const initialPurchaseRecord: Omit<Purchase, 'id'> = {
         productId: newProductRef.id,
         productNameSnapshot: data.productName,
-        quantityPurchased: data.initialStock,
+        quantityPurchased: data.initialStock, // This is the quantity in purchase units
         purchaseUnitSnapshot: data.purchaseUnit,
         purchasePricePerUnitSnapshot: data.purchasePrice,
-        totalCost: data.initialStock * data.purchasePrice,
+        totalCost: data.initialStock * data.purchasePrice, // Cost based on purchase units
         purchaseDate: now, 
         createdAt: now,
         updatedAt: now,
-        recordedByEmail: userEmail, // Record who logged this initial "purchase"
+        recordedByEmail: userEmail,
       };
       const purchaseDocRef = doc(collection(db, PURCHASES_COLLECTION));
       transaction.set(purchaseDocRef, initialPurchaseRecord);
@@ -158,24 +160,28 @@ export async function getProductByIdAction(id: string): Promise<Product | undefi
 }
 
 export async function updateProductAction(id: string, data: Partial<ValidatedProductFormData>) {
-  const session = await getSession(); // Get session for user email
-  const userEmail = session?.email || 'system';
+  const session = await getSession(); 
+  if (!session) {
+    return { success: false, message: "User session not found. Please log in." };
+  }
+  const userEmail = session.email || 'system_update';
+  const userRole = session.role;
 
   try {
     const productRef = doc(db, PRODUCTS_COLLECTION, id);
     
+    const currentDocSnap = await getDoc(productRef);
+    if (!currentDocSnap.exists()) {
+        return { success: false, message: 'Product not found.' };
+    }
+    const currentProductData = currentDocSnap.data() as Product; // Assuming Product type after .data()
+
     const updateData: { [key: string]: any } = {}; 
     if (data.productName !== undefined) updateData.name = data.productName;
     if (data.category !== undefined) updateData.category = data.category;
     if (data.baseUnit !== undefined) updateData.baseUnit = data.baseUnit;
     if (data.purchaseUnit !== undefined) updateData.purchaseUnit = data.purchaseUnit;
     
-    const currentDocSnap = await getDoc(productRef);
-    if (!currentDocSnap.exists()) {
-        return { success: false, message: 'Product not found.' };
-    }
-    const currentProductData = currentDocSnap.data();
-
     const finalBaseUnit = data.baseUnit || currentProductData?.baseUnit;
     const finalPurchaseUnit = data.purchaseUnit || currentProductData?.purchaseUnit;
 
@@ -202,14 +208,20 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
     if (data.retailPricePerBaseUnit !== undefined) updateData.retailPricePerBaseUnit = data.retailPricePerBaseUnit;
     if (data.wholesalePricePerBaseUnit !== undefined) updateData.wholesalePricePerBaseUnit = data.wholesalePricePerBaseUnit;
     
-    if (data.initialStock !== undefined) { // 'initialStock' from form is current stock for edit
-        updateData.quantityInStock = data.initialStock; 
-        // Note: This specific updateProductAction is for general edits, not necessarily stock *additions*.
-        // If quantityInStock is changed here, it's a direct adjustment.
-        // The addStockToProductAction is specifically for *adding* stock and logging a purchase.
-        // For this general update, we will update lastStockUpdateByEmail if quantity changes.
-        if (data.initialStock !== currentProductData?.quantityInStock) {
-            updateData.lastStockUpdateByEmail = userEmail;
+    // 'initialStock' from form is the new desired total stock in base units for edit.
+    if (data.initialStock !== undefined) { 
+        if (userRole === 'staff' && data.initialStock < currentProductData.quantityInStock) {
+            return { 
+                success: false, 
+                message: `Staff members cannot decrease stock quantity. Current stock is ${currentProductData.quantityInStock} ${currentProductData.baseUnit}. Please enter a value greater than or equal to this.` 
+            };
+        }
+        
+        if (data.initialStock !== currentProductData.quantityInStock) {
+            updateData.quantityInStock = data.initialStock;
+            updateData.lastStockUpdateByEmail = userEmail; // Record who made the change
+        } else if (updateData.quantityInStock === undefined) { // Only set if not already set by direct quantity change
+            // No change to quantityInStock, no need to update lastStockUpdateByEmail unless other fields change
         }
     }
     if (data.reorderThreshold !== undefined) updateData.reorderThreshold = data.reorderThreshold;
@@ -264,7 +276,10 @@ export async function addStockToProductAction(
   }
 
   const session = await getSession();
-  const userEmail = session?.email || 'system';
+  if (!session) {
+    return { success: false, message: "User session not found. Please log in." };
+  }
+  const userEmail = session.email || 'system_stock_add';
 
   try {
     const productRef = doc(db, PRODUCTS_COLLECTION, productId);
@@ -287,7 +302,7 @@ export async function addStockToProductAction(
       const productUpdatePayload: any = {
         quantityInStock: newStockInBaseUnits,
         updatedAt: nowISO,
-        lastStockUpdateByEmail: userEmail, // Record who added stock
+        lastStockUpdateByEmail: userEmail, 
       };
 
       let purchasePriceForRecord = productData.purchasePrice;
@@ -308,7 +323,7 @@ export async function addStockToProductAction(
         purchaseDate: nowISO,
         createdAt: nowISO,
         updatedAt: nowISO,
-        recordedByEmail: userEmail, // Record who logged this purchase
+        recordedByEmail: userEmail, 
       };
       const purchaseDocRef = doc(collection(db, PURCHASES_COLLECTION));
       transaction.set(purchaseDocRef, purchaseRecord);
@@ -380,3 +395,5 @@ export async function getPurchasesAction(): Promise<Purchase[]> {
   }
 }
 
+
+    
