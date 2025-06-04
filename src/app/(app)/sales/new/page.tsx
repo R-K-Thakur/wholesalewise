@@ -2,25 +2,17 @@
 "use client";
 
 import * as React from "react";
-import { useForm, useFieldArray, useWatch } from "react-hook-form";
+import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, ChevronsUpDown } from "lucide-react"; // Added Check, ChevronsUpDown
+import { ArrowLeft, PlusCircle, Trash2, Loader2, Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox"; 
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput as ShadCNCommandInput, // Renamed to avoid conflict if used
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import {
   Form,
   FormControl,
@@ -38,6 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import { saleFormSchema, type SaleFormData, type RecordSaleActionPayload } from "../schema";
 import { recordSaleAction } from "../actions";
 import type { ProductUnit } from "@/lib/constants";
+import { PRODUCT_UNITS } from "@/lib/constants";
 
 
 function SaleForm({ allProducts }: { allProducts: Product[] }) {
@@ -53,8 +46,8 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         productId: '', 
         quantitySold: 1, 
         pricePerUnitSold: 0,
-        soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece',
-        baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece'
+        soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : PRODUCT_UNITS[0],
+        baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : PRODUCT_UNITS[0]
       }],
       paymentMethod: 'cash',
       customerName: '',
@@ -71,42 +64,31 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   const watchSaleType = form.watch("saleType");
 
   const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
-  // itemSearchTexts will hold the text typed by the user in each product input field.
   const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>(
-    // Initialize based on existing product names if any, or empty strings
-    form.getValues("items").map(item => {
-      if (item.productId) {
-        const product = allProducts.find(p => p.id === item.productId);
-        return product ? product.name : "";
-      }
-      return "";
-    })
+    form.getValues("items").map(() => "") // Initialize all to empty strings
   );
 
-  // Effect to update itemSearchTexts if items are added/removed or productIds change externally
   React.useEffect(() => {
-    const currentFormItems = form.getValues("items");
-    if (currentFormItems.length !== itemSearchTexts.length) {
-      setItemSearchTexts(currentFormItems.map((item, idx) => {
-          if (item.productId) {
-            const product = allProducts.find(p => p.id === item.productId);
-            return product ? product.name : (itemSearchTexts[idx] || '');
-          }
-          return itemSearchTexts[idx] || '';
-        })
-      );
+    const formItemsCount = form.getValues("items").length;
+    if (formItemsCount !== itemSearchTexts.length) {
+        const newSearchTexts = Array(formItemsCount).fill("").map((_, i) => {
+            return itemSearchTexts[i] !== undefined ? itemSearchTexts[i] : "";
+        });
+        setItemSearchTexts(newSearchTexts);
     }
-  }, [fields.length, form, allProducts]); // Watch fields.length for add/remove
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fields.length]);
+
 
   const handleAddItem = () => {
     append({ 
       productId: '', 
       quantitySold: 1, 
       pricePerUnitSold: 0, 
-      soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece',
-      baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : 'piece'
+      soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : PRODUCT_UNITS[0],
+      baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : PRODUCT_UNITS[0]
     });
-    setItemSearchTexts(prev => [...prev, ""]); // Add empty search text for the new item
+    setItemSearchTexts(prev => [...prev, ""]);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -117,7 +99,34 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     remove(index);
     setItemSearchTexts(prev => prev.filter((_, i) => i !== index));
   };
+  
+  const handleProductSelectInternal = (itemIndex: number, productId: string) => {
+    const product = allProducts.find(p => p.id === productId);
+    if (product) {
+      // This check is now in the onClick handler of the list item, but kept here as a safeguard.
+      if (product.quantityInStock === 0) { 
+          toast({ title: "Out of Stock", description: `${product.name} is out of stock.`, variant: "destructive" });
+          return;
+      }
+      form.setValue(`items.${itemIndex}.productId`, product.id);
+      form.setValue(`items.${itemIndex}.baseUnitSnapshot`, product.baseUnit);
+      form.setValue(`items.${itemIndex}.soldUnit`, product.baseUnit); 
+      
+      const currentSaleType = form.getValues("saleType");
+      const pricePerBaseUnit = currentSaleType === 'wholesale' 
+          ? product.wholesalePricePerBaseUnit 
+          : product.retailPricePerBaseUnit;
 
+      form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerBaseUnit.toFixed(2)));
+      form.trigger(`items.${itemIndex}.pricePerUnitSold`); 
+      form.trigger(`items.${itemIndex}.soldUnit`);
+      form.clearErrors(`items.${itemIndex}.productId`);
+
+      const newSearchTexts = [...itemSearchTexts];
+      newSearchTexts[itemIndex] = product.name;
+      setItemSearchTexts(newSearchTexts);
+    }
+  };
 
   React.useEffect(() => {
     watchItems.forEach((item, index) => {
@@ -147,7 +156,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     let hasError = false;
 
     for (const [index, item] of data.items.entries()) {
-      if (!item.productId) { // Check if a product was actually selected
+      if (!item.productId) { 
         toast({ title: "Error", description: `Product not selected for item ${index + 1}. Please type and select a product from the list.`, variant: "destructive"});
         form.setError(`items.${index}.productId`, {message: "Product selection is required."});
         hasError = true;
@@ -164,7 +173,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       totalAmount += itemTotal;
       itemsForAction.push({
         ...item,
-        productNameSnapshot: product.name, // Ensure productNameSnapshot is from the actual product
+        productNameSnapshot: product.name,
         total: itemTotal,
       });
     }
@@ -187,7 +196,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
           description: result.message,
         });
         form.reset(); 
-        setItemSearchTexts(form.getValues("items").map(() => "")); // Reset search texts
+        setItemSearchTexts(form.getValues("items").map(() => ""));
         router.push('/sales'); 
       } else {
         toast({
@@ -205,30 +214,6 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       });
     }
   }
-  
-  const handleProductSelectInternal = (itemIndex: number, productId: string) => {
-    const product = allProducts.find(p => p.id === productId);
-    if (product) {
-      form.setValue(`items.${itemIndex}.productId`, product.id);
-      form.setValue(`items.${itemIndex}.baseUnitSnapshot`, product.baseUnit);
-      form.setValue(`items.${itemIndex}.soldUnit`, product.baseUnit); 
-      
-      const currentSaleType = form.getValues("saleType");
-      const pricePerBaseUnit = currentSaleType === 'wholesale' 
-          ? product.wholesalePricePerBaseUnit 
-          : product.retailPricePerBaseUnit;
-
-      form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerBaseUnit.toFixed(2)));
-      form.trigger(`items.${itemIndex}.pricePerUnitSold`); 
-      form.trigger(`items.${itemIndex}.soldUnit`);
-      form.clearErrors(`items.${itemIndex}.productId`);
-
-      // Update the search text to the selected product's name
-      const newSearchTexts = [...itemSearchTexts];
-      newSearchTexts[itemIndex] = product.name;
-      setItemSearchTexts(newSearchTexts);
-    }
-  };
   
   const handleSoldUnitChange = (itemIndex: number, newSoldUnit: ProductUnit) => {
     form.setValue(`items.${itemIndex}.soldUnit`, newSoldUnit);
@@ -339,41 +324,48 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         
         <div>
           <h3 className="text-lg font-medium text-foreground mb-2">Items</h3>
-          {fields.map((fieldItem, index) => { // Renamed `item` to `fieldItem` to avoid conflict
+          {fields.map((fieldItem, index) => { 
             const selectedProductForUnits = allProducts.find(p => p.id === watchItems[index]?.productId);
             const availableUnits: ProductUnit[] = selectedProductForUnits ? 
                 (selectedProductForUnits.baseUnit === selectedProductForUnits.purchaseUnit ? [selectedProductForUnits.baseUnit] : [selectedProductForUnits.baseUnit, selectedProductForUnits.purchaseUnit]) 
-                : ['piece'];
+                : [PRODUCT_UNITS[0]];
 
             return (
             <Card key={fieldItem.id} className="mb-4 p-4 space-y-3 bg-card/50 dark:bg-card/80">
               <FormField
                 control={form.control}
                 name={`items.${index}.productId`}
-                render={({ field: RHFfield }) => ( // RHFfield for react-hook-form's field object
+                render={({ field: RHFfield }) => ( 
                   <FormItem className="flex flex-col">
                     <FormLabel>Product</FormLabel>
                     <Popover 
                         open={openComboboxIndex === index} 
                         onOpenChange={(isOpen) => {
                             setOpenComboboxIndex(isOpen ? index : null);
+                            if (!isOpen && !RHFfield.value && (itemSearchTexts[index] || "").trim()) {
+                                // If popover closed without selection & there was search text,
+                                // it implies user didn't pick. Optionally clear search text or show warning.
+                                // For now, we keep the text, RHFfield.value remains empty.
+                            }
                         }}
                     >
                       <PopoverTrigger asChild>
-                        {/* This Input is the main text search field */}
                         <Input
                           placeholder="Type to search product..."
                           value={itemSearchTexts[index] || ""}
                           onChange={(e) => {
+                            const currentVal = e.target.value;
                             const newSearchTexts = [...itemSearchTexts];
-                            newSearchTexts[index] = e.target.value;
+                            newSearchTexts[index] = currentVal;
                             setItemSearchTexts(newSearchTexts);
-                            RHFfield.onChange(''); // Clear actual productId from form while user is typing
-                            setOpenComboboxIndex(index); // Keep/open popover while typing
+
+                            if (RHFfield.value) { 
+                                RHFfield.onChange(''); // Clear actual productId from form
+                            }
+                            setOpenComboboxIndex(index); 
                           }}
-                          onFocus={() => {
-                              // Open popover on focus if there are products or existing search text
-                              if (allProducts.length > 0 || (itemSearchTexts[index] || "").trim()) {
+                           onFocus={() => {
+                              if (allProducts.length > 0) { // Only open on focus if there are products
                                   setOpenComboboxIndex(index);
                               }
                           }}
@@ -381,45 +373,70 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                         />
                       </PopoverTrigger>
                       <PopoverContent className="w-[--radix-popover-trigger-width)] p-0" align="start" side="bottom">
-                        <Command>
-                          <CommandList>
-                            <CommandEmpty>
-                              {(itemSearchTexts[index] || "").trim() ? "No product found." : "Type to search..."}
-                            </CommandEmpty>
-                            <CommandGroup>
-                              {allProducts
-                                .filter(p => {
-                                    const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                    if (!searchText) return true; // Show all if search is empty
-                                    return p.name.toLowerCase().includes(searchText) ||
-                                           (p.sku && p.sku.toLowerCase().includes(searchText));
+                        <div className="max-h-[200px] overflow-y-auto border rounded-md">
+                          {allProducts
+                            .filter(p => {
+                                const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
+                                if (!searchText && RHFfield.value) { // If a product is selected, don't show list unless user types again
+                                    return p.id === RHFfield.value; // Only show selected if no search text (or handle differently)
+                                }
+                                if (!searchText) return true; // Show all if search is empty and no selection
+                                return p.name.toLowerCase().includes(searchText) ||
+                                       (p.sku && p.sku.toLowerCase().includes(searchText));
+                              }
+                            )
+                            .slice(0, 10)
+                            .map((product) => (
+                              <div
+                                key={product.id}
+                                onClick={() => {
+                                  if (product.quantityInStock === 0) {
+                                    toast({ title: "Out of Stock", description: `${product.name} is currently out of stock.`, variant: "destructive"});
+                                    return;
                                   }
-                                )
-                                .slice(0, 10) // Limit results
-                                .map((product) => (
-                                <CommandItem
-                                  value={product.name} // Keep this for CMDK
-                                  key={product.id}
-                                  onSelect={() => {
-                                    // RHFfield.onChange(product.id); // This sets the form's productId
-                                    handleProductSelectInternal(index, product.id); // Custom handler updates text & form
-                                    setOpenComboboxIndex(null); // Close popover
-                                  }}
-                                  disabled={product.quantityInStock === 0}
-                                  className="cursor-pointer flex justify-between items-center"
-                                >
-                                  <span>
-                                    {product.name} (Stock: {product.quantityInStock} {product.baseUnit})
-                                  </span>
-                                  {RHFfield.value === product.id && ( // Check if this product is selected
-                                    <Check className="ml-2 h-4 w-4" />
-                                  )}
-                                  {product.quantityInStock === 0 && <span className="ml-auto text-xs text-destructive">Out of Stock</span>}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
+                                  RHFfield.onChange(product.id); // Set form value
+                                  handleProductSelectInternal(index, product.id); // Updates search text & other fields
+                                  setOpenComboboxIndex(null); // Close popover
+                                }}
+                                className={cn(
+                                  "p-2 text-sm flex justify-between items-center",
+                                  product.quantityInStock > 0 ? "cursor-pointer hover:bg-accent hover:text-accent-foreground" : "opacity-50 cursor-not-allowed",
+                                  RHFfield.value === product.id && "bg-accent text-accent-foreground"
+                                )}
+                                role="button"
+                                tabIndex={product.quantityInStock > 0 ? 0 : -1}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    if (product.quantityInStock === 0) return;
+                                    RHFfield.onChange(product.id);
+                                    handleProductSelectInternal(index, product.id);
+                                    setOpenComboboxIndex(null);
+                                  }
+                                }}
+                              >
+                                <span>
+                                  {product.name} (Stock: {product.quantityInStock} {product.baseUnit})
+                                </span>
+                                {RHFfield.value === product.id && (
+                                  <Check className="ml-2 h-4 w-4" />
+                                )}
+                                {product.quantityInStock === 0 && <span className="ml-auto text-xs text-destructive">Out of Stock</span>}
+                              </div>
+                            ))}
+                            { (itemSearchTexts[index] || "").trim() && 
+                              allProducts.filter(p => {
+                                const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
+                                return p.name.toLowerCase().includes(searchText) || (p.sku && p.sku.toLowerCase().includes(searchText));
+                              }).length === 0 && (
+                              <div className="p-2 text-sm text-muted-foreground text-center">No product found.</div>
+                            )}
+                            { !(itemSearchTexts[index] || "").trim() && allProducts.length === 0 && (
+                                <div className="p-2 text-sm text-muted-foreground text-center">No products available.</div>
+                            )}
+                            { !(itemSearchTexts[index] || "").trim() && allProducts.length > 0 && !(RHFfield.value && !(itemSearchTexts[index] || "").trim()) && (
+                                <div className="p-2 text-sm text-muted-foreground text-center">Type to search products...</div>
+                            )}
+                        </div>
                       </PopoverContent>
                     </Popover>
                     <FormMessage />
@@ -617,3 +634,4 @@ export default function NewSalePage() {
     </div>
   );
 }
+
