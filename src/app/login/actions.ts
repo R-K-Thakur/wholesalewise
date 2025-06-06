@@ -100,15 +100,13 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     let userDocSnap = await getDoc(userDocRef);
     let userDocDataFromDb: UserDocumentData | null = userDocSnap.exists() ? userDocSnap.data() as UserDocumentData : null;
 
-    const userDataToSet: Partial<UserDocumentData> = {
+    // Prepare the data to set, ensuring displayName is always populated.
+    const userDataToSet: Partial<UserDocumentData> & { email: string; displayName: string } = {
       email: userEmailLower,
+      displayName: userDocDataFromDb?.displayName?.trim() || userEmailLower, // Default to email if displayName is empty or not present
     };
     
-    const userDisplayName = (userDocDataFromDb?.displayName && userDocDataFromDb.displayName.trim() !== "") 
-                            ? userDocDataFromDb.displayName.trim() 
-                            : userEmailLower;
-    userDataToSet.displayName = userDisplayName;
-    
+    // Conditionally add optional fields only if they exist in userDocDataFromDb
     if (userDocDataFromDb?.invoicePrimaryColor) userDataToSet.invoicePrimaryColor = userDocDataFromDb.invoicePrimaryColor;
     if (userDocDataFromDb?.shopName) userDataToSet.shopName = userDocDataFromDb.shopName;
     if (userDocDataFromDb?.shopAddress) userDataToSet.shopAddress = userDocDataFromDb.shopAddress;
@@ -122,32 +120,28 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
       const currentMinute = now.getMinutes();
 
       const isAfterStartTime = currentHour > DEFAULT_STAFF_LOGIN_START_TIME.H || (currentHour === DEFAULT_STAFF_LOGIN_START_TIME.H && currentMinute >= DEFAULT_STAFF_LOGIN_START_TIME.M);
-      const isBeforeEndTime = currentHour < DEFAULT_STAFF_LOGIN_END_TIME.H; 
+      const isBeforeEndTime = currentHour < DEFAULT_STAFF_LOGIN_END_TIME.H; // Exclusive end time
 
       if (!(isAfterStartTime && isBeforeEndTime)) {
         return { error: `Access denied. Staff login is only permitted between ${DEFAULT_STAFF_LOGIN_START_TIME.H.toString().padStart(2,'0')}:${DEFAULT_STAFF_LOGIN_START_TIME.M.toString().padStart(2,'0')} and ${DEFAULT_STAFF_LOGIN_END_TIME.H.toString().padStart(2,'0')}:00 (exclusive).` };
       }
     }
     
-    if (!userDocSnap.exists()) {
-        userDataToSet.displayName = userEmailLower; // Ensure displayName if new user
-    }
-
     await setDoc(userDocRef, userDataToSet, { merge: true });
-    console.log(`[signInWithEmailAction] User document for ${userEmailLower} ensured/updated.`);
+    // console.log(`[signInWithEmailAction] User document for ${userEmailLower} ensured/updated.`);
 
     const sessionData: SessionData = {
-      username: userEmailLower,
+      username: userEmailLower, // Ensure username is always set
       email: userEmailLower,
       role: userRole!,
-      name: userDisplayName,
+      name: userDataToSet.displayName, // This is now guaranteed to be non-empty
     };
     if (userDataToSet.invoicePrimaryColor) sessionData.invoicePrimaryColor = userDataToSet.invoicePrimaryColor;
     if (userDataToSet.shopName) sessionData.shopName = userDataToSet.shopName;
     if (userDataToSet.shopAddress) sessionData.shopAddress = userDataToSet.shopAddress;
     if (userDataToSet.shopContact) sessionData.shopContact = userDataToSet.shopContact;
 
-    console.log('[signInWithEmailAction] Creating session with data:', sessionData);
+    // console.log('[signInWithEmailAction] Creating session with data:', sessionData);
 
     const cookieSecure = process.env.NODE_ENV === 'production';
     const cookieSameSite = cookieSecure ? "none" as const : "lax" as const;
@@ -164,7 +158,7 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
 
   } catch (e: any) {
     if (typeof e.message === 'string' && e.message.includes('NEXT_REDIRECT')) {
-      throw e;
+      throw e; // Re-throw NEXT_REDIRECT to allow Next.js to handle it
     }
     console.error("[signInWithEmailAction] Caught an unhandled server error during login:", e);
     let safeErrorMessage = "An unexpected server error occurred during login.";
@@ -194,9 +188,9 @@ export async function getSession(): Promise<SessionData | null> {
       if (!parsedData) reason = "Parsed data is null or undefined.";
       else if (typeof parsedData !== 'object') reason = "Parsed data is not an object.";
       else if (typeof parsedData.email !== 'string' || parsedData.email.trim() === '') reason = "Email missing or invalid.";
+      else if (typeof parsedData.username !== 'string' || parsedData.username.trim() === '') reason = "Username missing or invalid.";
       else if (typeof parsedData.role !== 'string' || (parsedData.role !== 'owner' && parsedData.role !== 'staff')) reason = "Role missing or invalid.";
       else if (typeof parsedData.name !== 'string' || parsedData.name.trim() === '') reason = "Name missing or invalid.";
-      else if (typeof parsedData.username !== 'string' || parsedData.username.trim() === '') reason = "Username missing or invalid.";
       else {
         const optionalStringFields: (keyof SessionData)[] = ['invoicePrimaryColor', 'shopName', 'shopAddress', 'shopContact'];
         for (const field of optionalStringFields) {
@@ -341,5 +335,5 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
     return { success: false, message: "Shop details saved, but session update failed. Changes reflect on next login." };
   }
 }
-
+    
     
