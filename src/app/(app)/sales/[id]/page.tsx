@@ -239,7 +239,7 @@ export default function SaleDetailPage() {
       doc.text(`Sale Type: ${sale.saleType.charAt(0).toUpperCase() + sale.saleType.slice(1)}`, leftMargin, startY);
       startY += 10;
 
-      const tableColumn = ["Product Name", "Qty", "Unit", "Price/Unit (Rs.)", "Total (Rs.)"];
+      const tableColumn = ["Product Name", "Qty", "Unit", "Rate (Rs.)", "Total (Rs.)"];
       const tableRows: (string | number)[][] = [];
 
       sale.items.forEach(item => {
@@ -418,7 +418,7 @@ export default function SaleDetailPage() {
       });
 
       autoTable(doc, {
-        head: [['Item', 'Qty', 'Price', 'Total']],
+        head: [['Item', 'Qty', 'Rate', 'Total']],
         body: tableRows,
         startY: currentY,
         theme: 'plain',
@@ -796,7 +796,7 @@ export default function SaleDetailPage() {
                   <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Product Name</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Unit</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Price/Unit (Rs.)</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Rate (Rs.)</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Total (Rs.)</th>
                 </tr>
               </thead>
