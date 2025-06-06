@@ -29,6 +29,7 @@ interface UserDocumentData {
   shopName?: string;
   shopAddress?: string;
   shopContact?: string;
+  // loginApprovalStatus and lastLoginRequestTimestamp are removed
 }
 
 interface RoleEmails {
@@ -101,31 +102,37 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
 
   try {
     const userDocSnap = await getDoc(userDocRef);
+    let userDocData: Partial<UserDocumentData> = {
+      email: userEmailLower,
+      displayName: userDisplayName, // Default to email
+    };
 
     if (userDocSnap.exists()) {
-      const userData = userDocSnap.data() as UserDocumentData;
-      userDisplayName = (userData.displayName && userData.displayName.trim() !== "") ? userData.displayName.trim() : userEmailLower;
-      userInvoicePrimaryColor = userData.invoicePrimaryColor;
-      userShopName = userData.shopName;
-      userShopAddress = userData.shopAddress;
-      userShopContact = userData.shopContact;
-    } else {
-      await setDoc(userDocRef, {
-        email: userEmailLower,
-        displayName: userDisplayName,
-        invoicePrimaryColor: undefined,
-        shopName: undefined,
-        shopAddress: undefined,
-        shopContact: undefined,
-      });
+      const existingData = userDocSnap.data() as UserDocumentData;
+      userDocData = { ...userDocData, ...existingData }; // Merge with existing data
+      userDisplayName = (existingData.displayName && existingData.displayName.trim() !== "") ? existingData.displayName.trim() : userEmailLower;
+      userInvoicePrimaryColor = existingData.invoicePrimaryColor;
+      userShopName = existingData.shopName;
+      userShopAddress = existingData.shopAddress;
+      userShopContact = existingData.shopContact;
     }
+    
+    // Ensure displayName is set if it wasn't in existing data or if it was empty
+    userDocData.displayName = userDisplayName;
+
+    // Remove login approval fields if they exist from previous system
+    delete (userDocData as any).loginApprovalStatus;
+    delete (userDocData as any).lastLoginRequestTimestamp;
+
+    await setDoc(userDocRef, userDocData, { merge: true });
+
   } catch (dbError) {
     console.error("Error accessing/updating user document in Firestore during login:", dbError);
     return { error: "A database error occurred while processing your login. Please try again." };
   }
 
   const sessionData: SessionData = {
-    username: userEmailLower,
+    username: userEmailLower, // Ensure username is always set
     email: userEmailLower,
     role: userRole,
     name: userDisplayName,
@@ -134,6 +141,8 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     shopAddress: userShopAddress,
     shopContact: userShopContact,
   };
+  
+  console.log('[signInWithEmailAction] Creating session with data:', sessionData);
 
   const cookieSecure = process.env.NODE_ENV === 'production';
   const cookieSameSite = cookieSecure ? "none" as "none" | "lax" | "strict" | undefined : "lax" as "none" | "lax" | "strict" | undefined;
@@ -142,7 +151,7 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
       httpOnly: true,
       secure: cookieSecure,
-      maxAge: 60 * 60 * 24 * 7,
+      maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
       sameSite: cookieSameSite,
     });
@@ -170,7 +179,7 @@ export async function getSession(): Promise<SessionData | null> {
   if (sessionCookie?.value) {
     try {
       const parsedData = JSON.parse(sessionCookie.value);
-
+      // Simplified validation check for core fields
       if (parsedData && typeof parsedData === 'object' &&
           typeof parsedData.email === 'string' && parsedData.email.trim() !== "" &&
           typeof parsedData.role === 'string' && (parsedData.role === 'owner' || parsedData.role === 'staff') &&
@@ -178,13 +187,22 @@ export async function getSession(): Promise<SessionData | null> {
           typeof parsedData.username === 'string' && parsedData.username.trim() !== "") {
         return parsedData as SessionData;
       } else {
-        console.warn(`[getSession] Session cookie parsed, but data is invalid or incomplete. Deleting cookie. Parsed data keys:`, Object.keys(parsedData || {}));
+        let reason = "unknown reason";
+        if (!parsedData) reason = "parsedData is null/undefined";
+        else if (typeof parsedData.email !== 'string' || parsedData.email.trim() === "") reason = "Email field missing or not a string";
+        else if (typeof parsedData.role !== 'string' || (parsedData.role !== 'owner' && parsedData.role !== 'staff')) reason = "Role field missing or invalid";
+        else if (typeof parsedData.name !== 'string' || parsedData.name.trim() === "") reason = "Name field missing or not a string";
+        else if (typeof parsedData.username !== 'string' || parsedData.username.trim() === "") reason = "Username field missing or not a string";
+        
+        console.warn(`[getSession] Session cookie parsed, but data is invalid or incomplete. Reason: ${reason}. Deleting cookie. Parsed data keys:`, Object.keys(parsedData || {}));
         cookies().delete(SESSION_COOKIE_NAME);
+        // redirect('/login'); // Commented out explicit redirect, middleware should handle
         return null;
       }
     } catch (error) {
       console.error("[getSession] Failed to parse session cookie:", error);
       cookies().delete(SESSION_COOKIE_NAME);
+      // redirect('/login'); // Commented out explicit redirect
       return null;
     }
   }
@@ -211,10 +229,12 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
 
   try {
     const userDocSnap = await getDoc(userDocRef);
+    let updatePayload: Partial<UserDocumentData> = { displayName: newTrimmedName };
+
     if (userDocSnap.exists()) {
-      await updateDoc(userDocRef, { displayName: newTrimmedName });
+      await updateDoc(userDocRef, updatePayload);
     } else {
-      await setDoc(userDocRef, { email: userEmailLower, displayName: newTrimmedName });
+      await setDoc(userDocRef, { email: userEmailLower, ...updatePayload });
       console.warn(`User document for ${userEmailLower} was created during display name update.`);
     }
   } catch (dbError) {
@@ -234,7 +254,7 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
       httpOnly: true,
       secure: cookieSecure,
-      maxAge: 60 * 60 * 24 * 7,
+      maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
       sameSite: cookieSameSite,
     });
@@ -277,7 +297,7 @@ export async function updateUserInvoiceColorAction(color: string): Promise<{ suc
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
       httpOnly: true,
       secure: cookieSecure,
-      maxAge: 60 * 60 * 24 * 7,
+      maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
       sameSite: cookieSameSite,
     });
@@ -313,7 +333,14 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
   }
 
   try {
-    await updateDoc(userDocRef, dataToUpdate);
+    // Ensure the user document exists before trying to update, or create it if not.
+    const userDocSnap = await getDoc(userDocRef);
+    if (userDocSnap.exists()) {
+        await updateDoc(userDocRef, dataToUpdate);
+    } else {
+        await setDoc(userDocRef, { email: userEmailLower, ...dataToUpdate });
+         console.warn(`User document for ${userEmailLower} was created during shop details update.`);
+    }
   } catch (dbError) {
     console.error("Error updating shop details in Firestore:", dbError);
     return { success: false, message: "Failed to save shop details to the database. Please try again." };
@@ -331,7 +358,7 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
       httpOnly: true,
       secure: cookieSecure,
-      maxAge: 60 * 60 * 24 * 7,
+      maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
       sameSite: cookieSameSite,
     });
@@ -341,4 +368,6 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
     return { success: false, message: "Shop details were saved, but failed to update your current session. Changes will reflect on next login." };
   }
 }
+    
+
     

@@ -83,12 +83,11 @@ export async function addOwnerEmailAction(emailToAdd: string): Promise<{ success
     if (docSnap.exists()) {
       await updateDoc(docRef, updatePayload);
     } else {
-      // If role_management doc doesn't exist, create it with the new owner and an empty staff list.
-      // If staffEmails were part of the payload (due to removal), they are effectively handled by the new empty list.
       await setDoc(docRef, { ownerEmails: [normalizedEmail], staffEmails: [] });
     }
     
     const userDocRef = doc(db, USERS_COLLECTION, normalizedEmail);
+    // Ensure user document exists and displayName is set, no login approval fields
     await setDoc(userDocRef, { email: normalizedEmail, displayName: normalizedEmail }, { merge: true });
 
     revalidatePath("/admin/settings");
@@ -191,14 +190,16 @@ export async function addStaffEmailAction(emailToAdd: string): Promise<{ success
       ownerEmails = (data?.ownerEmails && Array.isArray(data.ownerEmails)) ? data.ownerEmails.map(e => String(e).toLowerCase()) : [];
       staffEmails = (data?.staffEmails && Array.isArray(data.staffEmails)) ? data.staffEmails.map(e => String(e).toLowerCase()) : [];
     } else {
+      // If role_management doesn't exist, create it.
       await setDoc(docRef, { ownerEmails: [], staffEmails: [normalizedEmail] });
       const userDocRef = doc(db, USERS_COLLECTION, normalizedEmail);
+      // Ensure user document exists and displayName is set, no login approval fields
       await setDoc(userDocRef, { 
         email: normalizedEmail, 
         displayName: normalizedEmail,
       }, { merge: true });
       revalidatePath("/admin/settings");
-      return { success: true, message: "Staff email added successfully." };
+      return { success: true, message: "Staff email added successfully. They can log in directly." };
     }
 
     if (ownerEmails.includes(normalizedEmail)) {
@@ -212,13 +213,14 @@ export async function addStaffEmailAction(emailToAdd: string): Promise<{ success
       staffEmails: arrayUnion(normalizedEmail)
     });
     const userDocRef = doc(db, USERS_COLLECTION, normalizedEmail);
+    // Ensure user document exists and displayName is set, no login approval fields
     await setDoc(userDocRef, { 
       email: normalizedEmail, 
       displayName: normalizedEmail,
     }, { merge: true });
     
     revalidatePath("/admin/settings");
-    return { success: true, message: "Staff email added successfully." };
+    return { success: true, message: "Staff email added successfully. They can log in directly." };
   } catch (error)
  {
     console.error("Error adding staff email:", error);
@@ -263,3 +265,6 @@ export async function removeStaffEmailAction(emailToRemove: string): Promise<{ s
     return { success: false, message: `Failed to remove staff email: ${error instanceof Error ? error.message : "Unknown error"}` };
   }
 }
+
+
+    

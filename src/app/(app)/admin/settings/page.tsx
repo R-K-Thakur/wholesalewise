@@ -12,11 +12,9 @@ import { getSession, type SessionData } from "@/app/login/actions";
 import { 
   getOwnerEmailsAction, addOwnerEmailAction, removeOwnerEmailAction,
   getStaffEmailsAction, addStaffEmailAction, removeStaffEmailAction
-  // Removed getPendingStaffAction, approveStaffLoginAction, denyStaffLoginAction
 } from "@/app/(app)/admin/actions";
-import { Loader2, PlusCircle, Trash2, ShieldAlert, UserCog, Users } from "lucide-react"; // Removed UserCheck, UserX, Clock
+import { Loader2, PlusCircle, Trash2, ShieldAlert, UserCog, Users } from "lucide-react";
 
-// Interface PendingStaffUser removed as it's no longer used
 
 export default function AdminSettingsPage() {
   const router = useRouter();
@@ -34,11 +32,6 @@ export default function AdminSettingsPage() {
   const [newStaffEmail, setNewStaffEmail] = useState("");
   const [isSubmittingStaff, setIsSubmittingStaff] = useState(false);
 
-  // State for pending staff approvals removed
-  // const [pendingStaff, setPendingStaff] = useState<PendingStaffUser[]>([]);
-  // const [isLoadingPendingStaff, setIsLoadingPendingStaff] = useState(false);
-  // const [isProcessingApproval, setIsProcessingApproval] = useState<string | null>(null);
-
   useEffect(() => {
     async function fetchSessionAndData() {
       setIsLoadingPage(true);
@@ -55,7 +48,6 @@ export default function AdminSettingsPage() {
         return;
       }
       
-      // Removed fetchPendingStaffList()
       await Promise.all([fetchOwnerEmails(), fetchStaffEmails()]);
       setIsLoadingPage(false);
     }
@@ -86,8 +78,6 @@ export default function AdminSettingsPage() {
     }
   }
   
-  // Removed fetchPendingStaffList function
-
   const handleAddOwnerEmail = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!newOwnerEmail) return;
@@ -97,6 +87,7 @@ export default function AdminSettingsPage() {
       toast({ title: "Success", description: result.message });
       setNewOwnerEmail("");
       await fetchOwnerEmails();
+      await fetchStaffEmails(); // Also refresh staff emails in case an owner was promoted from staff
     } else {
       toast({ title: "Error", description: result.message, variant: "destructive" });
     }
@@ -123,7 +114,6 @@ export default function AdminSettingsPage() {
     if (result.success) {
       toast({ title: "Success", description: result.message });
       setNewStaffEmail("");
-      // No longer need to refresh pending list
       await fetchStaffEmails(); 
     } else {
       toast({ title: "Error", description: result.message, variant: "destructive" });
@@ -137,14 +127,11 @@ export default function AdminSettingsPage() {
     if (result.success) {
       toast({ title: "Success", description: result.message });
       await fetchStaffEmails();
-      // No longer need to refresh pending list
     } else {
       toast({ title: "Error", description: result.message, variant: "destructive" });
     }
     setIsSubmittingStaff(false);
   };
-
-  // Removed handleApproveStaff and handleDenyStaff functions
 
   if (isLoadingPage) {
     return (
@@ -156,6 +143,7 @@ export default function AdminSettingsPage() {
   }
   
   if (!session || session.role !== 'owner') {
+    // This case should be handled by the redirect in useEffect, but it's a safeguard.
     return null; 
   }
 
@@ -292,8 +280,6 @@ export default function AdminSettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Staff Login Approvals Card Removed */}
-
       <Card>
         <CardHeader>
              <CardTitle className="text-base text-muted-foreground">Initial Setup Note</CardTitle>
@@ -308,3 +294,5 @@ export default function AdminSettingsPage() {
     </div>
   );
 }
+
+    
