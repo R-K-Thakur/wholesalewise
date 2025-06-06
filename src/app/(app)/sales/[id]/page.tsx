@@ -1,26 +1,28 @@
 
-"use client"; 
+"use client";
 
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ArrowLeft, Printer, Eye, Loader2 } from 'lucide-react';
-import { getSaleByIdAction } from '../actions'; 
-import type { Sale } from '@/lib/types'; 
+import { getSaleByIdAction } from '../actions';
+import type { Sale, PaymentTransaction } from '@/lib/types';
 import { APP_NAME } from '@/lib/constants';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { getSession, type SessionData } from '@/app/login/actions';
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 interface jsPDFWithAutoTable extends jsPDF {
   autoTable: (options: any) => jsPDFWithAutoTable;
 }
 
-const DEFAULT_INVOICE_COLOR_HEX = "#73A7B3"; 
-const DEFAULT_INVOICE_COLOR_RGB_ARRAY = [115, 167, 179]; 
+const DEFAULT_INVOICE_COLOR_HEX = "#73A7B3";
+const DEFAULT_INVOICE_COLOR_RGB_ARRAY = [115, 167, 179];
 
 interface ShopDetails {
   shopName?: string;
@@ -45,10 +47,10 @@ function hexToRgb(hex: string): [number, number, number] | null {
 export default function SaleDetailPage() {
   const params = useParams();
   const saleId = params.id as string;
-  const [sale, setSale] = useState<Sale | undefined | null>(null); 
+  const [sale, setSale] = useState<Sale | undefined | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [session, setSession] = useState<SessionData | null>(null);
-  
+
   const [isProcessingA4Pdf, setIsProcessingA4Pdf] = useState(false);
   const [isA4PreviewModalOpen, setIsA4PreviewModalOpen] = useState(false);
   const [a4PreviewPdfUrl, setA4PreviewPdfUrl] = useState<string | null>(null);
@@ -71,7 +73,7 @@ export default function SaleDetailPage() {
           setSession(currentSession);
         } catch (err) {
           console.error("Failed to fetch sale details or session:", err);
-          setSale(undefined); 
+          setSale(undefined);
         }
       }
       setIsLoading(false);
@@ -85,7 +87,7 @@ export default function SaleDetailPage() {
 
     const primaryColorHex = options?.primaryColor || session?.invoicePrimaryColor || DEFAULT_INVOICE_COLOR_HEX;
     const headerColorRgb = hexToRgb(primaryColorHex) || DEFAULT_INVOICE_COLOR_RGB_ARRAY;
-    
+
     const shopName = options?.shopDetails?.shopName && options.shopDetails.shopName.trim() !== "" ? options.shopDetails.shopName : APP_NAME;
     const shopAddress = options?.shopDetails?.shopAddress;
     const shopContact = options?.shopDetails?.shopContact;
@@ -98,13 +100,11 @@ export default function SaleDetailPage() {
       const leftMargin = 15;
       const rightMargin = pageWidth - 15;
 
-      // Shop Name
       doc.setFontSize(16);
       doc.setFont(undefined, 'bold');
       doc.text(shopName, pageWidth / 2, startY, { align: 'center' });
       startY += 7;
 
-      // Shop Address (if available)
       if (shopAddress && shopAddress.trim() !== "") {
         doc.setFontSize(9);
         doc.setFont(undefined, 'normal');
@@ -113,7 +113,6 @@ export default function SaleDetailPage() {
         startY += (addressLines.length * 4) + 3;
       }
 
-      // Shop Contact (if available)
       if (shopContact && shopContact.trim() !== "") {
         doc.setFontSize(9);
         doc.setFont(undefined, 'normal');
@@ -128,7 +127,7 @@ export default function SaleDetailPage() {
 
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
-      
+
       doc.text(`Invoice ID: ${sale.id}`, leftMargin, startY);
       doc.text(`Date: ${new Date(sale.saleDate).toLocaleDateString()}`, rightMargin, startY, { align: 'right' });
       startY += 7;
@@ -137,7 +136,7 @@ export default function SaleDetailPage() {
         doc.text(`Customer: ${sale.customerName}`, leftMargin, startY);
         startY += 7;
       }
-      
+
       doc.text(`Sale Type: ${sale.saleType.charAt(0).toUpperCase() + sale.saleType.slice(1)}`, leftMargin, startY);
       startY += 10;
 
@@ -160,42 +159,49 @@ export default function SaleDetailPage() {
         body: tableRows,
         startY: startY,
         theme: 'striped',
-        headStyles: { 
-            fillColor: headerColorRgb, 
-            textColor: 255, 
+        headStyles: {
+            fillColor: headerColorRgb,
+            textColor: 255,
             fontStyle: 'bold',
             halign: 'center'
         },
         columnStyles: {
-            0: { cellWidth: 'auto' }, 
-            1: { halign: 'right' }, 
-            2: { halign: 'left' }, 
-            3: { halign: 'right' }, 
-            4: { halign: 'right' }  
+            0: { cellWidth: 'auto' },
+            1: { halign: 'right' },
+            2: { halign: 'left' },
+            3: { halign: 'right' },
+            4: { halign: 'right' }
         },
         margin: { top: 10, left: leftMargin, right: leftMargin },
-        tableWidth: 'auto', 
+        tableWidth: 'auto',
         didDrawPage: (data) => {
             startY = data.cursor?.y || 20;
         }
       });
-      
-      startY = (doc as any).lastAutoTable.finalY + 12; 
 
-      doc.setFontSize(12);
+      startY = (doc as any).lastAutoTable.finalY + 12;
+
+      doc.setFontSize(11);
       doc.setFont(undefined, 'bold');
-      doc.text(`Grand Total: Rs. ${sale.totalAmount.toFixed(2)}`, rightMargin, startY, { align: 'right' });
+      doc.text(`Total Bill Amount: Rs. ${sale.totalAmount.toFixed(2)}`, rightMargin, startY, { align: 'right' });
+      startY += 6;
+      doc.setFont(undefined, 'normal');
+      doc.text(`Amount Paid: Rs. ${sale.totalPaidAmount.toFixed(2)}`, rightMargin, startY, { align: 'right' });
+      startY += 6;
+      doc.setFont(undefined, 'bold');
+      doc.text(`Amount Due: Rs. ${sale.totalAmountDue.toFixed(2)}`, rightMargin, startY, { align: 'right' });
       startY += 7;
-      
+
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
-      if (sale.paymentMethod) {
+      if (sale.paymentMethod) { // Primary payment method for the sale
         doc.text(`Payment Method: ${sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1)}`, rightMargin, startY, { align: 'right' });
         startY += 10;
       }
 
+
       if (sale.notes && sale.notes.trim() !== "") {
-        if (startY > pageHeight - 40) { 
+        if (startY > pageHeight - 40) {
             doc.addPage();
             startY = 20;
         }
@@ -206,10 +212,10 @@ export default function SaleDetailPage() {
         doc.setFont(undefined, 'normal');
         const splitNotes = doc.splitTextToSize(sale.notes, rightMargin - leftMargin);
         doc.text(splitNotes, leftMargin, startY);
-        startY += (splitNotes.length * 5) + 10; 
+        startY += (splitNotes.length * 5) + 10;
       }
 
-      if (startY > pageHeight - 20) { 
+      if (startY > pageHeight - 20) {
             doc.addPage();
             startY = 20;
       }
@@ -240,10 +246,10 @@ export default function SaleDetailPage() {
 
     try {
       const thermalWidthMm = 80;
-      const thermalWidthPt = thermalWidthMm * (72 / 25.4); 
-      const marginPt = 8; 
+      const thermalWidthPt = thermalWidthMm * (72 / 25.4);
+      const marginPt = 8;
       const contentWidthPt = thermalWidthPt - 2 * marginPt;
-      const initialPageHeightPt = 800; 
+      const initialPageHeightPt = 800;
 
       const doc = new jsPDF({
         unit: 'pt',
@@ -252,14 +258,12 @@ export default function SaleDetailPage() {
 
       let currentY = marginPt + 5;
 
-      // Shop Name
-      doc.setFontSize(10); 
+      doc.setFontSize(10);
       doc.setFont(undefined, 'bold');
       doc.text(shopName, thermalWidthPt / 2, currentY, { align: 'center', maxWidth: contentWidthPt });
       currentY += doc.getTextDimensions(shopName, {fontSize: 10, maxWidth: contentWidthPt}).h + 2;
 
 
-      // Shop Address (if available) 
       if (shopAddress && shopAddress.trim() !== "") {
         doc.setFontSize(7);
         doc.setFont(undefined, 'normal');
@@ -268,22 +272,20 @@ export default function SaleDetailPage() {
         currentY += (addressLines.length * (doc.getTextDimensions('X', {fontSize: 7}).h)) + 2;
       }
 
-      // Shop Contact (if available) 
       if (shopContact && shopContact.trim() !== "") {
         doc.setFontSize(7);
         doc.setFont(undefined, 'normal');
         doc.text(shopContact, thermalWidthPt / 2, currentY, { align: 'center', maxWidth: contentWidthPt });
         currentY += doc.getTextDimensions(shopContact, {fontSize: 7, maxWidth: contentWidthPt}).h + 4;
       }
-      
-      // Sale Info
+
       doc.setFontSize(8);
       doc.setFont(undefined, 'normal');
       doc.text(`ID: ${sale.id}`, marginPt, currentY);
       currentY += 10;
-      
+
       const saleDate = new Date(sale.saleDate);
-      const saleTime = new Date(sale.createdAt); 
+      const saleTime = new Date(sale.createdAt);
       doc.text(`Date: ${saleDate.toLocaleDateString()} ${saleTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, marginPt, currentY);
       currentY += 10;
 
@@ -291,17 +293,15 @@ export default function SaleDetailPage() {
         doc.text(`Customer: ${sale.customerName}`, marginPt, currentY, {maxWidth: contentWidthPt - marginPt });
         currentY += doc.getTextDimensions(sale.customerName, {fontSize: 8, maxWidth: contentWidthPt - marginPt}).h + 2;
       }
-      currentY += 3; 
+      currentY += 3;
 
-      // Separator
       doc.text('-'.repeat(Math.floor(contentWidthPt / (doc.getStringUnitWidth('-') * 8 * 0.9))), thermalWidthPt / 2, currentY, { align: 'center' });
       currentY += 10;
 
-      // Items Table
       const tableRows: (string | number)[][] = [];
       sale.items.forEach(item => {
         tableRows.push([
-          `${item.productNameSnapshot}`, 
+          `${item.productNameSnapshot}`,
           item.quantitySold,
           item.pricePerUnitSold.toFixed(2),
           item.total.toFixed(2)
@@ -315,22 +315,22 @@ export default function SaleDetailPage() {
         theme: 'plain',
         styles: {
           fontSize: 7,
-          cellPadding: {top: 1, right: 1, bottom: 1, left: 1}, 
+          cellPadding: {top: 1, right: 1, bottom: 1, left: 1},
           overflow: 'linebreak',
         },
         headStyles: {
-          fontSize: 7.5, 
+          fontSize: 7.5,
           fontStyle: 'bold',
-          fillColor: [255,255,255], 
+          fillColor: [255,255,255],
           textColor: [0,0,0],
           lineWidth: 0.1,
-          lineColor: [180,180,180], 
+          lineColor: [180,180,180],
         },
         columnStyles: {
-          0: { cellWidth: contentWidthPt * 0.48, fontStyle: 'normal' }, 
-          1: { cellWidth: contentWidthPt * 0.12, halign: 'right' }, 
-          2: { cellWidth: contentWidthPt * 0.20, halign: 'right' }, 
-          3: { cellWidth: contentWidthPt * 0.20, halign: 'right' }, 
+          0: { cellWidth: contentWidthPt * 0.48, fontStyle: 'normal' },
+          1: { cellWidth: contentWidthPt * 0.12, halign: 'right' },
+          2: { cellWidth: contentWidthPt * 0.20, halign: 'right' },
+          3: { cellWidth: contentWidthPt * 0.20, halign: 'right' },
         },
         margin: { left: marginPt, right: marginPt },
         tableWidth: 'auto',
@@ -344,15 +344,27 @@ export default function SaleDetailPage() {
       currentY += 10;
 
       doc.setFontSize(9);
-      doc.setFont(undefined, 'bold');
-      doc.text('Grand Total:', marginPt, currentY);
+      doc.setFont(undefined, 'normal');
+      doc.text('Total Bill:', marginPt, currentY);
       doc.text(`Rs. ${sale.totalAmount.toFixed(2)}`, thermalWidthPt - marginPt, currentY, { align: 'right' });
+      currentY += 11;
+
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      doc.text('Paid:', marginPt, currentY);
+      doc.text(`Rs. ${sale.totalPaidAmount.toFixed(2)}`, thermalWidthPt - marginPt, currentY, { align: 'right' });
+      currentY += 11;
+
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'bold');
+      doc.text('Due:', marginPt, currentY);
+      doc.text(`Rs. ${sale.totalAmountDue.toFixed(2)}`, thermalWidthPt - marginPt, currentY, { align: 'right' });
       currentY += 12;
 
       doc.setFontSize(8);
       doc.setFont(undefined, 'normal');
       if (sale.paymentMethod) {
-        doc.text('Payment Method:', marginPt, currentY);
+        doc.text('Payment:', marginPt, currentY);
         doc.text(sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1), thermalWidthPt - marginPt, currentY, { align: 'right' });
         currentY += 10;
       }
@@ -367,7 +379,7 @@ export default function SaleDetailPage() {
         doc.text(splitNotes, marginPt, currentY);
         currentY += (splitNotes.length * 8) + 3;
       }
-      
+
       currentY += 8;
       doc.setFontSize(8);
       doc.text("Thank you for your business!", thermalWidthPt / 2, currentY, { align: 'center', maxWidth: contentWidthPt });
@@ -386,7 +398,7 @@ export default function SaleDetailPage() {
       setIsProcessingThermalPdf(false);
     }
   };
-  
+
   const currentShopDetails: ShopDetails = {
     shopName: session?.shopName,
     shopAddress: session?.shopAddress,
@@ -416,6 +428,20 @@ export default function SaleDetailPage() {
   const handleDownloadThermalReceipt = () => {
     generateThermalReceiptPDF('save', { shopDetails: currentShopDetails });
   };
+
+  const getStatusBadgeVariant = (status: Sale['paymentStatus']): "default" | "secondary" | "destructive" => {
+    switch (status) {
+      case 'paid':
+        return 'default';
+      case 'partially_paid':
+        return 'secondary';
+      case 'unpaid':
+        return 'destructive';
+      default:
+        return 'secondary';
+    }
+  };
+
 
   if (isLoading) {
     return (
@@ -481,12 +507,22 @@ export default function SaleDetailPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3 text-sm">
             <div><strong>Customer:</strong> {sale.customerName || 'N/A'}</div>
             <div><strong>Sale Date:</strong> {new Date(sale.saleDate).toLocaleDateString()}</div>
             <div><strong>Sale Type:</strong> <span className="capitalize">{sale.saleType}</span></div>
             <div><strong>Payment Method:</strong> <span className="capitalize">{sale.paymentMethod || 'N/A'}</span></div>
-            {sale.notes && <div className="md:col-span-2"><strong>Notes:</strong> {sale.notes}</div>}
+            <div className="lg:col-span-2"><strong>Status:</strong>
+              <Badge variant={getStatusBadgeVariant(sale.paymentStatus)} className="ml-2 capitalize">
+                {sale.paymentStatus.replace('_', ' ')}
+              </Badge>
+            </div>
+            {sale.notes && <div className="md:col-span-full"><strong>Notes:</strong> {sale.notes}</div>}
+          </div>
+          <div className="mt-4 pt-4 border-t grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+            <div className="font-medium">Total Bill Amount: <span className="font-semibold">Rs. {sale.totalAmount.toFixed(2)}</span></div>
+            <div className="font-medium">Total Paid: <span className="font-semibold text-green-600">Rs. {sale.totalPaidAmount.toFixed(2)}</span></div>
+            <div className="font-medium">Amount Due: <span className={cn("font-semibold", sale.totalAmountDue > 0 ? "text-destructive" : "text-green-600")}>Rs. {sale.totalAmountDue.toFixed(2)}</span></div>
           </div>
         </CardContent>
       </Card>
@@ -520,11 +556,39 @@ export default function SaleDetailPage() {
               </tbody>
             </table>
           </div>
-          <div className="mt-4 text-right">
-            <p className="text-lg font-semibold">Grand Total: Rs. {sale.totalAmount.toFixed(2)}</p>
-          </div>
         </CardContent>
       </Card>
+
+      {sale.paymentHistory && sale.paymentHistory.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Payment History</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-border">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Amount Paid (Rs.)</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Method</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-card divide-y divide-border">
+                  {sale.paymentHistory.map((payment, index) => (
+                    <tr key={index}>
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{new Date(payment.date).toLocaleString()}</td>
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">{payment.amount.toFixed(2)}</td>
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground capitalize">{payment.paymentMethod || 'N/A'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
 
       <Dialog open={isA4PreviewModalOpen} onOpenChange={setIsA4PreviewModalOpen}>
         <DialogContent className="max-w-3xl h-[90vh] flex flex-col p-0">
@@ -551,7 +615,7 @@ export default function SaleDetailPage() {
       </Dialog>
 
       <Dialog open={isThermalPreviewModalOpen} onOpenChange={setIsThermalPreviewModalOpen}>
-        <DialogContent className="max-w-xs sm:max-w-sm md:max-w-md h-[80vh] flex flex-col p-0"> 
+        <DialogContent className="max-w-xs sm:max-w-sm md:max-w-md h-[80vh] flex flex-col p-0">
           <DialogHeader className="p-4 border-b">
             <DialogTitle>Thermal Receipt Preview</DialogTitle>
           </DialogHeader>

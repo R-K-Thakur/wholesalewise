@@ -6,7 +6,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, ChevronDown } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, IndianRupee } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import type { Product } from "@/lib/types";
 import { getProductsAction } from "../../products/actions";
 import { useToast } from "@/hooks/use-toast";
+import { recordSaleAction } from "../actions";
 import { saleFormSchema, type SaleFormData, type RecordSaleActionPayload } from "../schema";
 import type { ProductUnit } from "@/lib/constants";
 import { PRODUCT_UNITS } from "@/lib/constants";
@@ -51,6 +52,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       paymentMethod: 'cash',
       customerName: '',
       notes: '',
+      amountPaid: 0, // Initialize amountPaid
     },
   });
 
@@ -61,9 +63,42 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
 
   const watchItems = form.watch("items");
   const watchSaleType = form.watch("saleType");
+  const watchAmountPaid = form.watch("amountPaid");
 
   const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
   const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>([]);
+
+  const calculateGrandTotal = React.useCallback(() => {
+    return watchItems.reduce((sum, item) => {
+      const quantity = Number(item.quantitySold) || 0;
+      const price = Number(item.pricePerUnitSold) || 0;
+      return sum + (quantity * price);
+    }, 0);
+  }, [watchItems]);
+
+  const grandTotal = React.useMemo(() => calculateGrandTotal(), [calculateGrandTotal]);
+  const amountDue = React.useMemo(() => grandTotal - (Number(watchAmountPaid) || 0), [grandTotal, watchAmountPaid]);
+
+  // Effect to update amountPaid if it's not set or items change impacting total
+  React.useEffect(() => {
+    // Set default amountPaid to grandTotal when items change,
+    // but only if amountPaid hasn't been manually set to something different
+    // or if it was 0 (initial state).
+    const currentAmountPaid = form.getValues("amountPaid");
+    if (currentAmountPaid === 0 || fields.length > 0) {
+        // This logic might need refinement based on exact desired behavior
+        // e.g., only update if amountPaid is less than total, or if it was the initial 0.
+        // For now, we'll set it to total if it seems like it's the initial state.
+        // A more robust way might be to compare it to previous total if that's tracked.
+        const newTotal = calculateGrandTotal();
+        if (form.getValues("amountPaid") === 0 && newTotal > 0) { // Only if it was truly initial 0
+             form.setValue("amountPaid", parseFloat(newTotal.toFixed(2)), { shouldValidate: true });
+        } else if (form.getValues("amountPaid") > newTotal) { // If amount paid exceeds new total, cap it
+            form.setValue("amountPaid", parseFloat(newTotal.toFixed(2)), { shouldValidate: true });
+        }
+    }
+  }, [grandTotal, form, fields.length, calculateGrandTotal]);
+
 
   React.useEffect(() => {
     const newSearchTexts = form.getValues("items").map((item, i) => {
@@ -81,9 +116,9 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       setItemSearchTexts(currentSearchTexts => {
         const newTexts = [...currentSearchTexts];
         while (newTexts.length < fields.length) {
-          newTexts.push(""); 
+          newTexts.push("");
         }
-        return newTexts.slice(0, fields.length); 
+        return newTexts.slice(0, fields.length);
       });
     }
   }, [fields.length]);
@@ -97,7 +132,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : PRODUCT_UNITS[0],
       baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : PRODUCT_UNITS[0]
     });
-    setItemSearchTexts(prev => [...prev, ""]); 
+    setItemSearchTexts(prev => [...prev, ""]);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -160,7 +195,13 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
 
   async function onSubmit(data: SaleFormData) {
     form.clearErrors();
-    let totalAmount = 0;
+    const currentGrandTotal = calculateGrandTotal();
+    if (data.amountPaid > currentGrandTotal) {
+        form.setError("amountPaid", {message: "Amount paid cannot exceed the grand total."});
+        toast({title: "Validation Error", description: "Amount paid cannot exceed the grand total.", variant: "destructive"});
+        return;
+    }
+
     const itemsForAction: RecordSaleActionPayload['items'] = [];
     let hasError = false;
 
@@ -179,7 +220,6 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         continue;
       }
       const itemTotal = (item.quantitySold || 0) * (item.pricePerUnitSold || 0);
-      totalAmount += itemTotal;
       itemsForAction.push({
         ...item,
         productNameSnapshot: product.name,
@@ -190,11 +230,14 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     if (hasError) return;
 
     const payload: RecordSaleActionPayload = {
-      ...data,
+      saleType: data.saleType,
+      saleDate: data.saleDate,
       customerName: data.customerName || undefined,
       notes: data.notes || undefined,
+      paymentMethod: data.paymentMethod,
       items: itemsForAction,
-      totalAmount,
+      totalAmount: currentGrandTotal,
+      amountPaid: data.amountPaid,
     };
 
     try {
@@ -239,14 +282,6 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         }
         form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)));
     }
-  };
-
-  const calculateGrandTotal = () => {
-    return watchItems.reduce((sum, item) => {
-      const quantity = Number(item.quantitySold) || 0;
-      const price = Number(item.pricePerUnitSold) || 0;
-      return sum + (quantity * price);
-    }, 0);
   };
 
 
@@ -360,7 +395,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                                 const newSearchTexts = [...itemSearchTexts];
                                 newSearchTexts[index] = currentVal;
                                 setItemSearchTexts(newSearchTexts);
-                                if (RHFfield.value) { RHFfield.onChange(''); } 
+                                if (RHFfield.value) { RHFfield.onChange(''); }
                                 setOpenComboboxIndex(index);
                             }}
                             onFocus={() => {
@@ -371,9 +406,9 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                             className="w-full"
                         />
                       </PopoverTrigger>
-                      <PopoverContent 
-                        className="w-[--radix-popover-trigger-width] p-0 max-h-60 overflow-y-auto" 
-                        align="start" 
+                      <PopoverContent
+                        className="w-[--radix-popover-trigger-width] p-0 max-h-60 overflow-y-auto"
+                        align="start"
                         side="bottom"
                        >
                         <div className="py-1">
@@ -532,11 +567,30 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
            <FormMessage>{form.formState.errors.items?.root?.message || form.formState.errors.items?.message}</FormMessage>
         </div>
 
-        <div className="mt-6 pt-4 border-t">
-            <p className="text-xl font-semibold text-right">
-                Grand Total: Rs. {calculateGrandTotal().toFixed(2)}
-            </p>
+        <div className="mt-6 pt-4 border-t grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <FormField
+              control={form.control}
+              name="amountPaid"
+              render={({ field }) => (
+                <FormItem className="md:col-span-1">
+                  <FormLabel>Amount Paid (Rs.)</FormLabel>
+                  <FormControl>
+                    <Input type="number" placeholder="e.g., 500.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <div className="md:col-span-2 text-right space-y-1">
+                <p className="text-lg font-medium">
+                    Grand Total: <span className="font-semibold">Rs. {grandTotal.toFixed(2)}</span>
+                </p>
+                <p className={`text-lg font-medium ${amountDue > 0 ? 'text-destructive' : 'text-green-600'}`}>
+                    Amount Due: <span className="font-semibold">Rs. {amountDue.toFixed(2)}</span>
+                </p>
+            </div>
         </div>
+
 
         <FormField
           control={form.control}
@@ -604,7 +658,7 @@ export default function NewSalePage() {
       <Card className="max-w-3xl mx-auto w-full">
         <CardHeader>
           <CardTitle>Sale Transaction Details</CardTitle>
-          <CardDescription>Enter the details for the new sale. Select products and specify quantities and prices.</CardDescription>
+          <CardDescription>Enter the details for the new sale. Select products and specify quantities, prices, and amount paid.</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -633,4 +687,3 @@ export default function NewSalePage() {
     </div>
   );
 }
-

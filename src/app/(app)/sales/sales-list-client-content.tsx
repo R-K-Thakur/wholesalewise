@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import type { Sale } from "@/lib/types";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ITEMS_PER_PAGE_STORAGE_KEY } from "@/lib/constants";
+import { Badge } from "@/components/ui/badge"; // Import Badge
+import { cn } from "@/lib/utils";
 
 const DEFAULT_ITEMS_PER_PAGE = 10;
 
@@ -27,7 +29,7 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
       setItemsPerPage(parseInt(storedItemsPerPage, 10) || DEFAULT_ITEMS_PER_PAGE);
     }
   }, []);
-  
+
   React.useEffect(() => {
     setSales(initialSales);
     setCurrentPage(1); // Reset to first page if sales data changes
@@ -48,23 +50,38 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
     setCurrentPage((prev) => Math.max(prev - 1, 1));
   };
 
+  const getStatusBadgeVariant = (status: Sale['paymentStatus']): "default" | "secondary" | "destructive" => {
+    switch (status) {
+      case 'paid':
+        return 'default'; // Default is often green or primary
+      case 'partially_paid':
+        return 'secondary'; // Secondary for neutral/warning
+      case 'unpaid':
+        return 'destructive'; // Destructive for unpaid
+      default:
+        return 'secondary';
+    }
+  };
+
+
   if (!isMounted) {
     return (
        <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-border">
           <thead className="bg-muted/50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Customer Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Type</th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Items Sold</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Amount (Rs.)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Customer</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Total (Rs.)</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Paid (Rs.)</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Due (Rs.)</th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-card divide-y divide-border">
             <tr>
-                <td colSpan={6} className="px-6 py-4 text-center text-sm text-muted-foreground">Loading sales records...</td>
+                <td colSpan={7} className="px-6 py-4 text-center text-sm text-muted-foreground">Loading sales records...</td>
             </tr>
           </tbody>
         </table>
@@ -78,27 +95,38 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
         <table className="min-w-full divide-y divide-border">
           <thead className="bg-muted/50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Customer Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Type</th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Items Sold</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Amount (Rs.)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Customer Name</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Total (Rs.)</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Paid (Rs.)</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Due (Rs.)</th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-card divide-y divide-border">
             {paginatedSales.map((sale) => (
               <tr key={sale.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
-                  {sale.customerName || "N/A"}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground capitalize">{sale.saleType}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground text-center">{sale.items.reduce((acc, item) => acc + item.quantitySold, 0)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{sale.totalAmount.toFixed(2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground">
                   {new Date(sale.saleDate).toLocaleDateString()}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-foreground">
+                  {sale.customerName || "N/A"}
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{sale.totalAmount.toFixed(2)}</td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{sale.totalPaidAmount.toFixed(2)}</td>
+                <td className={cn(
+                    "px-4 py-4 whitespace-nowrap text-sm text-right font-medium",
+                    sale.totalAmountDue > 0 ? "text-destructive" : "text-green-600"
+                  )}>
+                    {sale.totalAmountDue.toFixed(2)}
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-center">
+                  <Badge variant={getStatusBadgeVariant(sale.paymentStatus)} className="capitalize">
+                    {sale.paymentStatus.replace('_', ' ')}
+                  </Badge>
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-center">
                   <Button variant="outline" size="sm" asChild>
                     <Link href={`/sales/${sale.id}`}>View Details</Link>
                   </Button>
@@ -107,12 +135,12 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
             ))}
             {sales.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-4 text-center text-sm text-muted-foreground">No sales recorded yet.</td>
+                <td colSpan={7} className="px-6 py-4 text-center text-sm text-muted-foreground">No sales recorded yet.</td>
               </tr>
             )}
             {sales.length > 0 && paginatedSales.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-4 text-center text-sm text-muted-foreground">
+                <td colSpan={7} className="px-6 py-4 text-center text-sm text-muted-foreground">
                   No sales records on this page. Try adjusting filters or page number.
                 </td>
               </tr>
@@ -139,4 +167,3 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
     </>
   );
 }
-

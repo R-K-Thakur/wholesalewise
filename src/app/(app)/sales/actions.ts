@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { collection, addDoc, doc, runTransaction, Timestamp, getDocs, query, orderBy, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { RecordSaleActionPayload } from './schema';
-import type { Product, Sale, SaleItem } from '@/lib/types';
+import type { Product, Sale, SaleItem, PaymentTransaction } from '@/lib/types';
 import type { ProductUnit } from '@/lib/constants';
 
 const SALES_COLLECTION = 'sales';
@@ -18,20 +18,33 @@ const mapDocToSale = (document: import('firebase/firestore').DocumentSnapshot | 
     throw new Error('Sale document data is undefined.');
   }
   const nowAsISO = new Date().toISOString();
+
+  const paymentHistory: PaymentTransaction[] = Array.isArray(data.paymentHistory) ? data.paymentHistory.map((ph: any) => ({
+    date: typeof ph.date === 'string' ? ph.date : (ph.date?.toDate ? ph.date.toDate().toISOString() : nowAsISO),
+    amount: typeof ph.amount === 'number' ? ph.amount : 0,
+    paymentMethod: ['cash', 'card', 'online'].includes(ph.paymentMethod) ? ph.paymentMethod as Sale['paymentMethod'] : undefined,
+    notes: typeof ph.notes === 'string' ? ph.notes : undefined,
+  })) : [];
+
+
   return {
     id: document.id,
-    items: Array.isArray(data.items) ? data.items.map((item: any): SaleItem => ({ 
+    items: Array.isArray(data.items) ? data.items.map((item: any): SaleItem => ({
       productId: typeof item.productId === 'string' ? item.productId : '',
       productNameSnapshot: typeof item.productNameSnapshot === 'string' ? item.productNameSnapshot : '',
       quantitySold: typeof item.quantitySold === 'number' ? item.quantitySold : 0,
       pricePerUnitSold: typeof item.pricePerUnitSold === 'number' ? item.pricePerUnitSold : 0,
-      soldUnit: typeof item.soldUnit === 'string' ? item.soldUnit as ProductUnit : 'piece', 
+      soldUnit: typeof item.soldUnit === 'string' ? item.soldUnit as ProductUnit : 'piece',
       baseUnitSnapshot: typeof item.baseUnitSnapshot === 'string' ? item.baseUnitSnapshot as ProductUnit : 'piece',
       total: typeof item.total === 'number' ? item.total : 0,
     })) : [],
     totalAmount: typeof data.totalAmount === 'number' ? data.totalAmount : 0,
+    totalPaidAmount: typeof data.totalPaidAmount === 'number' ? data.totalPaidAmount : 0,
+    totalAmountDue: typeof data.totalAmountDue === 'number' ? data.totalAmountDue : 0,
+    paymentStatus: ['paid', 'partially_paid', 'unpaid'].includes(data.paymentStatus) ? data.paymentStatus : 'unpaid',
+    paymentHistory: paymentHistory,
     saleType: ['wholesale', 'retail'].includes(data.saleType) ? data.saleType : 'retail',
-    saleDate: typeof data.saleDate === 'string' ? data.saleDate : nowAsISO, // Should be data.saleDate (already string)
+    saleDate: typeof data.saleDate === 'string' ? data.saleDate : nowAsISO,
     customerName: typeof data.customerName === 'string' ? data.customerName : '',
     paymentMethod: ['cash', 'card', 'online'].includes(data.paymentMethod) ? data.paymentMethod as Sale['paymentMethod'] : undefined,
     notes: typeof data.notes === 'string' ? data.notes : '',
@@ -45,7 +58,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
   try {
     await runTransaction(db, async (transaction) => {
       const saleItemsForDb: SaleItem[] = [];
-      let calculatedTotalAmount = 0;
+      let calculatedBillTotalAmount = 0; // This is the total for all items in the bill
 
       for (const item of data.items) {
         if (!item.productId) {
@@ -60,12 +73,11 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
 
         const product = productSnap.data() as Omit<Product, 'id'>;
 
-        // The quantitySold is in 'soldUnit'. We need to convert it to baseUnits if soldUnit is purchaseUnit.
         let quantitySoldInBaseUnits = item.quantitySold;
         if (item.soldUnit === product.purchaseUnit && product.baseUnit !== product.purchaseUnit) {
           quantitySoldInBaseUnits = item.quantitySold * (product.purchaseUnitConversionFactor || 1);
         }
-        
+
         if (product.quantityInStock < quantitySoldInBaseUnits) {
           throw new Error(
             `Insufficient stock for "${item.productNameSnapshot}". Available (base units): ${product.quantityInStock}, Requested (base units): ${quantitySoldInBaseUnits}.`
@@ -74,7 +86,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
 
         const newStock = product.quantityInStock - quantitySoldInBaseUnits;
         transaction.update(productRef, { quantityInStock: newStock, updatedAt: Timestamp.now().toDate().toISOString() });
-        
+
         saleItemsForDb.push({
           productId: item.productId,
           productNameSnapshot: item.productNameSnapshot,
@@ -84,22 +96,50 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
           baseUnitSnapshot: item.baseUnitSnapshot,
           total: item.quantitySold * item.pricePerUnitSold,
         });
-        calculatedTotalAmount += item.quantitySold * item.pricePerUnitSold;
-      }
-      
-      if (Math.abs(calculatedTotalAmount - data.totalAmount) > 0.001) {
-         console.warn(`Total amount discrepancy. Client: ${data.totalAmount}, Server calculated: ${calculatedTotalAmount}. Using server calculated.`);
+        calculatedBillTotalAmount += item.quantitySold * item.pricePerUnitSold;
       }
 
+      if (Math.abs(calculatedBillTotalAmount - data.totalAmount) > 0.001) {
+         console.warn(`Total amount discrepancy. Client form passed totalAmount: ${data.totalAmount}, Server calculated item total: ${calculatedBillTotalAmount}. Using server calculated item total.`);
+      }
+      if (data.amountPaid > calculatedBillTotalAmount) {
+        throw new Error("Amount paid cannot be greater than the total bill amount.");
+      }
+
+
       const now = Timestamp.now().toDate().toISOString();
+      const totalPaidAmountForSale = data.amountPaid;
+      const totalAmountDueForSale = calculatedBillTotalAmount - totalPaidAmountForSale;
+
+      let paymentStatus: Sale['paymentStatus'] = 'unpaid';
+      if (totalAmountDueForSale <= 0) {
+        paymentStatus = 'paid';
+      } else if (totalPaidAmountForSale > 0 && totalAmountDueForSale > 0) {
+        paymentStatus = 'partially_paid';
+      } else if (totalPaidAmountForSale === 0 && calculatedBillTotalAmount > 0) {
+        paymentStatus = 'unpaid';
+      }
+
+
+      const initialPayment: PaymentTransaction = {
+        date: now, // Or use data.saleDate if preferred for the first payment record
+        amount: data.amountPaid,
+        paymentMethod: data.paymentMethod,
+        // notes for this specific payment transaction could be added if form supports it
+      };
+
       const newSaleData: Omit<Sale, 'id'> = {
         customerName: data.customerName || '',
-        saleDate: data.saleDate, // This is already a string like "YYYY-MM-DD"
+        saleDate: data.saleDate,
         saleType: data.saleType,
-        paymentMethod: data.paymentMethod,
+        paymentMethod: data.paymentMethod, // Main payment method for the sale
         items: saleItemsForDb,
-        totalAmount: calculatedTotalAmount, 
-        notes: data.notes || '', 
+        totalAmount: calculatedBillTotalAmount, // Grand total of the bill
+        totalPaidAmount: totalPaidAmountForSale,
+        totalAmountDue: totalAmountDueForSale,
+        paymentStatus: paymentStatus,
+        paymentHistory: [initialPayment],
+        notes: data.notes || '',
         createdAt: now,
         updatedAt: now,
       };
@@ -108,8 +148,8 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
     });
 
     revalidatePath('/sales');
-    revalidatePath('/products'); 
-    revalidatePath('/dashboard'); 
+    revalidatePath('/products');
+    revalidatePath('/dashboard');
 
     return { success: true, message: 'Sale recorded successfully!' };
   } catch (error) {
@@ -120,7 +160,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
 
 export async function getSalesAction(): Promise<Sale[]> {
   try {
-    const q = query(collection(db, SALES_COLLECTION), orderBy("saleDate", "desc")); // Order by saleDate
+    const q = query(collection(db, SALES_COLLECTION), orderBy("saleDate", "desc"), orderBy("createdAt", "desc"));
     const querySnapshot = await getDocs(q);
     const sales = querySnapshot.docs.map(mapDocToSale);
     return sales;

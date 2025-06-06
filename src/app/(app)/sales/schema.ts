@@ -22,17 +22,32 @@ export const saleFormSchema = z.object({
   saleDate: z.string().refine((date) => !isNaN(Date.parse(date)), { message: "Invalid date" }),
   items: z.array(saleItemSchema).min(1, "At least one item is required in the sale."),
   paymentMethod: z.enum(['cash', 'card', 'online'], { required_error: "Payment method is required."}).optional(),
+  amountPaid: z.coerce
+    .number({ invalid_type_error: "Amount paid must be a number."})
+    .nonnegative("Amount paid cannot be negative."),
   notes: z.string().max(500, "Notes too long").optional().nullable(),
-  // totalAmount will be calculated before sending to action
+}).superRefine((data, ctx) => {
+  let calculatedTotalAmount = 0;
+  data.items.forEach(item => {
+    calculatedTotalAmount += (item.quantitySold || 0) * (item.pricePerUnitSold || 0);
+  });
+  if (data.amountPaid > calculatedTotalAmount) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Amount paid cannot be greater than the total bill amount.",
+      path: ["amountPaid"],
+    });
+  }
 });
 
 export type SaleItemFormData = z.infer<typeof saleItemSchema>;
 export type SaleFormData = z.infer<typeof saleFormSchema>;
 
 // This type will be used for the data sent to the server action
-export type RecordSaleActionPayload = Omit<SaleFormData, 'customerName' | 'notes'> & {
+export type RecordSaleActionPayload = Omit<SaleFormData, 'customerName' | 'notes' | 'items'> & {
   customerName?: string; // Making them truly optional for action
   notes?: string;
   items: Array<SaleItemFormData & { productNameSnapshot: string; total: number }>; // Ensure productNameSnapshot and total are present
-  totalAmount: number;
+  totalAmount: number; // This is the grand total of the bill
+  amountPaid: number; // This is the amount paid in this specific transaction
 };
