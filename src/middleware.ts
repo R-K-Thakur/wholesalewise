@@ -1,33 +1,30 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
+import { getSession } from '@/app/login/actions'; // Import getSession to use it
 
-const SESSION_COOKIE_NAME = "auth-session";
+const SESSION_COOKIE_NAME = "auth-session"; // Keep this if getSession internally uses it
 
 export async function middleware(request: NextRequest) {
-  const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME);
   const { pathname } = request.nextUrl;
-
-  console.log(`[Middleware] Request to path: ${pathname}. Session cookie present: ${!!sessionCookie}.`);
-  if (sessionCookie && sessionCookie.value) {
-    console.log(`[Middleware] Session cookie value (first 50 chars): ${sessionCookie.value.substring(0, 50)}...`);
-  } else if (sessionCookie && !sessionCookie.value) {
-    console.log(`[Middleware] Session cookie found but has NO VALUE.`);
-  }
-
 
   // Allow access to /login and API routes (if any) without a session
   if (pathname.startsWith('/login') || pathname.startsWith('/api')) {
+    console.log(`[Middleware] Allowing access to public path: ${pathname}`);
     return NextResponse.next();
   }
 
-  // If there's no session cookie, redirect to login page for all other routes
-  if (!sessionCookie || !sessionCookie.value) { // Added check for !sessionCookie.value
-    console.log(`[Middleware] No session cookie or empty cookie value, redirecting to /login from ${pathname}`);
+  // For all other routes, check the session
+  const session = await getSession(); // Use the server-side getSession
+
+  if (!session) {
+    console.log(`[Middleware] No valid session found for path: ${pathname}, redirecting to /login`);
     const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('redirectedFrom', pathname); // Optional: pass redirect info
     return NextResponse.redirect(loginUrl);
   }
   
-  // If there is a session cookie, proceed
+  // If there is a valid session, proceed
+  console.log(`[Middleware] Valid session found for ${session.email}, allowing access to: ${pathname}`);
   return NextResponse.next();
 }
 
@@ -47,8 +44,7 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|healthz|files/.*|assets/.*|images/.*).*)',
   ],
 };
-
-
+    
     
 
     

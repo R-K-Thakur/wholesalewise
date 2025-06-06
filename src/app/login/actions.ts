@@ -2,7 +2,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+// import { redirect } from "next/navigation"; // redirect is removed
 import { doc, getDoc, setDoc, updateDoc, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
@@ -98,19 +98,20 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
     let userDocSnap = await getDoc(userDocRef);
     let userDocDataFromDb: UserDocumentData | null = userDocSnap.exists() ? userDocSnap.data() as UserDocumentData : null;
 
-    const userDataToSet: Partial<UserDocumentData> & { email: string; displayName?: string } = { // displayName is optional initially
+    const userDataToSet: Partial<UserDocumentData> & { email: string; displayName?: string } = { 
       email: userEmailLower,
     };
     if (userDocDataFromDb?.displayName?.trim()) {
         userDataToSet.displayName = userDocDataFromDb.displayName.trim();
     } else {
-        userDataToSet.displayName = userEmailLower; // Default if not present or empty
+        userDataToSet.displayName = userEmailLower; 
     }
     
     if (userDocDataFromDb?.invoicePrimaryColor) userDataToSet.invoicePrimaryColor = userDocDataFromDb.invoicePrimaryColor;
     if (userDocDataFromDb?.shopName) userDataToSet.shopName = userDocDataFromDb.shopName;
     if (userDocDataFromDb?.shopAddress) userDataToSet.shopAddress = userDocDataFromDb.shopAddress;
     if (userDocDataFromDb?.shopContact) userDataToSet.shopContact = userDocDataFromDb.shopContact;
+
 
     if (userRole === "staff") {
       const now = new Date();
@@ -139,10 +140,10 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
     if (userDataToSet.shopName) sessionData.shopName = userDataToSet.shopName;
     if (userDataToSet.shopAddress) sessionData.shopAddress = userDataToSet.shopAddress;
     if (userDataToSet.shopContact) sessionData.shopContact = userDataToSet.shopContact;
-
+    
     console.log('[signInWithEmailAction] EXACT Session data being set in cookie:', JSON.stringify(sessionData, null, 2));
 
-    const cookieStore = await cookies();
+    const cookieStore = cookies();
     const cookieSecure = process.env.NODE_ENV === 'production';
     console.log(`[signInWithEmailAction] Cookie settings: cookieSecure = ${cookieSecure}, effective SameSite will be 'Lax' (forced for this test)`);
     
@@ -151,17 +152,12 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
       secure: cookieSecure, 
       maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
-      sameSite: "lax" as const,
+      sameSite: "lax" as const, 
     });
 
-    return { success: true };
+    return { success: true }; // Return success status
 
   } catch (e: any) {
-    if (typeof e.message === 'string' && e.message.includes('NEXT_REDIRECT')) {
-      // This should not happen anymore as we are not calling redirect()
-      console.error("[signInWithEmailAction] Caught NEXT_REDIRECT unexpectedly:", e);
-      return { success: false, error: "Login failed due to an unexpected redirection error."};
-    }
     console.error("[signInWithEmailAction] Caught an unhandled server error during login:", e);
     let safeErrorMessage = "An unexpected server error occurred during login.";
     if (e instanceof Error && typeof e.message === 'string' && e.message.trim() !== "") {
@@ -174,8 +170,9 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
 }
 
 export async function logoutAction() {
-  cookies().delete(SESSION_COOKIE_NAME);
-  redirect("/login");
+  const cookieStore = cookies(); // Get store first
+  cookieStore.delete(SESSION_COOKIE_NAME);
+  // redirect("/login"); // This will be handled client-side or by middleware now
 }
 
 export async function getSession(): Promise<SessionData | null> {

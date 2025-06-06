@@ -2,14 +2,14 @@
 "use client";
 
 import { useState, type FormEvent, useEffect } from "react";
-import { useRouter } from "next/navigation"; // Import useRouter
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { signInWithEmailAction } from "./actions";
+import { signInWithEmailAction } from "./actions"; // Removed logoutAction as it's not used here
 import { APP_NAME } from "@/lib/constants";
 import { Loader2, LogIn, Mail } from "lucide-react";
 
@@ -17,7 +17,7 @@ const LOCALSTORAGE_REMEMBER_EMAIL_KEY = "rememberedUserEmail";
 
 export default function LoginPage() {
   const { toast } = useToast();
-  const router = useRouter(); // Initialize useRouter
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -54,23 +54,19 @@ export default function LoginPage() {
 
       if (serverResult?.success) {
         toast({ title: "Login Successful", description: "Redirecting to dashboard...", variant: "default" });
-        router.push('/dashboard'); // Client-side redirect
+        router.push('/dashboard'); // Perform client-side redirect
       } else if (serverResult?.error) { 
         setError(serverResult.error);
         toast({ title: "Login Failed", description: serverResult.error, variant: "destructive" });
       } else {
-        // Should not happen if serverResult always has success or error
-        setError("An unexpected error occurred during login.");
-        toast({ title: "Login Failed", description: "An unexpected error occurred.", variant: "destructive" });
+        // This case should ideally not be reached if serverResult always has {success: boolean, error?: string}
+        setError("An unexpected error occurred during login. Server response was unclear.");
+        toast({ title: "Login Failed", description: "An unexpected error occurred. Server response was unclear.", variant: "destructive" });
       }
     } catch (e: any) {
       console.error("Email Sign-In Error (client-side catch):", e);
-      let errorMessage = "An unknown error occurred during Sign-In.";
-      
-      // NEXT_REDIRECT errors are not expected here anymore with the new flow
-      if (e.message) {
-        errorMessage = e.message;
-      }
+      // Avoid showing generic NEXT_REDIRECT errors to the user directly if they occur
+      const errorMessage = (e.message && !e.message.includes('NEXT_REDIRECT')) ? e.message : "An unknown error occurred during Sign-In.";
       setError(errorMessage);
       toast({ title: "Sign-In Failed", description: errorMessage, variant: "destructive" });
     } finally {
