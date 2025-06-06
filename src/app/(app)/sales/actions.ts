@@ -1,8 +1,9 @@
 
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { collection, addDoc, doc, runTransaction, Timestamp, getDocs, query, orderBy, getDoc, updateDoc } from 'firebase/firestore';
+import { unstable_cache } from 'next/cache';
 import { db } from '@/lib/firebase';
 import type { RecordSaleActionPayload } from './schema';
 import type { Product, Sale, SaleItem, PaymentTransaction, RecordAdditionalPaymentPayload } from '@/lib/types';
@@ -168,6 +169,8 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
       transaction.set(doc(collection(db, SALES_COLLECTION)), newSaleData);
     });
 
+    revalidateTag('sales');
+    revalidateTag('products'); // Revalidate products due to stock changes
     revalidatePath('/sales');
     revalidatePath('/products');
     revalidatePath('/dashboard');
@@ -179,16 +182,28 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
   }
 }
 
-export async function getSalesAction(): Promise<Sale[]> {
-  try {
-    const q = query(collection(db, SALES_COLLECTION), orderBy("saleDate", "desc"), orderBy("createdAt", "desc"));
-    const querySnapshot = await getDocs(q);
-    const sales = querySnapshot.docs.map(mapDocToSale);
-    return sales;
-  } catch (error) {
-    console.error("Error fetching sales from Firestore:", error);
-    return [];
+const getSalesCached = unstable_cache(
+  async () => {
+    console.log('[getSalesAction_CACHE_WRAPPER] Cache miss or revalidating: Fetching sales from Firestore');
+    try {
+      const q = query(collection(db, SALES_COLLECTION), orderBy("saleDate", "desc"), orderBy("createdAt", "desc"));
+      const querySnapshot = await getDocs(q);
+      const sales = querySnapshot.docs.map(mapDocToSale);
+      return sales;
+    } catch (error) {
+      console.error("Error fetching sales from Firestore (within cache wrapper):", error);
+      return [];
+    }
+  },
+  ['sales_list'],
+  {
+    revalidate: 300, // 5 minutes
+    tags: ['sales'],
   }
+);
+
+export async function getSalesAction(): Promise<Sale[]> {
+  return getSalesCached();
 }
 
 export async function getSaleByIdAction(id: string): Promise<Sale | undefined> {
@@ -299,6 +314,7 @@ export async function updateSalePaymentStatusAction(
       transaction.update(saleRef, updateData);
     });
 
+    revalidateTag('sales');
     revalidatePath('/sales');
     revalidatePath(`/sales/${saleId}`);
     revalidatePath('/dashboard');
@@ -392,6 +408,7 @@ export async function recordAdditionalPaymentAction(
       transaction.update(saleRef, updateData);
     });
 
+    revalidateTag('sales');
     revalidatePath('/sales');
     revalidatePath(`/sales/${saleId}`);
     revalidatePath('/dashboard');

@@ -1,8 +1,9 @@
 
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, Timestamp, query, orderBy, runTransaction } from 'firebase/firestore';
+import { unstable_cache } from 'next/cache';
 import { db } from '@/lib/firebase';
 import type { ValidatedProductFormData } from './schema';
 import type { Product, Purchase } from '@/lib/types';
@@ -115,6 +116,8 @@ export async function addProduct(data: ValidatedProductFormData) {
       return newProductRef; 
     });
 
+    revalidateTag('products');
+    revalidateTag('purchases');
     revalidatePath('/products');
     revalidatePath('/dashboard'); 
 
@@ -130,19 +133,34 @@ export async function addProduct(data: ValidatedProductFormData) {
   }
 }
 
-export async function getProductsAction(): Promise<Product[]> {
-  try {
-    const q = query(collection(db, PRODUCTS_COLLECTION), orderBy("createdAt", "desc"));
-    const querySnapshot = await getDocs(q);
-    const products = querySnapshot.docs.map(mapDocToProduct);
-    return products;
-  } catch (error) {
-    console.error("Error fetching products from Firestore:", error);
-    return [];
+const getProductsCached = unstable_cache(
+  async () => {
+    console.log('[getProductsAction_CACHE_WRAPPER] Cache miss or revalidating: Fetching products from Firestore');
+    try {
+      const q = query(collection(db, PRODUCTS_COLLECTION), orderBy("createdAt", "desc"));
+      const querySnapshot = await getDocs(q);
+      const products = querySnapshot.docs.map(mapDocToProduct);
+      return products;
+    } catch (error) {
+      console.error("Error fetching products from Firestore (within cache wrapper):", error);
+      return [];
+    }
+  },
+  ['products_list'],
+  {
+    revalidate: 300, // 5 minutes
+    tags: ['products'],
   }
+);
+
+export async function getProductsAction(): Promise<Product[]> {
+  return getProductsCached();
 }
 
 export async function getProductByIdAction(id: string): Promise<Product | undefined> {
+  // Individual product fetch, might not need aggressive caching like the full list,
+  // or could have shorter revalidation if frequently changing and viewed.
+  // For simplicity, not caching this one for now, but could be added.
   try {
     const docRef = doc(db, PRODUCTS_COLLECTION, id);
     const docSnap = await getDoc(docRef);
@@ -235,6 +253,7 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
 
     await updateDoc(productRef, updateData);
 
+    revalidateTag('products');
     revalidatePath('/products');
     revalidatePath(`/products/${id}/edit`);
     revalidatePath('/dashboard');
@@ -254,6 +273,9 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
 export async function deleteProductAction(id: string) {
   try {
     await deleteDoc(doc(db, PRODUCTS_COLLECTION, id));
+    revalidateTag('products');
+    revalidateTag('sales'); // Sales might reference product names, though snapshots are used
+    revalidateTag('purchases'); // Purchases are directly linked to products
     revalidatePath('/products');
     revalidatePath('/dashboard');
     return { success: true, message: 'Product deleted successfully!' };
@@ -329,6 +351,8 @@ export async function addStockToProductAction(
       transaction.set(purchaseDocRef, purchaseRecord);
     });
 
+    revalidateTag('products');
+    revalidateTag('purchases');
     revalidatePath('/products');
     revalidatePath(`/products/${productId}/edit`);
     revalidatePath('/dashboard'); 
@@ -340,60 +364,70 @@ export async function addStockToProductAction(
   }
 }
 
-export async function getPurchasesAction(): Promise<Purchase[]> {
-  try {
-    const q = query(collection(db, PURCHASES_COLLECTION), orderBy("purchaseDate", "desc"));
-    const querySnapshot = await getDocs(q);
-    const purchases = querySnapshot.docs.map(docSnap => {
-      const data = docSnap.data();
-      const nowAsISO = new Date().toISOString();
-      let purchaseDateString = nowAsISO;
-      if (data.purchaseDate) {
-        if (typeof data.purchaseDate === 'string') {
-          purchaseDateString = data.purchaseDate;
-        } else if (data.purchaseDate.toDate) { 
-          purchaseDateString = data.purchaseDate.toDate().toISOString();
+const getPurchasesCached = unstable_cache(
+  async () => {
+    console.log('[getPurchasesAction_CACHE_WRAPPER] Cache miss or revalidating: Fetching purchases from Firestore');
+    try {
+      const q = query(collection(db, PURCHASES_COLLECTION), orderBy("purchaseDate", "desc"));
+      const querySnapshot = await getDocs(q);
+      const purchases = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        const nowAsISO = new Date().toISOString();
+        let purchaseDateString = nowAsISO;
+        if (data.purchaseDate) {
+          if (typeof data.purchaseDate === 'string') {
+            purchaseDateString = data.purchaseDate;
+          } else if (data.purchaseDate.toDate) { 
+            purchaseDateString = data.purchaseDate.toDate().toISOString();
+          }
         }
-      }
 
-      let createdAtString = nowAsISO;
-       if (data.createdAt) {
-        if (typeof data.createdAt === 'string') {
-          createdAtString = data.createdAt;
-        } else if (data.createdAt.toDate) {
-          createdAtString = data.createdAt.toDate().toISOString();
+        let createdAtString = nowAsISO;
+        if (data.createdAt) {
+          if (typeof data.createdAt === 'string') {
+            createdAtString = data.createdAt;
+          } else if (data.createdAt.toDate) {
+            createdAtString = data.createdAt.toDate().toISOString();
+          }
         }
-      }
 
-      let updatedAtString = nowAsISO;
-      if (data.updatedAt) {
-        if (typeof data.updatedAt === 'string') {
-          updatedAtString = data.updatedAt;
-        } else if (data.updatedAt.toDate) {
-          updatedAtString = data.updatedAt.toDate().toISOString();
+        let updatedAtString = nowAsISO;
+        if (data.updatedAt) {
+          if (typeof data.updatedAt === 'string') {
+            updatedAtString = data.updatedAt;
+          } else if (data.updatedAt.toDate) {
+            updatedAtString = data.updatedAt.toDate().toISOString();
+          }
         }
-      }
-      
-      return {
-        id: docSnap.id,
-        productId: data.productId || '',
-        productNameSnapshot: data.productNameSnapshot || '',
-        quantityPurchased: data.quantityPurchased || 0,
-        purchaseUnitSnapshot: PRODUCT_UNITS.includes(data.purchaseUnitSnapshot) ? data.purchaseUnitSnapshot : PRODUCT_UNITS[0],
-        purchasePricePerUnitSnapshot: data.purchasePricePerUnitSnapshot || 0,
-        totalCost: data.totalCost || 0,
-        purchaseDate: purchaseDateString,
-        createdAt: createdAtString,
-        updatedAt: updatedAtString,
-        recordedByEmail: typeof data.recordedByEmail === 'string' ? data.recordedByEmail : undefined,
-      } as Purchase;
-    });
-    return purchases;
-  } catch (error) {
-    console.error("Error fetching purchases from Firestore:", error);
-    return [];
+        
+        return {
+          id: docSnap.id,
+          productId: data.productId || '',
+          productNameSnapshot: data.productNameSnapshot || '',
+          quantityPurchased: data.quantityPurchased || 0,
+          purchaseUnitSnapshot: PRODUCT_UNITS.includes(data.purchaseUnitSnapshot) ? data.purchaseUnitSnapshot : PRODUCT_UNITS[0],
+          purchasePricePerUnitSnapshot: data.purchasePricePerUnitSnapshot || 0,
+          totalCost: data.totalCost || 0,
+          purchaseDate: purchaseDateString,
+          createdAt: createdAtString,
+          updatedAt: updatedAtString,
+          recordedByEmail: typeof data.recordedByEmail === 'string' ? data.recordedByEmail : undefined,
+        } as Purchase;
+      });
+      return purchases;
+    } catch (error) {
+      console.error("Error fetching purchases from Firestore (within cache wrapper):", error);
+      return [];
+    }
+  },
+  ['purchases_list'],
+  {
+    revalidate: 300, // 5 minutes
+    tags: ['purchases'],
   }
+);
+
+export async function getPurchasesAction(): Promise<Purchase[]> {
+  return getPurchasesCached();
 }
-
-
     
