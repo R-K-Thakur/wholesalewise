@@ -5,7 +5,6 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { doc, getDoc, setDoc, updateDoc, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-// Removed getLoginTimeSettingsAction as time window is hardcoded again.
 
 const SESSION_COOKIE_NAME = "auth-session";
 const APP_SETTINGS_COLLECTION = "app_settings";
@@ -33,7 +32,6 @@ interface UserDocumentData {
   shopName?: string;
   shopAddress?: string;
   shopContact?: string;
-  // loginManuallyDisabled is removed from here
 }
 
 interface RoleEmails {
@@ -100,27 +98,23 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     let userDocSnap = await getDoc(userDocRef);
     let userDocDataFromDb: UserDocumentData | null = userDocSnap.exists() ? userDocSnap.data() as UserDocumentData : null;
 
-    // Prepare the data to set, ensuring displayName is always populated.
     const userDataToSet: Partial<UserDocumentData> & { email: string; displayName: string } = {
       email: userEmailLower,
-      displayName: userDocDataFromDb?.displayName?.trim() || userEmailLower, // Default to email if displayName is empty or not present
+      displayName: userDocDataFromDb?.displayName?.trim() || userEmailLower, 
     };
     
-    // Conditionally add optional fields only if they exist in userDocDataFromDb
     if (userDocDataFromDb?.invoicePrimaryColor) userDataToSet.invoicePrimaryColor = userDocDataFromDb.invoicePrimaryColor;
     if (userDocDataFromDb?.shopName) userDataToSet.shopName = userDocDataFromDb.shopName;
     if (userDocDataFromDb?.shopAddress) userDataToSet.shopAddress = userDocDataFromDb.shopAddress;
     if (userDocDataFromDb?.shopContact) userDataToSet.shopContact = userDocDataFromDb.shopContact;
 
-
     if (userRole === "staff") {
-      // Time-based restriction for staff (hardcoded 9 AM to 11 PM exclusive)
       const now = new Date();
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
 
       const isAfterStartTime = currentHour > DEFAULT_STAFF_LOGIN_START_TIME.H || (currentHour === DEFAULT_STAFF_LOGIN_START_TIME.H && currentMinute >= DEFAULT_STAFF_LOGIN_START_TIME.M);
-      const isBeforeEndTime = currentHour < DEFAULT_STAFF_LOGIN_END_TIME.H; // Exclusive end time
+      const isBeforeEndTime = currentHour < DEFAULT_STAFF_LOGIN_END_TIME.H;
 
       if (!(isAfterStartTime && isBeforeEndTime)) {
         return { error: `Access denied. Staff login is only permitted between ${DEFAULT_STAFF_LOGIN_START_TIME.H.toString().padStart(2,'0')}:${DEFAULT_STAFF_LOGIN_START_TIME.M.toString().padStart(2,'0')} and ${DEFAULT_STAFF_LOGIN_END_TIME.H.toString().padStart(2,'0')}:00 (exclusive).` };
@@ -128,20 +122,21 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     }
     
     await setDoc(userDocRef, userDataToSet, { merge: true });
-    // console.log(`[signInWithEmailAction] User document for ${userEmailLower} ensured/updated.`);
+    
+    const finalUserDisplayName = userDataToSet.displayName; // Guaranteed to be non-empty string now
 
     const sessionData: SessionData = {
-      username: userEmailLower, // Ensure username is always set
-      email: userEmailLower,
+      username: userEmailLower, // Always a non-empty string
+      email: userEmailLower,    // Always a non-empty string
       role: userRole!,
-      name: userDataToSet.displayName, // This is now guaranteed to be non-empty
+      name: finalUserDisplayName, // Always a non-empty string
     };
     if (userDataToSet.invoicePrimaryColor) sessionData.invoicePrimaryColor = userDataToSet.invoicePrimaryColor;
     if (userDataToSet.shopName) sessionData.shopName = userDataToSet.shopName;
     if (userDataToSet.shopAddress) sessionData.shopAddress = userDataToSet.shopAddress;
     if (userDataToSet.shopContact) sessionData.shopContact = userDataToSet.shopContact;
 
-    // console.log('[signInWithEmailAction] Creating session with data:', sessionData);
+    console.log('[signInWithEmailAction] EXACT Session data being set in cookie:', JSON.stringify(sessionData, null, 2));
 
     const cookieSecure = process.env.NODE_ENV === 'production';
     const cookieSameSite = cookieSecure ? "none" as const : "lax" as const;
@@ -158,7 +153,7 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
 
   } catch (e: any) {
     if (typeof e.message === 'string' && e.message.includes('NEXT_REDIRECT')) {
-      throw e; // Re-throw NEXT_REDIRECT to allow Next.js to handle it
+      throw e;
     }
     console.error("[signInWithEmailAction] Caught an unhandled server error during login:", e);
     let safeErrorMessage = "An unexpected server error occurred during login.";
@@ -183,30 +178,50 @@ export async function getSession(): Promise<SessionData | null> {
   if (sessionCookie?.value) {
     try {
       const parsedData = JSON.parse(sessionCookie.value);
-      let reason = "";
-
-      if (!parsedData) reason = "Parsed data is null or undefined.";
-      else if (typeof parsedData !== 'object') reason = "Parsed data is not an object.";
-      else if (typeof parsedData.email !== 'string' || parsedData.email.trim() === '') reason = "Email missing or invalid.";
-      else if (typeof parsedData.username !== 'string' || parsedData.username.trim() === '') reason = "Username missing or invalid.";
-      else if (typeof parsedData.role !== 'string' || (parsedData.role !== 'owner' && parsedData.role !== 'staff')) reason = "Role missing or invalid.";
-      else if (typeof parsedData.name !== 'string' || parsedData.name.trim() === '') reason = "Name missing or invalid.";
-      else {
-        const optionalStringFields: (keyof SessionData)[] = ['invoicePrimaryColor', 'shopName', 'shopAddress', 'shopContact'];
-        for (const field of optionalStringFields) {
-          if (parsedData[field] !== undefined && typeof parsedData[field] !== 'string') {
-            reason = `Optional field ${String(field)} is present but not a string.`;
-            break;
-          }
-        }
-      }
-
-      if (reason) {
-        console.warn(`[getSession] Session cookie parsed, but data is invalid or incomplete. Reason: ${reason}. Deleting cookie.`);
+      
+      if (!parsedData) {
+        console.warn("[getSession] Invalid session: Parsed data is null or undefined. Deleting cookie.");
         cookies().delete(SESSION_COOKIE_NAME);
         return null;
       }
+      if (typeof parsedData !== 'object') {
+        console.warn("[getSession] Invalid session: Parsed data is not an object. Deleting cookie.");
+        cookies().delete(SESSION_COOKIE_NAME);
+        return null;
+      }
+      if (!parsedData.email || typeof parsedData.email !== 'string' || parsedData.email.trim() === '') {
+        console.warn(`[getSession] Invalid session: Email is problematic (value: ${parsedData.email}, type: ${typeof parsedData.email}). Deleting cookie.`);
+        cookies().delete(SESSION_COOKIE_NAME);
+        return null;
+      }
+      if (!parsedData.username || typeof parsedData.username !== 'string' || parsedData.username.trim() === '') {
+        console.warn(`[getSession] Invalid session: Username is problematic (value: ${parsedData.username}, type: ${typeof parsedData.username}). Deleting cookie.`);
+        cookies().delete(SESSION_COOKIE_NAME);
+        return null;
+      }
+      if (!parsedData.role || typeof parsedData.role !== 'string' || (parsedData.role !== 'owner' && parsedData.role !== 'staff')) {
+        console.warn(`[getSession] Invalid session: Role is problematic (value: ${parsedData.role}, type: ${typeof parsedData.role}). Deleting cookie.`);
+        cookies().delete(SESSION_COOKIE_NAME);
+        return null;
+      }
+      if (!parsedData.name || typeof parsedData.name !== 'string' || parsedData.name.trim() === '') {
+        console.warn(`[getSession] Invalid session: Name is problematic (value: '${parsedData.name}', type: ${typeof parsedData.name}). Deleting cookie.`);
+        cookies().delete(SESSION_COOKIE_NAME);
+        return null;
+      }
+
+      const optionalStringFields: (keyof SessionData)[] = ['invoicePrimaryColor', 'shopName', 'shopAddress', 'shopContact'];
+      for (const field of optionalStringFields) {
+        if (parsedData[field] !== undefined && typeof parsedData[field] !== 'string') {
+          console.warn(`[getSession] Session cookie parsed, but optional field '${String(field)}' is not a string (value: ${parsedData[field]}, type: ${typeof parsedData[field]}). Invalidating and deleting cookie.`);
+          cookies().delete(SESSION_COOKIE_NAME);
+          return null;
+        }
+      }
+      
+      // console.log("[getSession] Session cookie validated successfully.");
       return parsedData as SessionData;
+
     } catch (error) {
       console.error("[getSession] Failed to parse session cookie:", error);
       cookies().delete(SESSION_COOKIE_NAME);
