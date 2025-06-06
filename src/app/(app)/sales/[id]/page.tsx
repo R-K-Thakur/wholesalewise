@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ArrowLeft, Printer, Eye, Loader2, Edit } from 'lucide-react';
-import { getSaleByIdAction, updateSalePaymentStatusAction } from '../actions';
+import { getSaleByIdAction, updateSalePaymentStatusAction, type UpdateSaleStatusPayload } from '../actions';
 import type { Sale, PaymentTransaction } from '@/lib/types';
 import { APP_NAME } from '@/lib/constants';
 import jsPDF from 'jspdf';
@@ -69,21 +69,21 @@ export default function SaleDetailPage() {
   useEffect(() => {
     async function fetchData() {
       setIsLoading(true);
-      setSale(null); // Reset on new fetch
+      setSale(null); 
       if (saleId) {
         try {
           const [fetchedSale, currentSession] = await Promise.all([
             getSaleByIdAction(saleId),
             getSession()
           ]);
-          setSale(fetchedSale); // Will be Sale object or undefined
+          setSale(fetchedSale); 
           setSession(currentSession);
         } catch (err) {
           console.error("Failed to fetch sale details or session:", err);
           setSale(undefined); 
         }
       } else {
-        setSale(undefined); // No ID, so not found
+        setSale(undefined); 
       }
       setIsLoading(false);
     }
@@ -97,6 +97,49 @@ export default function SaleDetailPage() {
       shopContact: session?.shopContact,
     };
   }, [session]);
+
+  const displayPaymentMethod = useMemo(() => {
+    if (!sale) return 'N/A';
+    if (sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment') {
+      return sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
+    }
+    const lastNonManualPayment = [...(sale.paymentHistory || [])].reverse().find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
+    return lastNonManualPayment?.paymentMethod 
+      ? lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1) 
+      : (sale.paymentMethod ? sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1) : 'N/A');
+  }, [sale]);
+
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-lg text-muted-foreground mt-4">Loading sale details...</p>
+      </div>
+    );
+  }
+
+  if (sale === undefined) { 
+    return (
+      <div className="flex flex-col items-center justify-center h-full">
+        <p className="text-xl text-muted-foreground">Sale not found.</p>
+        <Button variant="outline" asChild className="mt-4">
+          <Link href="/sales">
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Sales
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+  
+  if (sale === null) { 
+     return (
+      <div className="flex flex-col items-center justify-center h-full">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-lg text-muted-foreground mt-4">Initializing...</p>
+      </div>
+    );
+  }
 
   const generateInvoicePDF = (outputType: 'save' | 'datauristring' = 'save', options?: PdfOptions): string | void => {
     if (!sale) return;
@@ -211,17 +254,21 @@ export default function SaleDetailPage() {
 
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
-      let primaryPaymentMethod = sale.paymentMethod;
-      if (!primaryPaymentMethod && sale.paymentHistory.length > 0) {
-          const firstPayment = sale.paymentHistory.find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
-          if (firstPayment) primaryPaymentMethod = firstPayment.paymentMethod as Sale['paymentMethod'];
-      }
-      if (primaryPaymentMethod) {
-        doc.text(`Payment Method: ${primaryPaymentMethod.charAt(0).toUpperCase() + primaryPaymentMethod.slice(1)}`, rightMargin, startY, { align: 'right' });
-        startY += 10;
+      
+      let primaryPaymentMethodDisplay = 'N/A';
+      if (sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment') {
+        primaryPaymentMethodDisplay = sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
       } else {
-        startY += 10; 
+          const lastNonManualPayment = [...(sale.paymentHistory || [])].reverse().find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
+          if (lastNonManualPayment?.paymentMethod) {
+            primaryPaymentMethodDisplay = lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1);
+          } else if (sale.paymentMethod) { // fallback to sale.paymentMethod if it exists, even if manual_adjustment
+             primaryPaymentMethodDisplay = sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
+          }
       }
+
+      doc.text(`Payment Method: ${primaryPaymentMethodDisplay}`, rightMargin, startY, { align: 'right' });
+      startY += 10;
 
 
       if (sale.notes && sale.notes.trim() !== "") {
@@ -257,6 +304,7 @@ export default function SaleDetailPage() {
       }
     } catch (error) {
         console.error("Error generating A4 PDF:", error);
+        toast({ title: "Error Generating PDF", description: "Could not generate A4 invoice.", variant: "destructive" });
         setIsProcessingA4Pdf(false);
     }
   };
@@ -390,19 +438,23 @@ export default function SaleDetailPage() {
 
       doc.setFontSize(8);
       doc.setFont(undefined, 'normal');
-      let primaryPaymentMethod = sale.paymentMethod;
-      if (!primaryPaymentMethod && sale.paymentHistory.length > 0) {
-          const firstPayment = sale.paymentHistory.find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
-          if (firstPayment) primaryPaymentMethod = firstPayment.paymentMethod as Sale['paymentMethod'];
+      
+      let primaryPaymentMethodDisplay = 'N/A';
+       if (sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment') {
+        primaryPaymentMethodDisplay = sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
+      } else {
+          const lastNonManualPayment = [...(sale.paymentHistory || [])].reverse().find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
+           if (lastNonManualPayment?.paymentMethod) {
+            primaryPaymentMethodDisplay = lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1);
+          } else if (sale.paymentMethod) { 
+             primaryPaymentMethodDisplay = sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
+          }
       }
 
-      if (primaryPaymentMethod) {
-        doc.text('Payment:', marginPt, currentY);
-        doc.text(primaryPaymentMethod.charAt(0).toUpperCase() + primaryPaymentMethod.slice(1), thermalWidthPt - marginPt, currentY, { align: 'right' });
-        currentY += 10;
-      } else {
-         currentY +=10;
-      }
+      doc.text('Payment:', marginPt, currentY);
+      doc.text(primaryPaymentMethodDisplay, thermalWidthPt - marginPt, currentY, { align: 'right' });
+      currentY += 10;
+
 
       if (sale.notes && sale.notes.trim() !== "") {
         currentY += 3;
@@ -432,6 +484,7 @@ export default function SaleDetailPage() {
       }
     } catch (error) {
       console.error("Error generating thermal PDF:", error);
+      toast({ title: "Error Generating PDF", description: "Could not generate thermal receipt.", variant: "destructive" });
       setIsProcessingThermalPdf(false);
     }
   };
@@ -486,7 +539,7 @@ export default function SaleDetailPage() {
     const result = await updateSalePaymentStatusAction(payload);
     if (result.success) {
       toast({ title: "Success", description: result.message });
-      const updatedSale = await getSaleByIdAction(sale.id);
+      const updatedSale = await getSaleByIdAction(sale.id); // Re-fetch to get latest data
       setSale(updatedSale);
     } else {
       toast({ title: "Error", description: result.message, variant: "destructive" });
@@ -494,47 +547,6 @@ export default function SaleDetailPage() {
     setIsUpdatingStatus(false);
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-lg text-muted-foreground mt-4">Loading sale details...</p>
-      </div>
-    );
-  }
-
-  if (sale === undefined) { 
-    return (
-      <div className="flex flex-col items-center justify-center h-full">
-        <p className="text-xl text-muted-foreground">Sale not found.</p>
-        <Button variant="outline" asChild className="mt-4">
-          <Link href="/sales">
-            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Sales
-          </Link>
-        </Button>
-      </div>
-    );
-  }
-  
-  if (sale === null) { 
-     return (
-      <div className="flex flex-col items-center justify-center h-full">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-lg text-muted-foreground mt-4">Initializing...</p>
-      </div>
-    );
-  }
-
-  const displayPaymentMethod = useMemo(() => {
-    if (!sale) return 'N/A';
-    if (sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment') {
-      return sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
-    }
-    const lastNonManualPayment = [...sale.paymentHistory].reverse().find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
-    return lastNonManualPayment?.paymentMethod 
-      ? lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1) 
-      : 'N/A';
-  }, [sale]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -673,7 +685,7 @@ export default function SaleDetailPage() {
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{new Date(payment.date).toLocaleString()}</td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">{payment.amount.toFixed(2)}</td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground capitalize">{payment.paymentMethod?.replace('_', ' ') || 'N/A'}</td>
-                      <td className="px-4 py-2 whitespace-normal text-sm text-muted-foreground max-w-xs truncate" title={payment.notes}>{payment.notes || '-'}</td>
+                      <td className="px-4 py-2 whitespace-normal text-sm text-muted-foreground max-w-xs" title={payment.notes}>{payment.notes || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
