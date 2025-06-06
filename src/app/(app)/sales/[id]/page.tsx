@@ -228,8 +228,8 @@ export default function SaleDetailPage() {
       addDetailRow("Time:", format(invoiceDateTime, "HH:mm:ss"));
       addDetailRow("Salesman:", sale.recordedByName || sale.recordedByEmail || "N/A");
 
-      // Ensure currentY is below both columns before drawing the line
-      currentY = Math.max(currentY, detailsStartY + (detailRowHeight * 4) + 5) ; // Uses max of current Y and left column's potential Y
+
+      currentY = Math.max(currentY, detailsStartY + (detailRowHeight * 4) + 5) ; 
       doc.setDrawColor(180, 180, 180);
       doc.line(margin, currentY, pageWidth - margin, currentY);
       currentY += 20;
@@ -287,7 +287,7 @@ export default function SaleDetailPage() {
       const totalsBlockWidth = 220;
       const totalsX = pageWidth - margin - totalsBlockWidth;
       const valueColX = pageWidth - margin;
-      const totalRowHeightInner = 15; // Use a different variable name to avoid confusion
+      const totalRowHeightInner = 15; 
 
       const drawTotalRowInner = (label: string, value: string | number, isBold: boolean = false, isEmphasized: boolean = false) => {
         doc.setFont(undefined, isBold ? 'bold' : 'normal');
@@ -308,7 +308,7 @@ export default function SaleDetailPage() {
       currentY += 2;
       doc.setDrawColor(150, 150, 150);
       doc.line(totalsX, currentY, valueColX, currentY);
-      currentY += 8; // Increased space after the line, before GRAND TOTAL text
+      currentY += 8; 
       drawTotalRowInner("GRAND TOTAL:", sale.totalAmount, true, true);
       currentY += 5;
       drawTotalRowInner("Amount Paid:", sale.totalPaidAmount);
@@ -953,3 +953,6 @@ export default function SaleDetailPage() {
     </div>
   );
 }
+
+
+    
