@@ -2,7 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Package, ShoppingCart, PlusCircle, Search, TrendingUp, History, PackagePlus, IndianRupee } from "lucide-react";
+import { Package, ShoppingCart, PlusCircle, Search, TrendingUp, History, PackagePlus, IndianRupee, ClipboardList } from "lucide-react";
 import { getProductsAction, getPurchasesAction } from "../products/actions";
 import { getSalesAction } from "../sales/actions";
 import type { Product, Purchase, Sale, ActivityItem } from "@/lib/types";
@@ -44,11 +44,13 @@ export default async function DashboardPage() {
   });
 
   const totalProducts = products.length;
+  const numberOfSaleTransactions = sales.length;
 
   const summaryData = {
     totalRevenue: totalRevenue,
-    totalSales: totalSalesUnits,
+    totalSalesUnits: totalSalesUnits,
     totalProducts: totalProducts,
+    numberOfSaleTransactions: numberOfSaleTransactions,
   };
 
   const MAX_ACTIVITY_ITEMS = 7;
@@ -110,11 +112,22 @@ export default async function DashboardPage() {
         <Link href="/sales" className="hover:shadow-md transition-shadow duration-200 rounded-lg block hover:cursor-pointer">
           <Card className="h-full">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">No. of Sale Transactions</CardTitle>
+              <ClipboardList className="h-5 w-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{summaryData.numberOfSaleTransactions.toLocaleString('en-IN')}</div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/sales" className="hover:shadow-md transition-shadow duration-200 rounded-lg block hover:cursor-pointer">
+          <Card className="h-full">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Sales (Units)</CardTitle>
               <ShoppingCart className="h-5 w-5 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{summaryData.totalSales.toLocaleString('en-IN')}</div>
+              <div className="text-2xl font-bold">{summaryData.totalSalesUnits.toLocaleString('en-IN')}</div>
             </CardContent>
           </Card>
         </Link>
