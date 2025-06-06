@@ -29,7 +29,8 @@ interface UserDocumentData {
   shopName?: string;
   shopAddress?: string;
   shopContact?: string;
-  // loginApprovalStatus and lastLoginRequestTimestamp are removed
+  loginApprovalStatus?: 'pending' | 'approved' | 'denied';
+  lastLoginRequestTimestamp?: string;
 }
 
 interface RoleEmails {
@@ -79,11 +80,15 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   const { ownerEmails, staffEmails } = roleEmailsResult;
   const userEmailLower = email.toLowerCase();
   let userRole: SessionData['role'] | null = null;
+  let isOwner = false;
+  let isStaff = false;
 
   if (ownerEmails.includes(userEmailLower)) {
     userRole = "owner";
+    isOwner = true;
   } else if (staffEmails.includes(userEmailLower)) {
     userRole = "staff";
+    isStaff = true;
   }
 
   if (!userRole) {
@@ -94,47 +99,70 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   }
 
   const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
-  let userDisplayName = userEmailLower;
-  let userInvoicePrimaryColor: string | undefined = undefined;
-  let userShopName: string | undefined = undefined;
-  let userShopAddress: string | undefined = undefined;
-  let userShopContact: string | undefined = undefined;
+  let userDocSnap;
+  let userDocDataFromDb: UserDocumentData | null = null;
 
   try {
-    const userDocSnap = await getDoc(userDocRef);
-    let userDocData: Partial<UserDocumentData> = {
-      email: userEmailLower,
-      displayName: userDisplayName, // Default to email
-    };
-
+    userDocSnap = await getDoc(userDocRef);
     if (userDocSnap.exists()) {
-      const existingData = userDocSnap.data() as UserDocumentData;
-      userDocData = { ...userDocData, ...existingData }; // Merge with existing data
-      userDisplayName = (existingData.displayName && existingData.displayName.trim() !== "") ? existingData.displayName.trim() : userEmailLower;
-      userInvoicePrimaryColor = existingData.invoicePrimaryColor;
-      userShopName = existingData.shopName;
-      userShopAddress = existingData.shopAddress;
-      userShopContact = existingData.shopContact;
+      userDocDataFromDb = userDocSnap.data() as UserDocumentData;
     }
-    
-    // Ensure displayName is set if it wasn't in existing data or if it was empty
-    userDocData.displayName = userDisplayName;
-
-    // Remove login approval fields if they exist from previous system
-    delete (userDocData as any).loginApprovalStatus;
-    delete (userDocData as any).lastLoginRequestTimestamp;
-
-    await setDoc(userDocRef, userDocData, { merge: true });
-
   } catch (dbError) {
-    console.error("Error accessing/updating user document in Firestore during login:", dbError);
+    console.error("Error fetching user document during login:", dbError);
     return { error: "A database error occurred while processing your login. Please try again." };
   }
 
+  let userDisplayName = userDocDataFromDb?.displayName || userEmailLower;
+  let userInvoicePrimaryColor = userDocDataFromDb?.invoicePrimaryColor;
+  let userShopName = userDocDataFromDb?.shopName;
+  let userShopAddress = userDocDataFromDb?.shopAddress;
+  let userShopContact = userDocDataFromDb?.shopContact;
+
+  if (isOwner) {
+    // Owners bypass approval and are always approved
+    const ownerDataToSet: UserDocumentData = {
+      email: userEmailLower,
+      displayName: userDisplayName,
+      loginApprovalStatus: 'approved',
+      invoicePrimaryColor: userInvoicePrimaryColor,
+      shopName: userShopName,
+      shopAddress: userShopAddress,
+      shopContact: userShopContact,
+    };
+    await setDoc(userDocRef, ownerDataToSet, { merge: true });
+  } else if (isStaff) {
+    const currentApprovalStatus = userDocDataFromDb?.loginApprovalStatus;
+    const nowISO = new Date().toISOString();
+
+    if (currentApprovalStatus === 'approved') {
+      // Staff is approved, proceed to login
+    } else if (currentApprovalStatus === 'denied') {
+      return { error: "Your login request was denied. Please contact an owner." };
+    } else { // 'pending', not set, or any other value
+      // This is a new request or still pending
+      const staffDataToSet: UserDocumentData = {
+        email: userEmailLower,
+        displayName: userDisplayName,
+        loginApprovalStatus: 'pending',
+        lastLoginRequestTimestamp: nowISO,
+        invoicePrimaryColor: userInvoicePrimaryColor,
+        shopName: userShopName,
+        shopAddress: userShopAddress,
+        shopContact: userShopContact,
+      };
+      await setDoc(userDocRef, staffDataToSet, { merge: true });
+      if (currentApprovalStatus === 'pending') {
+        return { error: "Your login request is still awaiting owner approval." };
+      }
+      return { error: "Your login request has been submitted for owner approval. Please wait or contact an owner." };
+    }
+  }
+
+  // If we reach here, the user is authorized and approved (or is an owner)
   const sessionData: SessionData = {
-    username: userEmailLower, // Ensure username is always set
+    username: userEmailLower,
     email: userEmailLower,
-    role: userRole,
+    role: userRole, // userRole is guaranteed to be set if we reach here
     name: userDisplayName,
     invoicePrimaryColor: userInvoicePrimaryColor,
     shopName: userShopName,
@@ -179,30 +207,39 @@ export async function getSession(): Promise<SessionData | null> {
   if (sessionCookie?.value) {
     try {
       const parsedData = JSON.parse(sessionCookie.value);
-      // Simplified validation check for core fields
-      if (parsedData && typeof parsedData === 'object' &&
-          typeof parsedData.email === 'string' && parsedData.email.trim() !== "" &&
-          typeof parsedData.role === 'string' && (parsedData.role === 'owner' || parsedData.role === 'staff') &&
-          typeof parsedData.name === 'string' && parsedData.name.trim() !== "" &&
-          typeof parsedData.username === 'string' && parsedData.username.trim() !== "") {
+      let isValid = true;
+      let reason = "";
+
+      if (!parsedData) {
+        isValid = false;
+        reason = "parsedData is null/undefined";
+      } else if (typeof parsedData !== 'object') {
+        isValid = false;
+        reason = "parsedData is not an object";
+      } else if (typeof parsedData.email !== 'string' || parsedData.email.trim() === "") {
+        isValid = false;
+        reason = "Email field missing, not a string, or empty";
+      } else if (typeof parsedData.role !== 'string' || (parsedData.role !== 'owner' && parsedData.role !== 'staff')) {
+        isValid = false;
+        reason = "Role field missing or invalid";
+      } else if (typeof parsedData.name !== 'string' || parsedData.name.trim() === "") {
+        isValid = false;
+        reason = "Name field missing, not a string, or empty";
+      } else if (typeof parsedData.username !== 'string' || parsedData.username.trim() === "") {
+        isValid = false;
+        reason = "Username field missing, not a string, or empty";
+      }
+      
+      if (isValid) {
         return parsedData as SessionData;
       } else {
-        let reason = "unknown reason";
-        if (!parsedData) reason = "parsedData is null/undefined";
-        else if (typeof parsedData.email !== 'string' || parsedData.email.trim() === "") reason = "Email field missing or not a string";
-        else if (typeof parsedData.role !== 'string' || (parsedData.role !== 'owner' && parsedData.role !== 'staff')) reason = "Role field missing or invalid";
-        else if (typeof parsedData.name !== 'string' || parsedData.name.trim() === "") reason = "Name field missing or not a string";
-        else if (typeof parsedData.username !== 'string' || parsedData.username.trim() === "") reason = "Username field missing or not a string";
-        
         console.warn(`[getSession] Session cookie parsed, but data is invalid or incomplete. Reason: ${reason}. Deleting cookie. Parsed data keys:`, Object.keys(parsedData || {}));
         cookies().delete(SESSION_COOKIE_NAME);
-        // redirect('/login'); // Commented out explicit redirect, middleware should handle
         return null;
       }
     } catch (error) {
       console.error("[getSession] Failed to parse session cookie:", error);
       cookies().delete(SESSION_COOKIE_NAME);
-      // redirect('/login'); // Commented out explicit redirect
       return null;
     }
   }
@@ -234,6 +271,7 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
     if (userDocSnap.exists()) {
       await updateDoc(userDocRef, updatePayload);
     } else {
+      // Also ensure email is part of the document if creating it
       await setDoc(userDocRef, { email: userEmailLower, ...updatePayload });
       console.warn(`User document for ${userEmailLower} was created during display name update.`);
     }
@@ -281,8 +319,13 @@ export async function updateUserInvoiceColorAction(color: string): Promise<{ suc
   try {
     await updateDoc(userDocRef, { invoicePrimaryColor: color });
   } catch (dbError) {
-    console.error("Error updating user invoicePrimaryColor in Firestore:", dbError);
-    return { success: false, message: "Failed to save invoice color to the database. Please try again." };
+    // If document doesn't exist, create it with the color
+    if ((dbError as any)?.code === 'not-found' || (dbError as any)?.message?.includes('No document to update')) {
+        await setDoc(userDocRef, { email: userEmailLower, invoicePrimaryColor: color }, { merge: true });
+    } else {
+        console.error("Error updating user invoicePrimaryColor in Firestore:", dbError);
+        return { success: false, message: "Failed to save invoice color to the database. Please try again." };
+    }
   }
 
   const updatedSessionData: SessionData = {
@@ -333,7 +376,6 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
   }
 
   try {
-    // Ensure the user document exists before trying to update, or create it if not.
     const userDocSnap = await getDoc(userDocRef);
     if (userDocSnap.exists()) {
         await updateDoc(userDocRef, dataToUpdate);
