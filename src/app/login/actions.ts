@@ -1,8 +1,9 @@
+
 "use server";
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase"; 
 
 const SESSION_COOKIE_NAME = "auth-session";
@@ -16,7 +17,17 @@ export interface SessionData {
   role: "owner" | "staff";
   name: string; 
   invoicePrimaryColor?: string;
-  // New shop details
+  shopName?: string;
+  shopAddress?: string;
+  shopContact?: string;
+}
+
+interface UserDocumentData {
+  email: string;
+  displayName: string;
+  loginApprovalStatus?: 'pending' | 'approved' | 'denied';
+  lastLoginRequestTimestamp?: string;
+  invoicePrimaryColor?: string;
   shopName?: string;
   shopAddress?: string;
   shopContact?: string;
@@ -94,45 +105,86 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   let userShopAddress: string | undefined = undefined;
   let userShopContact: string | undefined = undefined;
 
-
   try {
     const userDocSnap = await getDoc(userDocRef);
-    if (userDocSnap.exists()) {
-      const userData = userDocSnap.data();
-      if (userData.displayName && typeof userData.displayName === 'string' && userData.displayName.trim() !== "") {
-        userDisplayName = userData.displayName;
-      } else {
-        // Ensure displayName is set if missing, even if other fields exist
-        await updateDoc(userDocRef, { displayName: userEmailLower, email: userEmailLower });
-      }
-      if (userData.invoicePrimaryColor && typeof userData.invoicePrimaryColor === 'string') {
+
+    if (userRole === 'staff') {
+      const nowISO = new Date().toISOString();
+      if (userDocSnap.exists()) {
+        const userData = userDocSnap.data() as UserDocumentData;
+        userDisplayName = userData.displayName || userEmailLower;
         userInvoicePrimaryColor = userData.invoicePrimaryColor;
-      }
-      if (userData.shopName && typeof userData.shopName === 'string') {
         userShopName = userData.shopName;
-      }
-      if (userData.shopAddress && typeof userData.shopAddress === 'string') {
         userShopAddress = userData.shopAddress;
-      }
-      if (userData.shopContact && typeof userData.shopContact === 'string') {
         userShopContact = userData.shopContact;
+
+        switch (userData.loginApprovalStatus) {
+          case 'pending':
+            // Optionally update timestamp if you want to track re-attempts for pending
+            // await updateDoc(userDocRef, { lastLoginRequestTimestamp: nowISO });
+            return { error: "Your login request is still awaiting owner approval. Please try again later or contact an owner." };
+          case 'denied':
+            return { error: "Your login request was denied. Please contact an owner." };
+          case 'approved':
+            // Proceed to session creation
+            break;
+          default: // No status or unexpected status, treat as new request for staff
+            await updateDoc(userDocRef, { 
+              loginApprovalStatus: 'pending', 
+              lastLoginRequestTimestamp: nowISO,
+              displayName: userDisplayName // Ensure displayName is set
+            });
+            return { error: "Your login request has been submitted for owner approval. Please wait and try again later, or contact an owner." };
+        }
+      } else {
+        // First time this staff email is trying to log in
+        await setDoc(userDocRef, { 
+          email: userEmailLower, 
+          displayName: userEmailLower, 
+          loginApprovalStatus: 'pending',
+          lastLoginRequestTimestamp: nowISO,
+          // Initialize other fields as undefined or default
+          invoicePrimaryColor: undefined,
+          shopName: undefined,
+          shopAddress: undefined,
+          shopContact: undefined,
+        });
+        return { error: "Your login request has been submitted for owner approval. Please wait and try again later, or contact an owner." };
       }
-    } else {
-      // Create user doc with all potential fields initialized or undefined
-      await setDoc(userDocRef, { 
-        email: userEmailLower, 
-        displayName: userEmailLower, 
-        invoicePrimaryColor: undefined,
-        shopName: undefined,
-        shopAddress: undefined,
-        shopContact: undefined,
-      });
+    } else if (userRole === 'owner') {
+      // Owner login logic
+      if (userDocSnap.exists()) {
+        const userData = userDocSnap.data() as UserDocumentData;
+        userDisplayName = userData.displayName || userEmailLower;
+        userInvoicePrimaryColor = userData.invoicePrimaryColor;
+        userShopName = userData.shopName;
+        userShopAddress = userData.shopAddress;
+        userShopContact = userData.shopContact;
+        // Ensure owner has 'approved' status or create/update it
+        if (userData.loginApprovalStatus !== 'approved') {
+            await updateDoc(userDocRef, { loginApprovalStatus: 'approved', displayName: userDisplayName });
+        }
+      } else {
+        // First time owner login, create doc with approved status
+        await setDoc(userDocRef, { 
+          email: userEmailLower, 
+          displayName: userEmailLower, 
+          loginApprovalStatus: 'approved',
+          // Initialize other fields
+          invoicePrimaryColor: undefined,
+          shopName: undefined,
+          shopAddress: undefined,
+          shopContact: undefined,
+        });
+      }
     }
   } catch (dbError) {
-    console.error("Error accessing/creating user document in Firestore:", dbError);
-    // Potentially return an error or allow login with default/missing session data for these fields
+    console.error("Error accessing/updating user document in Firestore during login:", dbError);
+    return { error: "A database error occurred while processing your login. Please try again." };
   }
 
+  // If staff reached here, their status is 'approved'
+  // If owner reached here, they are cleared to log in
   const sessionData: SessionData = {
     username: email, 
     email: email,
@@ -144,8 +196,8 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     shopContact: userShopContact,
   };
 
-  const cookieSecure = true; 
-  const cookieSameSite = "none" as "none" | "lax" | "strict" | undefined;
+  const cookieSecure = process.env.NODE_ENV === 'production';
+  const cookieSameSite = cookieSecure ? "none" as "none" | "lax" | "strict" | undefined : "lax" as "none" | "lax" | "strict" | undefined;
   
   try {
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
@@ -179,22 +231,18 @@ export async function getSession(): Promise<SessionData | null> {
   if (sessionCookie?.value) {
     try {
       const parsedData = JSON.parse(sessionCookie.value);
-
-      // Validate the structure of parsedData before casting and returning
       if (
         parsedData &&
         typeof parsedData === 'object' &&
-        parsedData !== null && // Ensure it's not null itself
+        parsedData !== null &&
         typeof parsedData.email === 'string' &&
         typeof parsedData.role === 'string' &&
         (parsedData.role === 'owner' || parsedData.role === 'staff') &&
-        typeof parsedData.name === 'string' && // Check other core fields
+        typeof parsedData.name === 'string' && 
         typeof parsedData.username === 'string'
       ) {
-        // It looks like a valid SessionData object
         return parsedData as SessionData;
       } else {
-        // If data is not as expected (e.g., not an object, missing core fields), treat it as an invalid session
         console.warn("Session cookie parsed, but data is invalid, incomplete, or not an object. Deleting cookie. Parsed data:", parsedData);
         cookies().delete(SESSION_COOKIE_NAME);
         return null;
@@ -243,8 +291,8 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
     name: newTrimmedName, 
   };
   
-  const cookieSecure = true;
-  const cookieSameSite = "none" as "none" | "lax" | "strict" | undefined;
+  const cookieSecure = process.env.NODE_ENV === 'production';
+  const cookieSameSite = cookieSecure ? "none" as "none" | "lax" | "strict" | undefined : "lax" as "none" | "lax" | "strict" | undefined;
 
   try {
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
@@ -286,8 +334,8 @@ export async function updateUserInvoiceColorAction(color: string): Promise<{ suc
     invoicePrimaryColor: color,
   };
 
-  const cookieSecure = true;
-  const cookieSameSite = "none" as "none" | "lax" | "strict" | undefined;
+  const cookieSecure = process.env.NODE_ENV === 'production';
+  const cookieSameSite = cookieSecure ? "none" as "none" | "lax" | "strict" | undefined : "lax" as "none" | "lax" | "strict" | undefined;
 
   try {
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
@@ -337,11 +385,11 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
 
   const updatedSessionData: SessionData = {
     ...session,
-    ...dataToUpdate, // Merge updated details into session
+    ...dataToUpdate,
   };
 
-  const cookieSecure = true;
-  const cookieSameSite = "none" as "none" | "lax" | "strict" | undefined;
+  const cookieSecure = process.env.NODE_ENV === 'production';
+  const cookieSameSite = cookieSecure ? "none" as "none" | "lax" | "strict" | undefined : "lax" as "none" | "lax" | "strict" | undefined;
 
   try {
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
@@ -358,3 +406,4 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
   }
 }
 
+    

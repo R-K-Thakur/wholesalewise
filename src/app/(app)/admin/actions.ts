@@ -2,12 +2,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, collection, query, where, getDocs, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { getSession, type SessionData } from "@/app/login/actions";
 
 const APP_SETTINGS_COLLECTION = "app_settings";
 const ROLE_MANAGEMENT_DOC = "role_management";
+const USERS_COLLECTION = "users";
+
 
 async function verifyOwner(): Promise<SessionData> {
   const session = await getSession();
@@ -78,9 +80,13 @@ export async function addOwnerEmailAction(emailToAdd: string): Promise<{ success
     } else {
       await setDoc(docRef, {
         ownerEmails: [normalizedEmail],
-        staffEmails: [] // Initialize staffEmails if document is new
+        staffEmails: [] 
       });
     }
+    // Also update the user's document to ensure they are approved
+    const userDocRef = doc(db, USERS_COLLECTION, normalizedEmail);
+    await setDoc(userDocRef, { email: normalizedEmail, loginApprovalStatus: 'approved', displayName: normalizedEmail }, { merge: true });
+
     revalidatePath("/admin/settings");
     return { success: true, message: "Owner email added successfully." };
   } catch (error) {
@@ -147,7 +153,7 @@ export async function getStaffEmailsAction(): Promise<string[]> {
         return data.staffEmails.map(email => String(email));
       }
     }
-    return []; // Return empty if field doesn't exist or not an array
+    return []; 
   } catch (error) {
     console.error("Error fetching staff emails:", error);
     return [];
@@ -155,7 +161,7 @@ export async function getStaffEmailsAction(): Promise<string[]> {
 }
 
 export async function addStaffEmailAction(emailToAdd: string): Promise<{ success: boolean; message: string }> {
-  await verifyOwner(); // Only owners can add staff
+  await verifyOwner(); 
 
   if (!db) {
     return { success: false, message: "Database service not available." };
@@ -177,14 +183,17 @@ export async function addStaffEmailAction(emailToAdd: string): Promise<{ success
       ownerEmails = (data?.ownerEmails && Array.isArray(data.ownerEmails)) ? data.ownerEmails.map(e => String(e).toLowerCase()) : [];
       staffEmails = (data?.staffEmails && Array.isArray(data.staffEmails)) ? data.staffEmails.map(e => String(e).toLowerCase()) : [];
     } else {
-      // If role_management doc doesn't exist, we should create it with owner array too
-      // However, this action is guarded by verifyOwner, implying an owner exists,
-      // which implies the document should exist with at least one owner.
-      // For robustness, ensure staffEmails array is initialized if adding to non-existent doc,
-      // though ideally, this path is less likely if owners manage staff.
       await setDoc(docRef, { ownerEmails: [], staffEmails: [normalizedEmail] });
+      // Initialize user doc for new staff as pending
+      const userDocRef = doc(db, USERS_COLLECTION, normalizedEmail);
+      await setDoc(userDocRef, { 
+        email: normalizedEmail, 
+        displayName: normalizedEmail,
+        loginApprovalStatus: 'pending', 
+        lastLoginRequestTimestamp: new Date().toISOString()
+      }, { merge: true });
       revalidatePath("/admin/settings");
-      return { success: true, message: "Staff email added successfully (new role document created)." };
+      return { success: true, message: "Staff email added successfully. Login approval is pending." };
     }
 
     if (ownerEmails.includes(normalizedEmail)) {
@@ -194,13 +203,20 @@ export async function addStaffEmailAction(emailToAdd: string): Promise<{ success
       return { success: false, message: "Email already exists in the staff list." };
     }
     
-    // If staffEmails field doesn't exist, arrayUnion will create it
     await updateDoc(docRef, {
       staffEmails: arrayUnion(normalizedEmail)
     });
+    // Initialize or update user doc for new staff as pending
+    const userDocRef = doc(db, USERS_COLLECTION, normalizedEmail);
+    await setDoc(userDocRef, { 
+      email: normalizedEmail, 
+      displayName: normalizedEmail,
+      loginApprovalStatus: 'pending',
+      lastLoginRequestTimestamp: new Date().toISOString()
+    }, { merge: true });
     
     revalidatePath("/admin/settings");
-    return { success: true, message: "Staff email added successfully." };
+    return { success: true, message: "Staff email added successfully. Login approval is pending." };
   } catch (error) {
     console.error("Error adding staff email:", error);
     return { success: false, message: `Failed to add staff email: ${error instanceof Error ? error.message : "Unknown error"}` };
@@ -208,7 +224,7 @@ export async function addStaffEmailAction(emailToAdd: string): Promise<{ success
 }
 
 export async function removeStaffEmailAction(emailToRemove: string): Promise<{ success: boolean; message: string }> {
-  await verifyOwner(); // Only owners can remove staff
+  await verifyOwner(); 
 
   if (!db) {
     return { success: false, message: "Database service not available." };
@@ -236,6 +252,9 @@ export async function removeStaffEmailAction(emailToRemove: string): Promise<{ s
     await updateDoc(docRef, {
       staffEmails: arrayRemove(normalizedEmailToRemove)
     });
+    // Optionally, you might want to update their loginApprovalStatus in users collection here,
+    // e.g., to 'denied' or remove the document if they are no longer staff.
+    // For now, just removing from the list.
     
     revalidatePath("/admin/settings");
     return { success: true, message: "Staff email removed successfully." };
@@ -244,3 +263,85 @@ export async function removeStaffEmailAction(emailToRemove: string): Promise<{ s
     return { success: false, message: `Failed to remove staff email: ${error instanceof Error ? error.message : "Unknown error"}` };
   }
 }
+
+
+// --- Staff Login Approval Actions ---
+
+interface PendingStaffUser {
+  email: string;
+  displayName?: string;
+  requestTimestamp?: string;
+}
+
+export async function getPendingStaffAction(): Promise<PendingStaffUser[]> {
+  await verifyOwner();
+  if (!db) {
+    console.error("Firestore (db) instance is not initialized. Cannot fetch pending staff.");
+    return [];
+  }
+  try {
+    const usersRef = collection(db, USERS_COLLECTION);
+    const q = query(usersRef, where("loginApprovalStatus", "==", "pending"));
+    const querySnapshot = await getDocs(q);
+    
+    const pendingStaff: PendingStaffUser[] = [];
+    querySnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      pendingStaff.push({
+        email: data.email,
+        displayName: data.displayName || data.email,
+        requestTimestamp: data.lastLoginRequestTimestamp 
+          ? new Date(data.lastLoginRequestTimestamp).toLocaleString() 
+          : "N/A",
+      });
+    });
+    return pendingStaff;
+  } catch (error) {
+    console.error("Error fetching pending staff:", error);
+    return [];
+  }
+}
+
+export async function approveStaffLoginAction(staffEmail: string): Promise<{ success: boolean; message: string }> {
+  await verifyOwner();
+  if (!staffEmail) {
+    return { success: false, message: "Staff email is required." };
+  }
+  const normalizedEmail = staffEmail.toLowerCase();
+  const userDocRef = doc(db, USERS_COLLECTION, normalizedEmail);
+
+  try {
+    await updateDoc(userDocRef, {
+      loginApprovalStatus: 'approved',
+      // Optionally clear lastLoginRequestTimestamp or add approvedBy/approvedAt fields
+    });
+    revalidatePath("/admin/settings");
+    return { success: true, message: `Login approved for ${staffEmail}.` };
+  } catch (error) {
+    console.error(`Error approving staff login for ${staffEmail}:`, error);
+    return { success: false, message: `Failed to approve login for ${staffEmail}: ${error instanceof Error ? error.message : "Unknown error"}` };
+  }
+}
+
+export async function denyStaffLoginAction(staffEmail: string): Promise<{ success: boolean; message: string }> {
+  await verifyOwner();
+  if (!staffEmail) {
+    return { success: false, message: "Staff email is required." };
+  }
+  const normalizedEmail = staffEmail.toLowerCase();
+  const userDocRef = doc(db, USERS_COLLECTION, normalizedEmail);
+
+  try {
+    await updateDoc(userDocRef, {
+      loginApprovalStatus: 'denied',
+      // Optionally clear lastLoginRequestTimestamp or add deniedBy/deniedAt fields
+    });
+    revalidatePath("/admin/settings");
+    return { success: true, message: `Login denied for ${staffEmail}.` };
+  } catch (error) {
+    console.error(`Error denying staff login for ${staffEmail}:`, error);
+    return { success: false, message: `Failed to deny login for ${staffEmail}: ${error instanceof Error ? error.message : "Unknown error"}` };
+  }
+}
+
+    
