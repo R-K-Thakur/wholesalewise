@@ -59,6 +59,7 @@ export async function addOwnerEmailAction(emailToAdd: string): Promise<{ success
 
     let ownerEmails: string[] = [];
     let staffEmails: string[] = [];
+    let updates: { ownerEmails?: any; staffEmails?: any } = {}; // Firestore update payload
 
     if (docSnap.exists()) {
       const data = docSnap.data();
@@ -69,26 +70,33 @@ export async function addOwnerEmailAction(emailToAdd: string): Promise<{ success
     if (ownerEmails.includes(normalizedEmail)) {
       return { success: false, message: "Email already exists in the owner list." };
     }
+
+    // If email is in staff list, prepare to remove it from staff
     if (staffEmails.includes(normalizedEmail)) {
-      return { success: false, message: "Email already exists in the staff list. Cannot be both owner and staff." };
+      updates.staffEmails = arrayRemove(normalizedEmail);
+      // We will proceed to add it to owners
+      console.log(`Promoting ${normalizedEmail} from staff to owner.`);
     }
+    
+    updates.ownerEmails = arrayUnion(normalizedEmail);
 
     if (docSnap.exists()) {
-      await updateDoc(docRef, {
-        ownerEmails: arrayUnion(normalizedEmail)
-      });
+      await updateDoc(docRef, updates);
     } else {
-      await setDoc(docRef, {
-        ownerEmails: [normalizedEmail],
-        staffEmails: [] 
-      });
+      // If doc doesn't exist, create it with the new owner and empty staff (unless staff was just removed)
+      const initialData: any = { ownerEmails: [normalizedEmail], staffEmails: [] };
+      if (updates.staffEmails) { // This case is unlikely if docSnap doesn't exist but for completeness
+        initialData.staffEmails = []; // Ensure it's empty after potential removal
+      }
+      await setDoc(docRef, initialData);
     }
+    
     // Also update the user's document to ensure they are approved
     const userDocRef = doc(db, USERS_COLLECTION, normalizedEmail);
     await setDoc(userDocRef, { email: normalizedEmail, loginApprovalStatus: 'approved', displayName: normalizedEmail }, { merge: true });
 
     revalidatePath("/admin/settings");
-    return { success: true, message: "Owner email added successfully." };
+    return { success: true, message: "Owner email added successfully." + (updates.staffEmails ? " Email removed from staff list." : "") };
   } catch (error) {
     console.error("Error adding owner email:", error);
     return { success: false, message: `Failed to add owner email: ${error instanceof Error ? error.message : "Unknown error"}` };
@@ -183,6 +191,7 @@ export async function addStaffEmailAction(emailToAdd: string): Promise<{ success
       ownerEmails = (data?.ownerEmails && Array.isArray(data.ownerEmails)) ? data.ownerEmails.map(e => String(e).toLowerCase()) : [];
       staffEmails = (data?.staffEmails && Array.isArray(data.staffEmails)) ? data.staffEmails.map(e => String(e).toLowerCase()) : [];
     } else {
+      // If role_management doc doesn't exist, create it.
       await setDoc(docRef, { ownerEmails: [], staffEmails: [normalizedEmail] });
       // Initialize user doc for new staff as pending
       const userDocRef = doc(db, USERS_COLLECTION, normalizedEmail);
@@ -252,12 +261,16 @@ export async function removeStaffEmailAction(emailToRemove: string): Promise<{ s
     await updateDoc(docRef, {
       staffEmails: arrayRemove(normalizedEmailToRemove)
     });
-    // Optionally, you might want to update their loginApprovalStatus in users collection here,
-    // e.g., to 'denied' or remove the document if they are no longer staff.
-    // For now, just removing from the list.
     
+    // Deny login for the removed staff member to prevent access if they were pending/approved
+    const userDocRef = doc(db, USERS_COLLECTION, normalizedEmailToRemove);
+    await updateDoc(userDocRef, {
+        loginApprovalStatus: 'denied'
+    }).catch(err => console.warn(`Could not update login status for removed staff ${normalizedEmailToRemove}: ${err.message}`));
+
+
     revalidatePath("/admin/settings");
-    return { success: true, message: "Staff email removed successfully." };
+    return { success: true, message: "Staff email removed successfully and their login access (if any) has been set to denied." };
   } catch (error) {
     console.error("Error removing staff email:", error);
     return { success: false, message: `Failed to remove staff email: ${error instanceof Error ? error.message : "Unknown error"}` };
@@ -281,7 +294,23 @@ export async function getPendingStaffAction(): Promise<PendingStaffUser[]> {
   }
   try {
     const usersRef = collection(db, USERS_COLLECTION);
-    const q = query(usersRef, where("loginApprovalStatus", "==", "pending"));
+    // Query for users who are in staffEmails list AND have loginApprovalStatus 'pending'
+    // First, get the list of staff emails
+    const roleDocRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
+    const roleDocSnap = await getDoc(roleDocRef);
+    let staffEmails: string[] = [];
+    if (roleDocSnap.exists()) {
+        const roleData = roleDocSnap.data();
+        staffEmails = (roleData?.staffEmails && Array.isArray(roleData.staffEmails)) ? roleData.staffEmails.map(e => String(e).toLowerCase()) : [];
+    }
+
+    if (staffEmails.length === 0) {
+        return []; // No staff emails, so no pending staff.
+    }
+
+    // Firestore "in" query limit is 30. If more staff, need multiple queries or different approach.
+    // For now, assume staff list is manageable.
+    const q = query(usersRef, where("email", "in", staffEmails), where("loginApprovalStatus", "==", "pending"));
     const querySnapshot = await getDocs(q);
     
     const pendingStaff: PendingStaffUser[] = [];
@@ -311,9 +340,20 @@ export async function approveStaffLoginAction(staffEmail: string): Promise<{ suc
   const userDocRef = doc(db, USERS_COLLECTION, normalizedEmail);
 
   try {
+    // Ensure the user is actually in the staff list before approving
+    const roleDocRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
+    const roleDocSnap = await getDoc(roleDocRef);
+    if (roleDocSnap.exists()) {
+        const staffEmails = (roleDocSnap.data()?.staffEmails || []).map((e:string) => e.toLowerCase());
+        if (!staffEmails.includes(normalizedEmail)) {
+            return { success: false, message: `Cannot approve: ${staffEmail} is not in the current staff list.` };
+        }
+    } else {
+        return { success: false, message: "Role management document not found." };
+    }
+
     await updateDoc(userDocRef, {
       loginApprovalStatus: 'approved',
-      // Optionally clear lastLoginRequestTimestamp or add approvedBy/approvedAt fields
     });
     revalidatePath("/admin/settings");
     return { success: true, message: `Login approved for ${staffEmail}.` };
@@ -334,7 +374,6 @@ export async function denyStaffLoginAction(staffEmail: string): Promise<{ succes
   try {
     await updateDoc(userDocRef, {
       loginApprovalStatus: 'denied',
-      // Optionally clear lastLoginRequestTimestamp or add deniedBy/deniedAt fields
     });
     revalidatePath("/admin/settings");
     return { success: true, message: `Login denied for ${staffEmail}.` };
@@ -343,5 +382,6 @@ export async function denyStaffLoginAction(staffEmail: string): Promise<{ succes
     return { success: false, message: `Failed to deny login for ${staffEmail}: ${error instanceof Error ? error.message : "Unknown error"}` };
   }
 }
+    
 
     
