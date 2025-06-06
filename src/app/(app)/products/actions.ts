@@ -62,7 +62,7 @@ export async function addProduct(data: ValidatedProductFormData) {
     return { success: false, message: "User session not found or invalid. Cannot add product." };
   }
   const userEmail = session.email;
-  const userName = session.name;
+  const userName = session.name; // Use display name
   console.log(`[addProduct] Adding product. User Name: '${userName}', User Email: '${userEmail}'`);
 
 
@@ -97,9 +97,9 @@ export async function addProduct(data: ValidatedProductFormData) {
       createdAt: now,
       updatedAt: now,
       createdByEmail: userEmail,
-      createdByName: userName,
+      createdByName: userName, // Store display name
       lastStockUpdateByEmail: userEmail,
-      lastStockUpdateByName: userName,
+      lastStockUpdateByName: userName, // Store display name
     };
 
     const productDocRef = await runTransaction(db, async (transaction) => {
@@ -119,7 +119,7 @@ export async function addProduct(data: ValidatedProductFormData) {
         createdAt: now,
         updatedAt: now,
         recordedByEmail: userEmail,
-        recordedByName: userName,
+        recordedByName: userName, // Store display name
       };
       const purchaseDocRef = doc(collection(db, PURCHASES_COLLECTION));
       transaction.set(purchaseDocRef, initialPurchaseRecord);
@@ -169,9 +169,6 @@ export async function getProductsAction(): Promise<Product[]> {
 }
 
 export async function getProductByIdAction(id: string): Promise<Product | undefined> {
-  // Individual product fetch, might not need aggressive caching like the full list,
-  // or could have shorter revalidation if frequently changing and viewed.
-  // For simplicity, not caching this one for now, but could be added.
   try {
     const docRef = doc(db, PRODUCTS_COLLECTION, id);
     const docSnap = await getDoc(docRef);
@@ -194,7 +191,7 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
     return { success: false, message: "User session not found. Please log in." };
   }
   const userEmail = session.email;
-  const userName = session.name;
+  const userName = session.name; // Use display name
   const userRole = session.role;
   console.log(`[updateProductAction] Updating product. User Name: '${userName}', User Email: '${userEmail}'`);
 
@@ -206,7 +203,7 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
     if (!currentDocSnap.exists()) {
         return { success: false, message: 'Product not found.' };
     }
-    const currentProductData = currentDocSnap.data() as Product; // Assuming Product type after .data()
+    const currentProductData = currentDocSnap.data() as Product;
 
     const updateData: { [key: string]: any } = {};
     if (data.productName !== undefined) updateData.name = data.productName;
@@ -240,7 +237,6 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
     if (data.retailPricePerBaseUnit !== undefined) updateData.retailPricePerBaseUnit = data.retailPricePerBaseUnit;
     if (data.wholesalePricePerBaseUnit !== undefined) updateData.wholesalePricePerBaseUnit = data.wholesalePricePerBaseUnit;
 
-    // 'initialStock' from form is the new desired total stock in base units for edit.
     if (data.initialStock !== undefined) {
         if (userRole === 'staff' && data.initialStock < currentProductData.quantityInStock) {
             return {
@@ -251,17 +247,16 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
 
         if (data.initialStock !== currentProductData.quantityInStock) {
             updateData.quantityInStock = data.initialStock;
-            updateData.lastStockUpdateByEmail = userEmail; 
-            updateData.lastStockUpdateByName = userName; 
-        } else if (updateData.quantityInStock === undefined) { 
-            // No change to quantityInStock
+            updateData.lastStockUpdateByEmail = userEmail;
+            updateData.lastStockUpdateByName = userName; // Store display name
+        } else if (updateData.quantityInStock === undefined) {
         }
     }
     if (data.reorderThreshold !== undefined) updateData.reorderThreshold = data.reorderThreshold;
 
 
     if (Object.keys(updateData).length === 0) {
-      return { success: true, message: 'No changes provided to update.' }; // Changed to success: true as no actual failure
+      return { success: true, message: 'No changes provided to update.' };
     }
 
     updateData.updatedAt = Timestamp.now().toDate().toISOString();
@@ -289,8 +284,8 @@ export async function deleteProductAction(id: string) {
   try {
     await deleteDoc(doc(db, PRODUCTS_COLLECTION, id));
     revalidateTag('products');
-    revalidateTag('sales'); // Sales might reference product names, though snapshots are used
-    revalidateTag('purchases'); // Purchases are directly linked to products
+    revalidateTag('sales');
+    revalidateTag('purchases');
     revalidatePath('/products');
     revalidatePath('/dashboard');
     return { success: true, message: 'Product deleted successfully!' };
@@ -317,7 +312,7 @@ export async function addStockToProductAction(
     return { success: false, message: "User session not found. Please log in." };
   }
   const userEmail = session.email;
-  const userName = session.name;
+  const userName = session.name; // Use display name
   console.log(`[addStockToProductAction] Adding stock. User Name: '${userName}', User Email: '${userEmail}'`);
 
 
@@ -343,7 +338,7 @@ export async function addStockToProductAction(
         quantityInStock: newStockInBaseUnits,
         updatedAt: nowISO,
         lastStockUpdateByEmail: userEmail,
-        lastStockUpdateByName: userName,
+        lastStockUpdateByName: userName, // Store display name
       };
 
       let purchasePriceForRecord = productData.purchasePrice;
@@ -365,7 +360,7 @@ export async function addStockToProductAction(
         createdAt: nowISO,
         updatedAt: nowISO,
         recordedByEmail: userEmail,
-        recordedByName: userName,
+        recordedByName: userName, // Store display name
       };
       const purchaseDocRef = doc(collection(db, PURCHASES_COLLECTION));
       transaction.set(purchaseDocRef, purchaseRecord);
@@ -451,5 +446,3 @@ const getPurchasesCached = unstable_cache(
 export async function getPurchasesAction(): Promise<Purchase[]> {
   return getPurchasesCached();
 }
-
-

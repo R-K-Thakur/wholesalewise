@@ -38,7 +38,7 @@ export default function EditProductPage() {
 
   const watchedBaseUnit = useWatch({ control: form.control, name: "baseUnit" });
   const watchedPurchaseUnit = useWatch({ control: form.control, name: "purchaseUnit" });
-  
+
   const showConversionFactorInput = React.useMemo(() => {
     if (watchedBaseUnit === watchedPurchaseUnit) return false;
     if (watchedPurchaseUnit === "dozen" && watchedBaseUnit === "piece") return false;
@@ -81,7 +81,7 @@ export default function EditProductPage() {
               purchasePrice: product.purchasePrice,
               retailPricePerBaseUnit: product.retailPricePerBaseUnit,
               wholesalePricePerBaseUnit: product.wholesalePricePerBaseUnit,
-              initialStock: product.quantityInStock, 
+              initialStock: product.quantityInStock,
               reorderThreshold: product.reorderThreshold ?? 0,
             });
             setProductNotFound(false);
@@ -113,14 +113,14 @@ export default function EditProductPage() {
 
   async function onSubmit(data: ValidatedProductFormData) {
     let formData = {...data};
-    
+
     if (formData.baseUnit === formData.purchaseUnit) {
       formData.purchaseUnitConversionFactor = 1;
     } else if (formData.purchaseUnit === "dozen" && formData.baseUnit === "piece") {
       formData.purchaseUnitConversionFactor = 12;
     }
-    
-    if (formData.baseUnit !== formData.purchaseUnit && 
+
+    if (formData.baseUnit !== formData.purchaseUnit &&
         !(formData.purchaseUnit === "dozen" && formData.baseUnit === "piece") &&
         (!formData.purchaseUnitConversionFactor || formData.purchaseUnitConversionFactor < 1) ) {
         toast({ title: "Error", description: "A valid conversion factor (>0) is required if units differ and are not dozen/piece.", variant: "destructive" });
@@ -186,7 +186,7 @@ export default function EditProductPage() {
         </Button>
         <h1 className="text-3xl font-bold tracking-tight font-headline">Edit Product: {productName}</h1>
       </div>
-      
+
       <Card className="max-w-2xl mx-auto w-full">
         <CardHeader>
           <CardTitle>Edit Product Details</CardTitle>
@@ -232,7 +232,7 @@ export default function EditProductPage() {
                   </FormItem>
                 )}
               />
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
@@ -267,7 +267,7 @@ export default function EditProductPage() {
                   )}
                 />
               </div>
-              
+
               {showConversionFactorInput && (
                 <FormField
                   control={form.control}
@@ -302,7 +302,7 @@ export default function EditProductPage() {
                   </FormItem>
                 )}
               />
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
@@ -331,11 +331,11 @@ export default function EditProductPage() {
                   )}
                 />
               </div>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
-                  name="initialStock" 
+                  name="initialStock"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Current Stock (in {watchedBaseUnit || 'Base Units'})</FormLabel>
@@ -372,31 +372,24 @@ export default function EditProductPage() {
               </div>
             </form>
           </Form>
-          
+
           {productDetails && (
             <div className="mt-8 pt-6 border-t">
               <h3 className="text-base font-medium mb-3 text-foreground">Product History</h3>
               <div className="space-y-2 text-sm text-muted-foreground">
-                {productDetails.createdByEmail && (
+                {(productDetails.createdByName || productDetails.createdByEmail) && (
                   <div className="flex items-center gap-2">
                     <UserCircle className="h-4 w-4" />
-                    <span>Created by: {productDetails.createdByEmail}</span>
+                    <span>Created by: {productDetails.createdByName || productDetails.createdByEmail}</span>
                     <CalendarDays className="h-4 w-4 ml-auto" />
                     <span>{format(new Date(productDetails.createdAt), "PPp")}</span>
                   </div>
                 )}
-                {productDetails.lastStockUpdateByEmail && productDetails.lastStockUpdateByEmail !== productDetails.createdByEmail && (
+                {(productDetails.lastStockUpdateByName || productDetails.lastStockUpdateByEmail) &&
+                 (productDetails.lastStockUpdateByEmail !== productDetails.createdByEmail || productDetails.lastStockUpdateByName !== productDetails.createdByName || productDetails.updatedAt !== productDetails.createdAt) && (
                    <div className="flex items-center gap-2">
                     <UserCircle className="h-4 w-4" />
-                    <span>Last stock updated by: {productDetails.lastStockUpdateByEmail}</span>
-                    <CalendarDays className="h-4 w-4 ml-auto" />
-                    <span>{format(new Date(productDetails.updatedAt), "PPp")}</span>
-                  </div>
-                )}
-                 {productDetails.lastStockUpdateByEmail && productDetails.lastStockUpdateByEmail === productDetails.createdByEmail && productDetails.updatedAt !== productDetails.createdAt && (
-                   <div className="flex items-center gap-2">
-                    <UserCircle className="h-4 w-4" />
-                    <span>Stock updated by: {productDetails.lastStockUpdateByEmail}</span>
+                    <span>Last stock updated by: {productDetails.lastStockUpdateByName || productDetails.lastStockUpdateByEmail}</span>
                     <CalendarDays className="h-4 w-4 ml-auto" />
                     <span>{format(new Date(productDetails.updatedAt), "PPp")}</span>
                   </div>
@@ -409,4 +402,3 @@ export default function EditProductPage() {
     </div>
   );
 }
-

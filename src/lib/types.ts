@@ -24,9 +24,9 @@ export interface Product {
   createdAt: string;
   updatedAt: string;
   createdByEmail?: string;
-  createdByName?: string; 
+  createdByName?: string;
   lastStockUpdateByEmail?: string;
-  lastStockUpdateByName?: string; 
+  lastStockUpdateByName?: string;
 }
 
 export interface Purchase {
@@ -56,6 +56,8 @@ export interface PaymentTransaction {
 export interface Sale {
   id: string;
   items: SaleItem[];
+  packagingCharges?: number;
+  transportCharges?: number;
   totalAmount: number;
   totalPaidAmount: number;
   totalAmountDue: number;
@@ -94,6 +96,8 @@ export type SaleFormData = {
   customerName?: string;
   paymentMethod?: 'cash' | 'card' | 'online';
   notes?: string;
+  packagingCharges?: number;
+  transportCharges?: number;
   amountPaid: number;
 };
 
@@ -122,7 +126,7 @@ export interface PurchaseTrend {
 export interface RecordAdditionalPaymentPayload {
   saleId: string;
   amountPaidNow: number;
-  paymentMethod: 'cash' | 'card' | 'online'; 
+  paymentMethod: 'cash' | 'card' | 'online';
   paymentNotes?: string;
 }
     
@@ -133,4 +137,5 @@ export interface RecordAdditionalPaymentPayload {
     
 
     
+
 
