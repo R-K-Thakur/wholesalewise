@@ -2,11 +2,12 @@
 "use client";
 
 import { useState, type FormEvent, useEffect } from "react";
+import { useRouter } from "next/navigation"; // Import useRouter
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { signInWithEmailAction } from "./actions";
 import { APP_NAME } from "@/lib/constants";
@@ -16,13 +17,13 @@ const LOCALSTORAGE_REMEMBER_EMAIL_KEY = "rememberedUserEmail";
 
 export default function LoginPage() {
   const { toast } = useToast();
+  const router = useRouter(); // Initialize useRouter
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [rememberEmail, setRememberEmail] = useState(false);
 
   useEffect(() => {
-    // Pre-fill email if it was remembered
     const rememberedUserEmail = localStorage.getItem(LOCALSTORAGE_REMEMBER_EMAIL_KEY);
     if (rememberedUserEmail) {
       setEmail(rememberedUserEmail);
@@ -43,7 +44,6 @@ export default function LoginPage() {
     }
 
     try {
-      // Handle localStorage for "Remember Email"
       if (rememberEmail) {
         localStorage.setItem(LOCALSTORAGE_REMEMBER_EMAIL_KEY, email);
       } else {
@@ -52,31 +52,28 @@ export default function LoginPage() {
 
       const serverResult = await signInWithEmailAction(email);
 
-      if (serverResult?.error) { 
+      if (serverResult?.success) {
+        toast({ title: "Login Successful", description: "Redirecting to dashboard...", variant: "default" });
+        router.push('/dashboard'); // Client-side redirect
+      } else if (serverResult?.error) { 
         setError(serverResult.error);
         toast({ title: "Login Failed", description: serverResult.error, variant: "destructive" });
+      } else {
+        // Should not happen if serverResult always has success or error
+        setError("An unexpected error occurred during login.");
+        toast({ title: "Login Failed", description: "An unexpected error occurred.", variant: "destructive" });
       }
-      // If server action redirects successfully, code here might not be reached or component unmounts.
     } catch (e: any) {
       console.error("Email Sign-In Error (client-side catch):", e);
       let errorMessage = "An unknown error occurred during Sign-In.";
       
-      const errorString = String(e.message || e.name || e.toString()).toUpperCase();
-
-      if (errorString.includes("NEXT_REDIRECT")) {
-        // This error is expected when a server action redirects.
-        // The browser should handle the redirect. We don't need to show a toast for this.
-      } else if (e.message) {
+      // NEXT_REDIRECT errors are not expected here anymore with the new flow
+      if (e.message) {
         errorMessage = e.message;
-        setError(errorMessage);
-        toast({ title: "Sign-In Failed", description: errorMessage, variant: "destructive" });
-      } else {
-        setError(errorMessage);
-        toast({ title: "Sign-In Failed", description: errorMessage, variant: "destructive" });
       }
+      setError(errorMessage);
+      toast({ title: "Sign-In Failed", description: errorMessage, variant: "destructive" });
     } finally {
-      // If a redirect was supposed to happen (even if it errored as NEXT_REDIRECT),
-      // the component might unmount. Setting isLoading to false is generally safe.
       setIsLoading(false);
     }
   }
@@ -130,7 +127,7 @@ export default function LoginPage() {
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Sign In
             </Button>
-            {error && !error.toUpperCase().includes("NEXT_REDIRECT") && (
+            {error && (
               <p className="text-sm text-destructive text-center">{error}</p>
             )}
           </form>

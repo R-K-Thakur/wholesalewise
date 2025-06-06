@@ -32,7 +32,6 @@ interface UserDocumentData {
   shopName?: string;
   shopAddress?: string;
   shopContact?: string;
-  // loginManuallyDisabled field is removed as per previous reversions
 }
 
 interface RoleEmails {
@@ -66,12 +65,12 @@ async function getRoleEmailsFromFirestore(): Promise<RoleEmails> {
   }
 }
 
-export async function signInWithEmailAction(email: string): Promise<{ error: string } | void> {
+export async function signInWithEmailAction(email: string): Promise<{ success: boolean; error?: string }> {
   if (!db) {
-    return { error: "Authentication service is critically misconfigured. Database unavailable." };
+    return { success: false, error: "Authentication service is critically misconfigured. Database unavailable." };
   }
   if (!email || !email.includes('@')) {
-    return { error: "Invalid email format provided." };
+    return { success: false, error: "Invalid email format provided." };
   }
 
   const userEmailLower = email.toLowerCase();
@@ -90,19 +89,23 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
 
     if (!userRole) {
       if (ownerEmails.length === 0 && staffEmails.length === 0) {
-        return { error: "Login failed: No authorized users are configured in the system. Please contact an administrator." };
+        return { success: false, error: "Login failed: No authorized users are configured in the system. Please contact an administrator." };
       }
-      return { error: "Login failed: This email address is not authorized for access." };
+      return { success: false, error: "Login failed: This email address is not authorized for access." };
     }
 
     const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
     let userDocSnap = await getDoc(userDocRef);
     let userDocDataFromDb: UserDocumentData | null = userDocSnap.exists() ? userDocSnap.data() as UserDocumentData : null;
 
-    const userDataToSet: Partial<UserDocumentData> & { email: string; displayName: string } = {
+    const userDataToSet: Partial<UserDocumentData> & { email: string; displayName?: string } = { // displayName is optional initially
       email: userEmailLower,
-      displayName: userDocDataFromDb?.displayName?.trim() || userEmailLower,
     };
+    if (userDocDataFromDb?.displayName?.trim()) {
+        userDataToSet.displayName = userDocDataFromDb.displayName.trim();
+    } else {
+        userDataToSet.displayName = userEmailLower; // Default if not present or empty
+    }
     
     if (userDocDataFromDb?.invoicePrimaryColor) userDataToSet.invoicePrimaryColor = userDocDataFromDb.invoicePrimaryColor;
     if (userDocDataFromDb?.shopName) userDataToSet.shopName = userDocDataFromDb.shopName;
@@ -118,13 +121,13 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
       const isBeforeEndTime = currentHour < DEFAULT_STAFF_LOGIN_END_TIME.H;
 
       if (!(isAfterStartTime && isBeforeEndTime)) {
-        return { error: `Access denied. Staff login is only permitted between ${DEFAULT_STAFF_LOGIN_START_TIME.H.toString().padStart(2,'0')}:${DEFAULT_STAFF_LOGIN_START_TIME.M.toString().padStart(2,'0')} and ${DEFAULT_STAFF_LOGIN_END_TIME.H.toString().padStart(2,'0')}:00 (exclusive).` };
+        return { success: false, error: `Access denied. Staff login is only permitted between ${DEFAULT_STAFF_LOGIN_START_TIME.H.toString().padStart(2,'0')}:${DEFAULT_STAFF_LOGIN_START_TIME.M.toString().padStart(2,'0')} and ${DEFAULT_STAFF_LOGIN_END_TIME.H.toString().padStart(2,'0')}:00 (exclusive).` };
       }
     }
     
     await setDoc(userDocRef, userDataToSet, { merge: true });
     
-    const finalUserDisplayName = userDataToSet.displayName; 
+    const finalUserDisplayName = userDataToSet.displayName || userEmailLower; 
 
     const sessionData: SessionData = {
       username: userEmailLower, 
@@ -139,22 +142,25 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
 
     console.log('[signInWithEmailAction] EXACT Session data being set in cookie:', JSON.stringify(sessionData, null, 2));
 
+    const cookieStore = cookies();
     const cookieSecure = process.env.NODE_ENV === 'production';
     console.log(`[signInWithEmailAction] Cookie settings: cookieSecure = ${cookieSecure}, effective SameSite will be 'Lax' (forced for this test)`);
-
-    cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
+    
+    cookieStore.set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
       httpOnly: true,
       secure: cookieSecure, 
       maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
-      sameSite: "lax" as const, // Force Lax for testing
+      sameSite: "lax" as const,
     });
 
-    redirect('/dashboard');
+    return { success: true };
 
   } catch (e: any) {
     if (typeof e.message === 'string' && e.message.includes('NEXT_REDIRECT')) {
-      throw e;
+      // This should not happen anymore as we are not calling redirect()
+      console.error("[signInWithEmailAction] Caught NEXT_REDIRECT unexpectedly:", e);
+      return { success: false, error: "Login failed due to an unexpected redirection error."};
     }
     console.error("[signInWithEmailAction] Caught an unhandled server error during login:", e);
     let safeErrorMessage = "An unexpected server error occurred during login.";
@@ -163,7 +169,7 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     } else if (typeof e === 'string' && e.trim() !== "") {
       safeErrorMessage = `Login failed: ${e}`;
     }
-    return { error: safeErrorMessage };
+    return { success: false, error: safeErrorMessage };
   }
 }
 
@@ -176,19 +182,14 @@ export async function getSession(): Promise<SessionData | null> {
   const cookieStore = cookies();
   const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
 
-  if (sessionCookie?.value) {
+  if (sessionCookie && sessionCookie.value) {
     console.log(`[getSession] Found session cookie. Value (first 50 chars): ${sessionCookie.value.substring(0, 50)}...`);
     try {
       const parsedData = JSON.parse(sessionCookie.value);
       
-      if (!parsedData) {
-        console.warn("[getSession] Invalid session: Parsed data is null or undefined. Deleting cookie.");
-        cookies().delete(SESSION_COOKIE_NAME);
-        return null;
-      }
-      if (typeof parsedData !== 'object') {
-        console.warn("[getSession] Invalid session: Parsed data is not an object. Deleting cookie.");
-        cookies().delete(SESSION_COOKIE_NAME);
+      if (!parsedData || typeof parsedData !== 'object') {
+        console.warn("[getSession] Invalid session: Parsed data is null, undefined, or not an object. Deleting cookie.");
+        cookieStore.delete(SESSION_COOKIE_NAME);
         return null;
       }
 
@@ -196,14 +197,14 @@ export async function getSession(): Promise<SessionData | null> {
       for (const field of requiredFields) {
         if (!parsedData[field] || typeof parsedData[field] !== 'string' || (parsedData[field] as string).trim() === '') {
            console.warn(`[getSession] Invalid session: Field '${String(field)}' is problematic (value: '${parsedData[field]}', type: ${typeof parsedData[field]}). Deleting cookie.`);
-          cookies().delete(SESSION_COOKIE_NAME);
+          cookieStore.delete(SESSION_COOKIE_NAME);
           return null;
         }
       }
       
       if (parsedData.role !== 'owner' && parsedData.role !== 'staff') {
         console.warn(`[getSession] Invalid session: Role is problematic (value: ${parsedData.role}, type: ${typeof parsedData.role}). Deleting cookie.`);
-        cookies().delete(SESSION_COOKIE_NAME);
+        cookieStore.delete(SESSION_COOKIE_NAME);
         return null;
       }
       
@@ -211,7 +212,7 @@ export async function getSession(): Promise<SessionData | null> {
       for (const field of optionalStringFields) {
         if (parsedData[field] !== undefined && typeof parsedData[field] !== 'string') {
           console.warn(`[getSession] Session cookie parsed, but optional field '${String(field)}' is not a string (value: ${parsedData[field]}, type: ${typeof parsedData[field]}). Invalidating and deleting cookie.`);
-          cookies().delete(SESSION_COOKIE_NAME);
+          cookieStore.delete(SESSION_COOKIE_NAME);
           return null;
         }
       }
@@ -220,7 +221,7 @@ export async function getSession(): Promise<SessionData | null> {
 
     } catch (error) {
       console.error("[getSession] Failed to parse session cookie:", error);
-      cookies().delete(SESSION_COOKIE_NAME);
+      cookieStore.delete(SESSION_COOKIE_NAME);
       return null;
     }
   }
@@ -253,12 +254,12 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
   }
 
   const updatedSessionData: SessionData = { ...session, name: newTrimmedName };
+  const cookieStore = cookies();
   const cookieSecure = process.env.NODE_ENV === 'production';
-  // const cookieSameSite = cookieSecure ? "none" as const : "lax" as const; // Old logic
-  const cookieSameSite = "lax" as const; // Forced for testing
+  const cookieSameSite = "lax" as const; 
 
   try {
-    cookies().set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
+    cookieStore.set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
       httpOnly: true, secure: cookieSecure, maxAge: 60 * 60 * 24 * 7, path: "/", sameSite: cookieSameSite,
     });
     return { success: true, message: "Display name updated successfully." };
@@ -283,12 +284,12 @@ export async function updateUserInvoiceColorAction(color: string): Promise<{ suc
   }
 
   const updatedSessionData: SessionData = { ...session, invoicePrimaryColor: color };
+  const cookieStore = cookies();
   const cookieSecure = process.env.NODE_ENV === 'production';
-  // const cookieSameSite = cookieSecure ? "none" as const : "lax" as const; // Old logic
-  const cookieSameSite = "lax" as const; // Forced for testing
+  const cookieSameSite = "lax" as const; 
 
   try {
-    cookies().set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
+    cookieStore.set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
       httpOnly: true, secure: cookieSecure, maxAge: 60 * 60 * 24 * 7, path: "/", sameSite: cookieSameSite,
     });
     return { success: true, message: "Invoice color updated." };
@@ -337,11 +338,11 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
   if (dataToUpdate.shopAddress !== undefined) updatedSessionData.shopAddress = dataToUpdate.shopAddress;
   if (dataToUpdate.shopContact !== undefined) updatedSessionData.shopContact = dataToUpdate.shopContact;
 
+  const cookieStore = cookies();
   const cookieSecure = process.env.NODE_ENV === 'production';
-  // const cookieSameSite = cookieSecure ? "none"as const : "lax" as const; // Old logic
-  const cookieSameSite = "lax" as const; // Forced for testing
+  const cookieSameSite = "lax" as const;
   try {
-    cookies().set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
+    cookieStore.set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
       httpOnly: true, secure: cookieSecure, maxAge: 60 * 60 * 24 * 7, path: "/", sameSite: cookieSameSite,
     });
     return { success: true, message: "Shop details updated." };
