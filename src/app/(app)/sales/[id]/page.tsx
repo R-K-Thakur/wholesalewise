@@ -28,14 +28,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { format } from 'date-fns';
 
 
 interface jsPDFWithAutoTable extends jsPDF {
   autoTable: (options: any) => jsPDFWithAutoTable;
 }
 
-const DEFAULT_INVOICE_COLOR_HEX = "#73A7B3";
-const DEFAULT_INVOICE_COLOR_RGB_ARRAY = [115, 167, 179];
+const DEFAULT_INVOICE_COLOR_HEX = "#333333"; // Dark gray for better contrast with black text
+const DEFAULT_INVOICE_COLOR_RGB_ARRAY = [51, 51, 51];
 const EPSILON = 0.001; // For floating point comparisons
 
 
@@ -46,7 +47,7 @@ interface ShopDetails {
 }
 
 interface PdfOptions {
-  primaryColor?: string;
+  primaryColor?: string; // This might not be used much with the new black & white design
   shopDetails?: ShopDetails;
 }
 
@@ -176,149 +177,213 @@ export default function SaleDetailPage() {
     if (!sale) return;
     if (outputType === 'datauristring') setIsProcessingA4Pdf(true);
 
-    const effectivePrimaryColorHex = options?.primaryColor || session?.invoicePrimaryColor || DEFAULT_INVOICE_COLOR_HEX;
-    const headerColorRgb = hexToRgb(effectivePrimaryColorHex) || DEFAULT_INVOICE_COLOR_RGB_ARRAY;
-
-    const shopName = options?.shopDetails?.shopName && options.shopDetails.shopName.trim() !== "" ? options.shopDetails.shopName : APP_NAME;
-    const shopAddress = options?.shopDetails?.shopAddress;
-    const shopContact = options?.shopDetails?.shopContact;
+    const shopName = options?.shopDetails?.shopName || APP_NAME;
+    // Shop address and contact are not directly in the provided image's main invoice area,
+    // but we have them in session. We can decide if they fit the new layout.
+    // For now, I will focus on matching the provided image structure.
 
     try {
-      const doc = new jsPDF() as jsPDFWithAutoTable;
-      const pageHeight = doc.internal.pageSize.height || doc.internal.pageSize.getHeight();
-      const pageWidth = doc.internal.pageSize.width || doc.internal.pageSize.getWidth();
-      let startY = 15;
-      const leftMargin = 15;
-      const rightMargin = pageWidth - 15;
+      const doc = new jsPDF({ unit: "pt", format: "a4" }) as jsPDFWithAutoTable;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 30; // Wider margin for a more traditional look
+      const contentWidth = pageWidth - 2 * margin;
+      let startY = margin;
 
-      doc.setFontSize(16);
+      // --- Document Header ---
+      doc.setFontSize(12);
       doc.setFont(undefined, 'bold');
       doc.text(shopName, pageWidth / 2, startY, { align: 'center' });
-      startY += 7;
-
-      if (shopAddress && shopAddress.trim() !== "") {
-        doc.setFontSize(9);
-        doc.setFont(undefined, 'normal');
-        const addressLines = doc.splitTextToSize(shopAddress, pageWidth - (leftMargin * 2));
-        doc.text(addressLines, pageWidth / 2, startY, { align: 'center' });
-        startY += (addressLines.length * 4) + 3;
-      }
-
-      if (shopContact && shopContact.trim() !== "") {
-        doc.setFontSize(9);
-        doc.setFont(undefined, 'normal');
-        doc.text(shopContact, pageWidth / 2, startY, { align: 'center' });
-        startY += 7;
-      }
-
-      doc.setFontSize(14);
-      doc.setFont(undefined, 'bold');
-      doc.text("INVOICE", pageWidth / 2, startY, { align: 'center' });
-      startY += 10;
+      startY += 15;
 
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
+      doc.text("B-1", pageWidth / 2, startY, { align: 'center' });
+      startY += 12;
+      
+      doc.setFontSize(14);
+      doc.setFont(undefined, 'bold');
+      doc.text("Order and Estimate Form", pageWidth / 2, startY, { align: 'center' });
+      startY += 25;
 
-      doc.text(`Invoice ID: ${sale.id}`, leftMargin, startY);
-      doc.text(`Date: ${new Date(sale.saleDate).toLocaleDateString()}`, rightMargin, startY, { align: 'right' });
-      startY += 7;
+      // --- Customer and Invoice Details Table ---
+      const detailCellHeight = 18;
+      const labelColWidth = 70;
+      const valueColWidth = (contentWidth / 2) - labelColWidth - 5; // 5 for padding
 
-      const recordedByText = sale.recordedByName || sale.recordedByEmail;
-      if (sale.customerName) {
-        doc.text(`Customer: ${sale.customerName}`, leftMargin, startY);
-        if (recordedByText) {
-            doc.text(`Recorded by: ${recordedByText}`, rightMargin, startY, { align: 'right' });
-        }
-        startY += 7;
-      } else if (recordedByText) {
-         doc.text(`Recorded by: ${recordedByText}`, rightMargin, startY, { align: 'right' });
-         startY += 7;
-      }
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
 
+      const customerDetailsX = margin;
+      const invoiceDetailsX = margin + contentWidth / 2 + 10; // 10 for gap between columns
+      let currentDetailY = startY;
 
-      doc.text(`Sale Type: ${sale.saleType.charAt(0).toUpperCase() + sale.saleType.slice(1)}`, leftMargin, startY);
-      startY += 10;
+      // Customer Details (Left)
+      doc.rect(customerDetailsX, currentDetailY, labelColWidth + valueColWidth, detailCellHeight * 3); // Box for 3 rows
+      
+      doc.setFont(undefined, 'bold');
+      doc.text("Name", customerDetailsX + 3, currentDetailY + 12);
+      doc.setFont(undefined, 'normal');
+      doc.text(sale.customerName || "N/A", customerDetailsX + labelColWidth + 3, currentDetailY + 12, {maxWidth: valueColWidth - 6});
+      doc.line(customerDetailsX + labelColWidth, currentDetailY, customerDetailsX + labelColWidth, currentDetailY + detailCellHeight * 3); // Vertical separator
+      doc.line(customerDetailsX, currentDetailY + detailCellHeight, customerDetailsX + labelColWidth + valueColWidth, currentDetailY + detailCellHeight);
 
-      const tableColumn = ["Product Name", "Qty", "Unit", "Rate (Rs.)", "Total (Rs.)"];
+      doc.setFont(undefined, 'bold');
+      doc.text("Address", customerDetailsX + 3, currentDetailY + detailCellHeight + 12);
+      doc.setFont(undefined, 'normal');
+      // Customer address not stored, leaving placeholder for layout
+      doc.text("", customerDetailsX + labelColWidth + 3, currentDetailY + detailCellHeight + 12);
+      doc.line(customerDetailsX, currentDetailY + detailCellHeight * 2, customerDetailsX + labelColWidth + valueColWidth, currentDetailY + detailCellHeight*2);
+      
+      doc.setFont(undefined, 'bold');
+      doc.text("Ph No.", customerDetailsX + 3, currentDetailY + detailCellHeight * 2 + 12);
+      doc.setFont(undefined, 'normal');
+      // Customer phone not stored
+      doc.text("", customerDetailsX + labelColWidth + 3, currentDetailY + detailCellHeight * 2 + 12);
+
+      // Invoice Details (Right)
+      doc.rect(invoiceDetailsX, currentDetailY, labelColWidth + valueColWidth, detailCellHeight * 4); // Box for 4 rows
+
+      doc.setFont(undefined, 'bold');
+      doc.text("Invoice No", invoiceDetailsX + 3, currentDetailY + 12);
+      doc.setFont(undefined, 'normal');
+      doc.text(sale.id.substring(0, 15), invoiceDetailsX + labelColWidth + 3, currentDetailY + 12, {maxWidth: valueColWidth - 6}); // Show part of ID
+      doc.line(invoiceDetailsX + labelColWidth, currentDetailY, invoiceDetailsX + labelColWidth, currentDetailY + detailCellHeight * 4);
+      doc.line(invoiceDetailsX, currentDetailY + detailCellHeight, invoiceDetailsX + labelColWidth + valueColWidth, currentDetailY + detailCellHeight);
+
+      doc.setFont(undefined, 'bold');
+      doc.text("Invoice Date", invoiceDetailsX + 3, currentDetailY + detailCellHeight + 12);
+      doc.setFont(undefined, 'normal');
+      const invoiceDateTime = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.saleDate);
+      doc.text(format(invoiceDateTime, "dd/MM/yyyy HH:mm:ss"), invoiceDetailsX + labelColWidth + 3, currentDetailY + detailCellHeight + 12, {maxWidth: valueColWidth - 6});
+      doc.line(invoiceDetailsX, currentDetailY + detailCellHeight*2, invoiceDetailsX + labelColWidth + valueColWidth, currentDetailY + detailCellHeight*2);
+
+      doc.setFont(undefined, 'bold');
+      doc.text("Salesman", invoiceDetailsX + 3, currentDetailY + detailCellHeight * 2 + 12);
+      doc.setFont(undefined, 'normal');
+      doc.text(sale.recordedByName || sale.recordedByEmail || "N/A", invoiceDetailsX + labelColWidth + 3, currentDetailY + detailCellHeight * 2 + 12, {maxWidth: valueColWidth - 6});
+      doc.line(invoiceDetailsX, currentDetailY + detailCellHeight*3, invoiceDetailsX + labelColWidth + valueColWidth, currentDetailY + detailCellHeight*3);
+
+      doc.setFont(undefined, 'bold');
+      doc.text("Transport", invoiceDetailsX + 3, currentDetailY + detailCellHeight * 3 + 12);
+      doc.setFont(undefined, 'normal');
+      doc.text("SELF", invoiceDetailsX + labelColWidth + 3, currentDetailY + detailCellHeight * 3 + 12); // Static as per example
+
+      startY = currentDetailY + detailCellHeight * 4 + 15; // Move below the taller block
+
+      // --- Items Table ---
+      const tableColumns = ["SL", "Description", "Qty", "UOM", "Rate (Rs.)", "Amount (Rs.)"];
       const tableRows: (string | number)[][] = [];
-
-      sale.items.forEach(item => {
-        const itemData = [
+      sale.items.forEach((item, index) => {
+        tableRows.push([
+          index + 1,
           item.productNameSnapshot,
-          item.quantitySold,
-          item.soldUnit,
+          item.quantitySold.toFixed(2),
+          item.soldUnit.toUpperCase(),
           item.pricePerUnitSold.toFixed(2),
           item.total.toFixed(2)
-        ];
-        tableRows.push(itemData);
+        ]);
       });
 
       autoTable(doc, {
-        head: [tableColumn],
+        head: [tableColumns],
         body: tableRows,
         startY: startY,
-        theme: 'striped',
+        theme: 'grid', // 'grid' for visible cell borders
+        styles: {
+          fontSize: 8,
+          cellPadding: 3,
+          valign: 'middle',
+        },
         headStyles: {
-            fillColor: headerColorRgb,
-            textColor: [255,255,255],
-            fontStyle: 'bold',
-            halign: 'center'
+          fillColor: [220, 220, 220], // Light gray header
+          textColor: [0, 0, 0],
+          fontStyle: 'bold',
+          halign: 'center'
         },
         columnStyles: {
-            0: { cellWidth: 'auto' },
-            1: { halign: 'right' },
-            2: { halign: 'left' },
-            3: { halign: 'right' },
-            4: { halign: 'right' }
+          0: { halign: 'center', cellWidth: 30 }, // SL
+          1: { halign: 'left', cellWidth: 'auto' },   // Description
+          2: { halign: 'right', cellWidth: 40 }, // Qty
+          3: { halign: 'center', cellWidth: 40 },// UOM
+          4: { halign: 'right', cellWidth: 60 },// Rate
+          5: { halign: 'right', cellWidth: 70 } // Amount
         },
-        margin: { top: 10, left: leftMargin, right: leftMargin },
-        tableWidth: 'auto',
+        margin: { left: margin, right: margin },
         didDrawPage: (data) => {
-            startY = data.cursor?.y || 20;
+            // This ensures startY is updated correctly if table spans multiple pages
+            startY = data.cursor?.y || startY;
         }
       });
+      
+      startY = (doc as any).lastAutoTable.finalY + 10; // Get Y after table
 
-      startY = (doc as any).lastAutoTable.finalY + 12;
+      // --- Footer Section ---
+      const footerLeftX = margin;
+      const footerRightX = pageWidth - margin; // for right alignment
+      const summaryBlockX = footerRightX - 180; // Width of summary block
+      const summaryValueX = footerRightX - 70;
 
-      doc.setFontSize(11);
-      doc.setFont(undefined, 'bold');
-      doc.text(`Total Bill Amount: Rs. ${sale.totalAmount.toFixed(2)}`, rightMargin, startY, { align: 'right' });
-      startY += 6;
-      doc.setFont(undefined, 'normal');
-      doc.text(`Amount Paid: Rs. ${sale.totalPaidAmount.toFixed(2)}`, rightMargin, startY, { align: 'right' });
-      startY += 6;
-      doc.setFont(undefined, 'bold');
-      doc.text(`Amount Due: Rs. ${sale.totalAmountDue.toFixed(2)}`, rightMargin, startY, { align: 'right' });
-      startY += 7;
+      doc.setFontSize(9);
 
-      doc.setFontSize(10);
-      doc.setFont(undefined, 'normal');
+      // Amount in words placeholder (Left)
+      doc.text(`Rupee ${sale.totalAmount.toFixed(2)} only`, footerLeftX, startY + 5, {maxWidth: contentWidth / 2 - 10});
 
-      doc.text(`Payment Method: ${displayPaymentMethod}`, rightMargin, startY, { align: 'right' });
-      startY += 10;
+      // Summary Block (Right)
+      let summaryY = startY;
+      doc.line(summaryBlockX - 5, summaryY - 5, footerRightX, summaryY - 5); // Top border of summary
 
-
-      if (sale.notes && sale.notes.trim() !== "") {
-        if (startY > pageHeight - 40) {
-            doc.addPage();
-            startY = 20;
-        }
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'bold');
-        doc.text("Notes:", leftMargin, startY);
-        startY += 5;
+      const drawSummaryRow = (label: string, value: string | number, isBoldValue: boolean = false) => {
         doc.setFont(undefined, 'normal');
-        const splitNotes = doc.splitTextToSize(sale.notes, rightMargin - leftMargin);
-        doc.text(splitNotes, leftMargin, startY);
-        startY += (splitNotes.length * 5) + 10;
+        doc.text(label, summaryBlockX, summaryY + 12);
+        doc.setFont(undefined, isBoldValue ? 'bold' : 'normal');
+        doc.text(typeof value === 'number' ? value.toFixed(2) : value, summaryValueX, summaryY + 12, {align: 'right', maxWidth: 65});
+        doc.line(summaryBlockX -5, summaryY + detailCellHeight -2 , footerRightX, summaryY + detailCellHeight -2 ); // Bottom border for row
+        summaryY += detailCellHeight;
       }
+      
+      drawSummaryRow("Gross Total", sale.totalAmount);
+      drawSummaryRow("Packaging Chrgs.", 0.00); // Placeholder
+      drawSummaryRow("Other Charges", 0.00);   // Placeholder
+      drawSummaryRow("R/O", 0.00);             // Placeholder
+      drawSummaryRow("NET AMOUNT", sale.totalAmount, true);
+      
+      const summaryBlockHeight = 5 * detailCellHeight;
+      doc.line(summaryBlockX-5, startY - 5, summaryBlockX-5, startY -5 + summaryBlockHeight); // Left border
+      doc.line(footerRightX, startY - 5, footerRightX, startY -5 + summaryBlockHeight); // Right border
+      doc.line(summaryValueX - 5, startY - 5, summaryValueX - 5, startY -5 + summaryBlockHeight); // Vertical line before amounts
+      
 
-      if (startY > pageHeight - 20) {
-            doc.addPage();
-            startY = 20;
+      // Bill Amount & Net Balance (Left, aligned with summary bottom)
+      let leftFooterY = startY + summaryBlockHeight - (2 * detailCellHeight);
+      doc.line(footerLeftX, leftFooterY - 5, footerLeftX + contentWidth / 2 -15, leftFooterY - 5);
+      
+      doc.setFont(undefined, 'normal');
+      doc.text("Bill Amount", footerLeftX + 3, leftFooterY + 12);
+      doc.text(`${sale.totalAmount.toFixed(2)} Dr`, footerLeftX + 100, leftFooterY + 12, {align: 'right'});
+      doc.line(footerLeftX, leftFooterY + detailCellHeight -2, footerLeftX + contentWidth / 2 -15, leftFooterY + detailCellHeight -2);
+      leftFooterY += detailCellHeight;
+
+      doc.text("Net Balance", footerLeftX + 3, leftFooterY + 12);
+      doc.text(sale.totalAmountDue.toFixed(2), footerLeftX + 100, leftFooterY + 12, {align: 'right'});
+      doc.line(footerLeftX, leftFooterY + detailCellHeight -2, footerLeftX + contentWidth / 2 -15, leftFooterY + detailCellHeight -2);
+      
+      // Box around left footer items
+      doc.rect(footerLeftX, startY + summaryBlockHeight - (2 * detailCellHeight) -5, contentWidth/2 -15, 2*detailCellHeight);
+
+
+      startY = Math.max(leftFooterY, summaryY) + 20; // Below both left and right blocks
+
+      // Tally by and Page Number
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'normal');
+      doc.text(`Tally by: ${sale.recordedByName || sale.recordedByEmail || "N/A"}`, footerLeftX, startY);
+
+      const pageCount = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.text(`Page No: ${i}`, footerRightX, startY, { align: 'right' });
       }
-      doc.setFontSize(10);
-      doc.text("Thank you for your business!", pageWidth / 2, pageHeight - 15, { align: 'center' });
 
 
       if (outputType === 'datauristring') {
@@ -412,13 +477,13 @@ export default function SaleDetailPage() {
         tableRows.push([
           `${item.productNameSnapshot}`,
           item.quantitySold,
-          item.pricePerUnitSold.toFixed(2),
+          item.pricePerUnitSold.toFixed(2), // Price per unit sold
           item.total.toFixed(2)
         ]);
       });
 
       autoTable(doc, {
-        head: [['Item', 'Qty', 'Rate', 'Total']],
+        head: [['Item', 'Qty', 'Rate', 'Total']], // "Price" changed to "Rate"
         body: tableRows,
         startY: currentY,
         theme: 'plain',
@@ -438,8 +503,8 @@ export default function SaleDetailPage() {
         columnStyles: {
           0: { cellWidth: contentWidthPt * 0.48, fontStyle: 'normal' },
           1: { cellWidth: contentWidthPt * 0.12, halign: 'right' },
-          2: { cellWidth: contentWidthPt * 0.20, halign: 'right' },
-          3: { cellWidth: contentWidthPt * 0.20, halign: 'right' },
+          2: { cellWidth: contentWidthPt * 0.20, halign: 'right' }, // Rate
+          3: { cellWidth: contentWidthPt * 0.20, halign: 'right' }, // Total
         },
         margin: { left: marginPt, right: marginPt },
         tableWidth: 'auto',
@@ -512,7 +577,7 @@ export default function SaleDetailPage() {
   };
 
   const handlePreviewA4Bill = () => {
-    const dataUri = generateInvoicePDF('datauristring', { primaryColor: session?.invoicePrimaryColor, shopDetails: currentShopDetails });
+    const dataUri = generateInvoicePDF('datauristring', { shopDetails: currentShopDetails });
     if (dataUri) {
       setA4PreviewPdfUrl(dataUri);
       setIsA4PreviewModalOpen(true);
@@ -520,7 +585,7 @@ export default function SaleDetailPage() {
   };
 
   const handleDownloadA4Pdf = () => {
-    generateInvoicePDF('save', { primaryColor: session?.invoicePrimaryColor, shopDetails: currentShopDetails });
+    generateInvoicePDF('save', { shopDetails: currentShopDetails });
   };
 
   const handlePreviewThermalReceipt = () => {
@@ -793,21 +858,23 @@ export default function SaleDetailPage() {
             <table className="min-w-full divide-y divide-border">
               <thead className="bg-muted/50">
                 <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Product Name</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Unit</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">SL</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Description</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Qty</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">UOM</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Rate (Rs.)</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Total (Rs.)</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Amount (Rs.)</th>
                 </tr>
               </thead>
               <tbody className="bg-card divide-y divide-border">
                 {sale.items.map((item, index) => (
-                  <tr key={`${item.productId}-${index}`}>
+                  <tr key={`${item.productId || 'adhoc'}-${index}`}>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-center">{index + 1}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-foreground">{item.productNameSnapshot}</td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{item.quantitySold}</td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{item.soldUnit}</td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">Rs. {item.pricePerUnitSold.toFixed(2)}</td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">Rs. {item.total.toFixed(2)}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">{item.quantitySold.toFixed(2)}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{item.soldUnit.toUpperCase()}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">{item.pricePerUnitSold.toFixed(2)}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">{item.total.toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -902,5 +969,3 @@ export default function SaleDetailPage() {
     </div>
   );
 }
-
-    
