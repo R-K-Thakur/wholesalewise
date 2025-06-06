@@ -120,30 +120,25 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
 
         switch (userData.loginApprovalStatus) {
           case 'pending':
-            // Optionally update timestamp if you want to track re-attempts for pending
-            // await updateDoc(userDocRef, { lastLoginRequestTimestamp: nowISO });
             return { error: "Your login request is still awaiting owner approval. Please try again later or contact an owner." };
           case 'denied':
             return { error: "Your login request was denied. Please contact an owner." };
           case 'approved':
-            // Proceed to session creation
             break;
-          default: // No status or unexpected status, treat as new request for staff
+          default: 
             await updateDoc(userDocRef, { 
               loginApprovalStatus: 'pending', 
               lastLoginRequestTimestamp: nowISO,
-              displayName: userDisplayName // Ensure displayName is set
+              displayName: userDisplayName 
             });
             return { error: "Your login request has been submitted for owner approval. Please wait and try again later, or contact an owner." };
         }
       } else {
-        // First time this staff email is trying to log in
         await setDoc(userDocRef, { 
           email: userEmailLower, 
           displayName: userEmailLower, 
           loginApprovalStatus: 'pending',
           lastLoginRequestTimestamp: nowISO,
-          // Initialize other fields as undefined or default
           invoicePrimaryColor: undefined,
           shopName: undefined,
           shopAddress: undefined,
@@ -152,7 +147,6 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
         return { error: "Your login request has been submitted for owner approval. Please wait and try again later, or contact an owner." };
       }
     } else if (userRole === 'owner') {
-      // Owner login logic
       if (userDocSnap.exists()) {
         const userData = userDocSnap.data() as UserDocumentData;
         userDisplayName = userData.displayName || userEmailLower;
@@ -160,17 +154,14 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
         userShopName = userData.shopName;
         userShopAddress = userData.shopAddress;
         userShopContact = userData.shopContact;
-        // Ensure owner has 'approved' status or create/update it
         if (userData.loginApprovalStatus !== 'approved') {
             await updateDoc(userDocRef, { loginApprovalStatus: 'approved', displayName: userDisplayName });
         }
       } else {
-        // First time owner login, create doc with approved status
         await setDoc(userDocRef, { 
           email: userEmailLower, 
           displayName: userEmailLower, 
           loginApprovalStatus: 'approved',
-          // Initialize other fields
           invoicePrimaryColor: undefined,
           shopName: undefined,
           shopAddress: undefined,
@@ -183,8 +174,6 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     return { error: "A database error occurred while processing your login. Please try again." };
   }
 
-  // If staff reached here, their status is 'approved'
-  // If owner reached here, they are cleared to log in
   const sessionData: SessionData = {
     username: email, 
     email: email,
@@ -203,7 +192,7 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
       httpOnly: true,
       secure: cookieSecure, 
-      maxAge: 60 * 60 * 24 * 7, // 1 week
+      maxAge: 60 * 60 * 24 * 7, 
       path: "/",
       sameSite: cookieSameSite,
     });
@@ -231,24 +220,30 @@ export async function getSession(): Promise<SessionData | null> {
   if (sessionCookie?.value) {
     try {
       const parsedData = JSON.parse(sessionCookie.value);
-      if (
-        parsedData &&
-        typeof parsedData === 'object' &&
-        parsedData !== null &&
-        typeof parsedData.email === 'string' &&
-        typeof parsedData.role === 'string' &&
-        (parsedData.role === 'owner' || parsedData.role === 'staff') &&
-        typeof parsedData.name === 'string' && 
-        typeof parsedData.username === 'string'
-      ) {
+      
+      let isValid = true;
+      let validationErrorReason = "";
+
+      if (!parsedData || typeof parsedData !== 'object' || parsedData === null) {
+        isValid = false;
+        validationErrorReason = "Parsed data is not a valid object.";
+      } else {
+        if (typeof parsedData.email !== 'string') { isValid = false; validationErrorReason = "Email field missing or not a string."; }
+        if (typeof parsedData.role !== 'string') { isValid = false; validationErrorReason = "Role field missing or not a string."; }
+        else if (!(parsedData.role === 'owner' || parsedData.role === 'staff')) { isValid = false; validationErrorReason = `Invalid role value: ${parsedData.role}`; }
+        if (typeof parsedData.name !== 'string') { isValid = false; validationErrorReason = "Name field missing or not a string."; }
+        if (typeof parsedData.username !== 'string') { isValid = false; validationErrorReason = "Username field missing or not a string."; }
+      }
+
+      if (isValid) {
         return parsedData as SessionData;
       } else {
-        console.warn("Session cookie parsed, but data is invalid, incomplete, or not an object. Deleting cookie. Parsed data:", parsedData);
-        cookies().delete(SESSION_COOKIE_NAME);
+        console.warn(`[getSession] Session cookie parsed, but data is invalid or incomplete. Reason: ${validationErrorReason}. Deleting cookie. Parsed data keys:`, Object.keys(parsedData || {}));
+        cookies().delete(SESSION_COOKIE_NAME); 
         return null;
       }
     } catch (error) {
-      console.error("Failed to parse session cookie:", error);
+      console.error("[getSession] Failed to parse session cookie:", error);
       cookies().delete(SESSION_COOKIE_NAME); 
       return null;
     }
