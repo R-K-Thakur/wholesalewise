@@ -6,13 +6,21 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, Search as SearchIcon } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, ChevronsUpDown, Search as SearchIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Form,
   FormControl,
@@ -73,75 +81,37 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   const amountPaidDisplay = Number(currentWatchedAmountPaid) || 0;
   const amountDue = parseFloat((grandTotal - amountPaidDisplay).toFixed(2));
 
-
-  const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
+  const [openProductSelectorIndex, setOpenProductSelectorIndex] = React.useState<number | null>(null);
+  // itemSearchTexts will store the text typed by user in CommandInput *or* the name of the unlisted item.
   const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>(() =>
-    (form.getValues("items") || []).map(item => {
-      if (item.productId) {
-        const product = allProducts.find(p => p.id === item.productId);
-        return product ? product.name : "";
-      }
-      return "";
-    })
+    (form.getValues("items") || []).map(() => "")
   );
 
-  // Effect to synchronize itemSearchTexts when a product ID is set (e.g., from selection)
+  // Effect to reset itemSearchText if a product is cleared from the form
   React.useEffect(() => {
     const newSearchTexts = [...itemSearchTexts];
     let changed = false;
     currentWatchedItems.forEach((formItem, i) => {
       if (newSearchTexts[i] === undefined) newSearchTexts[i] = "";
-
-      if (formItem.productId) { // Product is selected
-        const product = allProducts.find(p => p.id === formItem.productId);
-        // If product is found and search text doesn't match product name, update search text
-        if (product && newSearchTexts[i] !== product.name) {
-          newSearchTexts[i] = product.name;
-          changed = true;
-        }
+      if (!formItem.productId && newSearchTexts[i] !== "" && !allProducts.find(p => p.name.toLowerCase() === newSearchTexts[i].toLowerCase())) {
+        // If productId is cleared and the searchText is not an existing product name (could be ad-hoc), we keep it.
+        // This logic might need refinement based on desired ad-hoc item behavior.
+        // For now, if productId is gone, the searchText persists for potential ad-hoc use.
       }
-      // If formItem.productId is empty, we don't clear newSearchTexts[i] here.
-      // It means the user is typing an ad-hoc item or has cleared the selection.
-      // The handleProductSearchInputChange and another useEffect handle this logic.
     });
-    
     if (changed) {
       setItemSearchTexts(newSearchTexts);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentWatchedItems, allProducts]); // Intentionally not including itemSearchTexts to avoid loops
-
-
-  // Effect to clear product ID if search text diverges from a selected product
-  React.useEffect(() => {
-    currentWatchedItems.forEach((formItem, index) => {
-        const currentSearchText = itemSearchTexts[index];
-        const currentProductId = formItem.productId;
-
-        if (currentProductId && typeof currentSearchText === 'string') {
-            const selectedProduct = allProducts.find(p => p.id === currentProductId);
-            if (selectedProduct && selectedProduct.name.toLowerCase() !== currentSearchText.toLowerCase().trim()) {
-                 // Check if form still thinks this product is selected before clearing
-                if (form.getValues(`items.${index}.productId`) === currentProductId) {
-                    form.setValue(`items.${index}.productId`, '', { shouldDirty: true });
-                    form.setValue(`items.${index}.pricePerUnitSold`, 0, { shouldDirty: true });
-                    form.setValue(`items.${index}.soldUnit`, PRODUCT_UNITS[0], { shouldDirty: true });
-                }
-            }
-        }
-    });
-  }, [itemSearchTexts, currentWatchedItems, allProducts, form]);
+  }, [currentWatchedItems, allProducts, itemSearchTexts]);
 
 
   React.useEffect(() => {
     const actualFormAmountPaid = Number(form.getValues("amountPaid")) || 0;
     const roundedGrandTotal = parseFloat(grandTotal.toFixed(2));
     
-    // Only auto-fill amountPaid if it hasn't been manually dirtied OR if grand total is 0
     if ((form.formState.dirtyFields.amountPaid !== true || roundedGrandTotal === 0) && roundedGrandTotal >= 0) {
       form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true });
     } else if (actualFormAmountPaid > roundedGrandTotal && roundedGrandTotal >= 0) {
-      // If paid amount exceeds new grand total, cap it at grand total
       form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true });
     }
   }, [grandTotal, form]);
@@ -166,7 +136,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     setItemSearchTexts(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleProductSelectInternal = (itemIndex: number, productIdToSelect: string) => {
+  const handleProductSelect = (itemIndex: number, productIdToSelect: string) => {
     const product = allProducts.find(p => p.id === productIdToSelect);
     if (product) {
       if (product.quantityInStock === 0) {
@@ -181,29 +151,31 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
           ? product.wholesalePricePerBaseUnit
           : product.retailPricePerBaseUnit;
       
-      form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerBaseUnit.toFixed(2)), { shouldDirty: true });
-
-      // This state update will trigger the useEffect to sync itemSearchTexts
-      // setItemSearchTexts(prevTexts => {
-      //   const newTexts = [...prevTexts];
-      //   newTexts[itemIndex] = product.name;
-      //   return newTexts;
-      // });
+      form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerBaseUnit.toFixed(2)), { shouldDirty: true, shouldValidate: true });
+      
+      const newSearchTexts = [...itemSearchTexts];
+      newSearchTexts[itemIndex] = product.name; // Display product name in trigger
+      setItemSearchTexts(newSearchTexts);
 
       form.trigger(`items.${itemIndex}`);
-      setOpenComboboxIndex(null);
+      setOpenProductSelectorIndex(null);
     }
   };
   
-  const handleProductSearchInputChange = (index: number, value: string) => {
-    setItemSearchTexts(prev => {
-      const newTexts = [...prev];
-      newTexts[index] = value;
-      return newTexts;
-    });
-    // The useEffect watching itemSearchTexts will handle clearing productId if necessary
-    if (openComboboxIndex !== index) {
-      setOpenComboboxIndex(index);
+  const handleSearchTextChange = (index: number, value: string) => {
+    const newSearchTexts = [...itemSearchTexts];
+    newSearchTexts[index] = value;
+    setItemSearchTexts(newSearchTexts);
+
+    // If user types something different from a selected product's name, clear selection
+    const currentProductId = form.getValues(`items.${index}.productId`);
+    if (currentProductId) {
+        const selectedProduct = allProducts.find(p => p.id === currentProductId);
+        if (selectedProduct && selectedProduct.name.toLowerCase() !== value.toLowerCase()) {
+            form.setValue(`items.${index}.productId`, '', { shouldDirty: true });
+            form.setValue(`items.${index}.pricePerUnitSold`, 0, { shouldDirty: true });
+            // soldUnit might reset or be user-configurable for ad-hoc
+        }
     }
   };
 
@@ -211,7 +183,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   React.useEffect(() => {
     currentWatchedItems.forEach((item, index) => {
         const product = allProducts.find(p => p.id === item.productId);
-        if (product) { // Only proceed if a product is actually selected for this item
+        if (product) { 
             const price = watchedSaleType === 'wholesale'
                 ? product.wholesalePricePerBaseUnit
                 : product.retailPricePerBaseUnit;
@@ -260,7 +232,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         const product = allProducts.find(p => p.id === productIdForPayload);
         if (!product) {
           toast({ title: "Error", description: `Invalid product selected for item ${index + 1}. Please re-select.`, variant: "destructive"});
-          form.setError(`items.${index}.productId`, {message: "Invalid product selected."});
+          form.setError(`items.${index}.productId`, {message: "Invalid product selected."}); // This path might need adjustment
           hasError = true;
           continue;
         }
@@ -269,7 +241,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       } else { 
         if (currentItemSearchText === "") {
           toast({ title: "Error", description: `Product name is required for item ${index + 1} as it's not selected from inventory.`, variant: "destructive"});
-          form.setError(`items.${index}.productId`, {message: "Product name is required for unlisted items."});
+          form.setError(`items.${index}.productId`, {message: "Product name or selection is required."}); // Adjust error path
           hasError = true;
           continue;
         }
@@ -444,103 +416,76 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                     form.setValue(`items.${index}.soldUnit`, selectedProductForUnits.baseUnit, {shouldDirty: true});
                 }
             }
+            
+            const triggerText = currentProductId 
+                ? allProducts.find(p => p.id === currentProductId)?.name || "Select Product"
+                : (itemSearchTexts[index] || "Select or Type Product");
 
 
             return (
             <Card key={fieldItem.id} className="mb-4 p-4 space-y-3 bg-card/50 dark:bg-card/80">
-              <FormField
-                control={form.control}
-                name={`items.${index}.productId`} 
-                render={({ field }) => ( 
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Product</FormLabel>
-                    <Popover
-                        open={openComboboxIndex === index}
-                        onOpenChange={(isOpen) => setOpenComboboxIndex(isOpen ? index : null)}
+              {/* Product Selection Field */}
+              <FormItem className="flex flex-col">
+                <FormLabel>Product</FormLabel>
+                <Popover open={openProductSelectorIndex === index} onOpenChange={(isOpen) => setOpenProductSelectorIndex(isOpen ? index : null)}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openProductSelectorIndex === index}
+                      className="w-full justify-between"
+                      onClick={() => setOpenProductSelectorIndex(openProductSelectorIndex === index ? null : index)}
                     >
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <div className="relative">
-                            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                            <Input
-                                key={`product-search-${fieldItem.id}`} 
-                                placeholder="Type to search or enter product name..."
-                                value={itemSearchTexts[index] || ""}
-                                onChange={(e) => handleProductSearchInputChange(index, e.target.value)}
-                                onFocus={() => setOpenComboboxIndex(index)}
-                                className="w-full pl-10"
-                            />
-                          </div>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent
-                        className="w-[--radix-popover-trigger-width] p-0 max-h-60 overflow-y-auto"
-                        align="start"
-                        side="bottom"
-                       >
-                        <div className="py-1">
+                      <span className="truncate">{triggerText}</span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command shouldFilter={false}> {/* We handle filtering manually below */}
+                      <CommandInput
+                        placeholder="Search product or type name..."
+                        value={itemSearchTexts[index]}
+                        onValueChange={(searchValue) => handleSearchTextChange(index, searchValue)}
+                      />
+                      <CommandList>
+                        <CommandEmpty>
+                          {itemSearchTexts[index]?.trim() !== "" ? `No product found for "${itemSearchTexts[index]}". Type full name for unlisted item.` : "Start typing to search..."}
+                        </CommandEmpty>
+                        <CommandGroup>
                           {allProducts
                             .filter(p => {
-                                const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                if (!searchText && !currentProductId) return true; 
-                                if (!searchText && currentProductId) {
-                                    const currentProduct = allProducts.find(pr => pr.id === currentProductId);
-                                    return currentProduct ? p.name.toLowerCase().includes(currentProduct.name.toLowerCase()) : true;
-                                }
-                                return p.name.toLowerCase().includes(searchText) ||
-                                    (p.sku && p.sku.toLowerCase().includes(searchText));
+                              const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
+                              if (!searchText) return true; // Show all if no search text
+                              return p.name.toLowerCase().includes(searchText) ||
+                                (p.sku && p.sku.toLowerCase().includes(searchText));
                             })
-                            .slice(0,10)
+                            .slice(0, 10) // Limit to 10 results for performance
                             .map((product) => (
-                            <div
-                              key={product.id}
-                              onClick={() => handleProductSelectInternal(index, product.id)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
-                                  handleProductSelectInternal(index, product.id);
-                                }
-                              }}
-                              role="button"
-                              tabIndex={0}
-                              aria-pressed={field.value === product.id}
-                              className={cn(
-                                "flex items-center justify-between px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground",
-                                field.value === product.id && "bg-accent text-accent-foreground",
-                                product.quantityInStock === 0 && "opacity-50 cursor-not-allowed"
-                              )}
-                            >
-                              <div className="flex items-center gap-2">
+                              <CommandItem
+                                key={product.id}
+                                value={product.name} // Use product name for Command's internal value/filtering if needed
+                                onSelect={() => handleProductSelect(index, product.id)}
+                                disabled={product.quantityInStock === 0}
+                                className={cn(product.quantityInStock === 0 && "opacity-50 cursor-not-allowed")}
+                              >
                                 <Check
                                   className={cn(
-                                    "h-4 w-4",
-                                    field.value === product.id ? "opacity-100" : "opacity-0"
+                                    "mr-2 h-4 w-4",
+                                    currentProductId === product.id ? "opacity-100" : "opacity-0"
                                   )}
                                 />
-                                <span>{product.name} (Stock: {product.quantityInStock} {product.baseUnit})</span>
-                              </div>
-                              {product.quantityInStock === 0 && <span className="text-xs text-destructive">Out of Stock</span>}
-                            </div>
-                          ))}
-                          {allProducts.filter(p => {
-                                const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                if (!searchText && !currentProductId) return true;
-                                if (!searchText && currentProductId) {
-                                     const currentProduct = allProducts.find(pr => pr.id === currentProductId);
-                                     return currentProduct ? p.name.toLowerCase().includes(currentProduct.name.toLowerCase()) : true;
-                                }
-                                return p.name.toLowerCase().includes(searchText) || (p.sku && p.sku.toLowerCase().includes(searchText));
-                            }).length === 0 && itemSearchTexts[index]?.trim() !== "" && (
-                               <div className="px-3 py-2 text-sm text-muted-foreground">No product found. Type full name for unlisted item.</div>
-                            )
-                          }
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                                {product.name} (Stock: {product.quantityInStock} {product.baseUnit})
+                                {product.quantityInStock === 0 && <span className="ml-auto text-xs text-destructive">Out of Stock</span>}
+                              </CommandItem>
+                            ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                <FormMessage>{form.formState.errors.items?.[index]?.productId?.message}</FormMessage>
+              </FormItem>
+              
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <FormField
                   control={form.control}
@@ -564,7 +509,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                       <Select
                         onValueChange={(value) => handleSoldUnitChange(index, value as ProductUnit)}
                         value={field.value}
-                        disabled={availableUnits.length === 0 && !currentProductId } 
+                        disabled={availableUnits.length === 0 && !currentProductId && !itemSearchTexts[index]?.trim()} 
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -593,7 +538,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                             placeholder="e.g., 700.00" 
                             step="0.01" {...field} 
                             onChange={e => field.onChange(parseFloat(e.target.value) || 0)} 
-                            disabled={!!currentProductId} 
+                            disabled={!!currentProductId} // Disabled if product is selected from inventory
                         />
                       </FormControl>
                       <FormMessage />
