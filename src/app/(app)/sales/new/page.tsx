@@ -6,7 +6,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, IndianRupee } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trash2, Loader2, Check } from "lucide-react"; // Removed IndianRupee
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -52,7 +52,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       paymentMethod: 'cash',
       customerName: '',
       notes: '',
-      amountPaid: 0, // Initialize amountPaid
+      amountPaid: 0, 
     },
   });
 
@@ -66,7 +66,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   const watchAmountPaid = form.watch("amountPaid");
 
   const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
-  const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>([]);
+  const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>(fields.map(() => ""));
 
   const calculateGrandTotal = React.useCallback(() => {
     return watchItems.reduce((sum, item) => {
@@ -76,28 +76,19 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     }, 0);
   }, [watchItems]);
 
-  const grandTotal = React.useMemo(() => calculateGrandTotal(), [calculateGrandTotal]);
-  const amountDue = React.useMemo(() => grandTotal - (Number(watchAmountPaid) || 0), [grandTotal, watchAmountPaid]);
+  const grandTotal = React.useMemo(() => parseFloat(calculateGrandTotal().toFixed(2)), [calculateGrandTotal]);
+  const amountDue = React.useMemo(() => parseFloat((grandTotal - (Number(watchAmountPaid) || 0)).toFixed(2)), [grandTotal, watchAmountPaid]);
 
-  // Effect to update amountPaid if it's not set or items change impacting total
   React.useEffect(() => {
-    // Set default amountPaid to grandTotal when items change,
-    // but only if amountPaid hasn't been manually set to something different
-    // or if it was 0 (initial state).
+    const newTotal = calculateGrandTotal();
     const currentAmountPaid = form.getValues("amountPaid");
-    if (currentAmountPaid === 0 || fields.length > 0) {
-        // This logic might need refinement based on exact desired behavior
-        // e.g., only update if amountPaid is less than total, or if it was the initial 0.
-        // For now, we'll set it to total if it seems like it's the initial state.
-        // A more robust way might be to compare it to previous total if that's tracked.
-        const newTotal = calculateGrandTotal();
-        if (form.getValues("amountPaid") === 0 && newTotal > 0) { // Only if it was truly initial 0
-             form.setValue("amountPaid", parseFloat(newTotal.toFixed(2)), { shouldValidate: true });
-        } else if (form.getValues("amountPaid") > newTotal) { // If amount paid exceeds new total, cap it
-            form.setValue("amountPaid", parseFloat(newTotal.toFixed(2)), { shouldValidate: true });
-        }
+    // Set initial amount paid to total only if it hasn't been touched by user (or is 0)
+    if (currentAmountPaid === 0 && newTotal > 0 && form.formState.dirtyFields.amountPaid !== true) {
+      form.setValue("amountPaid", parseFloat(newTotal.toFixed(2)), { shouldValidate: true });
+    } else if (currentAmountPaid > newTotal) {
+      form.setValue("amountPaid", parseFloat(newTotal.toFixed(2)), { shouldValidate: true });
     }
-  }, [grandTotal, form, fields.length, calculateGrandTotal]);
+  }, [grandTotal, form, calculateGrandTotal]);
 
 
   React.useEffect(() => {
@@ -121,7 +112,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         return newTexts.slice(0, fields.length);
       });
     }
-  }, [fields.length]);
+  }, [fields.length, itemSearchTexts.length]);
 
 
   const handleAddItem = () => {
@@ -186,7 +177,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
             }
 
             if (form.getValues(`items.${index}.pricePerUnitSold`) !== pricePerSoldUnit) {
-                 form.setValue(`items.${index}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)));
+                 form.setValue(`items.${index}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), { shouldValidate: true });
             }
         }
     });
@@ -196,7 +187,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   async function onSubmit(data: SaleFormData) {
     form.clearErrors();
     const currentGrandTotal = calculateGrandTotal();
-    if (data.amountPaid > currentGrandTotal) {
+    if (data.amountPaid > currentGrandTotal + 0.001) { // Add epsilon for float comparison
         form.setError("amountPaid", {message: "Amount paid cannot exceed the grand total."});
         toast({title: "Validation Error", description: "Amount paid cannot exceed the grand total.", variant: "destructive"});
         return;
@@ -280,7 +271,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         if (newSoldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor > 0) {
             pricePerSoldUnit = pricePerBaseUnit * product.purchaseUnitConversionFactor;
         }
-        form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)));
+        form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), { shouldValidate: true });
     }
   };
 
@@ -463,7 +454,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                           ))}
                           {allProducts.filter(p => {
                                 const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                if (!searchText) return true; // show all if no search text
+                                if (!searchText) return true; 
                                 return p.name.toLowerCase().includes(searchText) ||
                                     (p.sku && p.sku.toLowerCase().includes(searchText));
                             }).length === 0 && (
@@ -585,12 +576,11 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                 <p className="text-lg font-medium">
                     Grand Total: <span className="font-semibold">Rs. {grandTotal.toFixed(2)}</span>
                 </p>
-                <p className={`text-lg font-medium ${amountDue > 0 ? 'text-destructive' : 'text-green-600'}`}>
+                <p className={`text-lg font-medium ${amountDue > 0.001 ? 'text-destructive' : 'text-green-600'}`}>
                     Amount Due: <span className="font-semibold">Rs. {amountDue.toFixed(2)}</span>
                 </p>
             </div>
         </div>
-
 
         <FormField
           control={form.control}
@@ -687,3 +677,4 @@ export default function NewSalePage() {
     </div>
   );
 }
+

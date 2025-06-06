@@ -44,7 +44,7 @@ export interface Purchase {
 export interface PaymentTransaction {
   date: string;
   amount: number;
-  paymentMethod?: Sale['paymentMethod'];
+  paymentMethod?: Sale['paymentMethod'] | 'manual_adjustment'; // Allow 'manual_adjustment'
   notes?: string;
 }
 
@@ -59,7 +59,7 @@ export interface Sale {
   saleType: 'wholesale' | 'retail';
   saleDate: string;
   customerName?: string;
-  paymentMethod?: 'cash' | 'card' | 'online'; // Represents the method of the *last or primary* payment
+  paymentMethod?: 'cash' | 'card' | 'online'; // Represents the method of the *initial* payment transaction
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -110,3 +110,4 @@ export interface PurchaseTrend {
   totalPurchases: number;
   fullDate?: string;
 }
+

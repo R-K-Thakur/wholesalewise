@@ -24,7 +24,7 @@ interface jsPDFWithAutoTable extends jsPDF {
   autoTable: (options: any) => jsPDFWithAutoTable;
 }
 
-const DEFAULT_INVOICE_COLOR_HEX = "#73A7B3"; // Muted Teal
+const DEFAULT_INVOICE_COLOR_HEX = "#73A7B3"; 
 const DEFAULT_INVOICE_COLOR_RGB_ARRAY = [115, 167, 179];
 
 interface ShopDetails {
@@ -50,7 +50,7 @@ function hexToRgb(hex: string): [number, number, number] | null {
 export default function SaleDetailPage() {
   const params = useParams();
   const saleId = params.id as string;
-  const [sale, setSale] = useState<Sale | undefined | null>(null);
+  const [sale, setSale] = useState<Sale | null | undefined>(null); // null for initial, undefined for not found
   const [isLoading, setIsLoading] = useState(true);
   const [session, setSession] = useState<SessionData | null>(null);
   const { toast } = useToast();
@@ -69,18 +69,21 @@ export default function SaleDetailPage() {
   useEffect(() => {
     async function fetchData() {
       setIsLoading(true);
+      setSale(null); // Reset on new fetch
       if (saleId) {
         try {
           const [fetchedSale, currentSession] = await Promise.all([
             getSaleByIdAction(saleId),
             getSession()
           ]);
-          setSale(fetchedSale);
+          setSale(fetchedSale); // Will be Sale object or undefined
           setSession(currentSession);
         } catch (err) {
           console.error("Failed to fetch sale details or session:", err);
-          setSale(undefined); // Explicitly undefined for "not found"
+          setSale(undefined); 
         }
+      } else {
+        setSale(undefined); // No ID, so not found
       }
       setIsLoading(false);
     }
@@ -99,9 +102,8 @@ export default function SaleDetailPage() {
     if (!sale) return;
     if (outputType === 'datauristring') setIsProcessingA4Pdf(true);
 
-
-    const primaryColorHex = options?.primaryColor || session?.invoicePrimaryColor || DEFAULT_INVOICE_COLOR_HEX;
-    const headerColorRgb = hexToRgb(primaryColorHex) || DEFAULT_INVOICE_COLOR_RGB_ARRAY;
+    const effectivePrimaryColorHex = options?.primaryColor || session?.invoicePrimaryColor || DEFAULT_INVOICE_COLOR_HEX;
+    const headerColorRgb = hexToRgb(effectivePrimaryColorHex) || DEFAULT_INVOICE_COLOR_RGB_ARRAY;
 
     const shopName = options?.shopDetails?.shopName && options.shopDetails.shopName.trim() !== "" ? options.shopDetails.shopName : APP_NAME;
     const shopAddress = options?.shopDetails?.shopAddress;
@@ -176,7 +178,7 @@ export default function SaleDetailPage() {
         theme: 'striped',
         headStyles: {
             fillColor: headerColorRgb,
-            textColor: 255,
+            textColor: [255,255,255],
             fontStyle: 'bold',
             halign: 'center'
         },
@@ -209,19 +211,16 @@ export default function SaleDetailPage() {
 
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
-      if (sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment') { 
-        doc.text(`Payment Method: ${sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1)}`, rightMargin, startY, { align: 'right' });
+      let primaryPaymentMethod = sale.paymentMethod;
+      if (!primaryPaymentMethod && sale.paymentHistory.length > 0) {
+          const firstPayment = sale.paymentHistory.find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
+          if (firstPayment) primaryPaymentMethod = firstPayment.paymentMethod as Sale['paymentMethod'];
+      }
+      if (primaryPaymentMethod) {
+        doc.text(`Payment Method: ${primaryPaymentMethod.charAt(0).toUpperCase() + primaryPaymentMethod.slice(1)}`, rightMargin, startY, { align: 'right' });
         startY += 10;
-      } else if (sale.paymentMethod === 'manual_adjustment' && sale.paymentHistory.length > 0) {
-        const lastNonManualPayment = [...sale.paymentHistory].reverse().find(p => p.paymentMethod !== 'manual_adjustment');
-        if (lastNonManualPayment && lastNonManualPayment.paymentMethod) {
-           doc.text(`Primary Payment: ${lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1)}`, rightMargin, startY, { align: 'right' });
-           startY += 10;
-        } else {
-            startY += 10; // maintain spacing
-        }
       } else {
-        startY += 10; // maintain spacing
+        startY += 10; 
       }
 
 
@@ -266,22 +265,20 @@ export default function SaleDetailPage() {
     if (!sale) return;
     if (outputType === 'datauristring') setIsProcessingThermalPdf(true);
 
-
     const shopName = options?.shopDetails?.shopName && options.shopDetails.shopName.trim() !== "" ? options.shopDetails.shopName : APP_NAME;
     const shopAddress = options?.shopDetails?.shopAddress;
     const shopContact = options?.shopDetails?.shopContact;
-
 
     try {
       const thermalWidthMm = 80;
       const thermalWidthPt = thermalWidthMm * (72 / 25.4);
       const marginPt = 8;
       const contentWidthPt = thermalWidthPt - 2 * marginPt;
-      const initialPageHeightPt = 800; // Approximate initial height, will auto-extend
+      const initialPageHeightPt = 800; 
 
       const doc = new jsPDF({
         unit: 'pt',
-        format: [thermalWidthPt, initialPageHeightPt], // Height will be dynamic
+        format: [thermalWidthPt, initialPageHeightPt], 
       }) as jsPDFWithAutoTable;
 
       let currentY = marginPt + 5;
@@ -313,7 +310,6 @@ export default function SaleDetailPage() {
       currentY += 10;
 
       const saleDate = new Date(sale.saleDate);
-      // Use sale.createdAt for time part if available and different, otherwise saleDate
       const timePartDate = sale.createdAt && (new Date(sale.createdAt).toDateString() === saleDate.toDateString()) 
                          ? new Date(sale.createdAt) 
                          : saleDate;
@@ -352,19 +348,19 @@ export default function SaleDetailPage() {
         headStyles: {
           fontSize: 7.5,
           fontStyle: 'bold',
-          fillColor: [255,255,255], // white
-          textColor: [0,0,0], // black
+          fillColor: [255,255,255], 
+          textColor: [0,0,0], 
           lineWidth: 0.1,
-          lineColor: [180,180,180], // light grey for subtle lines
+          lineColor: [180,180,180], 
         },
         columnStyles: {
-          0: { cellWidth: contentWidthPt * 0.48, fontStyle: 'normal' }, // Item name can wrap
+          0: { cellWidth: contentWidthPt * 0.48, fontStyle: 'normal' }, 
           1: { cellWidth: contentWidthPt * 0.12, halign: 'right' },
           2: { cellWidth: contentWidthPt * 0.20, halign: 'right' },
           3: { cellWidth: contentWidthPt * 0.20, halign: 'right' },
         },
         margin: { left: marginPt, right: marginPt },
-        tableWidth: 'auto', // ensure table uses contentWidth
+        tableWidth: 'auto', 
         didDrawPage: (data) => {
           currentY = data.cursor?.y || currentY;
         }
@@ -394,23 +390,19 @@ export default function SaleDetailPage() {
 
       doc.setFontSize(8);
       doc.setFont(undefined, 'normal');
-      if (sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment') {
+      let primaryPaymentMethod = sale.paymentMethod;
+      if (!primaryPaymentMethod && sale.paymentHistory.length > 0) {
+          const firstPayment = sale.paymentHistory.find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
+          if (firstPayment) primaryPaymentMethod = firstPayment.paymentMethod as Sale['paymentMethod'];
+      }
+
+      if (primaryPaymentMethod) {
         doc.text('Payment:', marginPt, currentY);
-        doc.text(sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1), thermalWidthPt - marginPt, currentY, { align: 'right' });
+        doc.text(primaryPaymentMethod.charAt(0).toUpperCase() + primaryPaymentMethod.slice(1), thermalWidthPt - marginPt, currentY, { align: 'right' });
         currentY += 10;
-      } else if (sale.paymentMethod === 'manual_adjustment' && sale.paymentHistory.length > 0) {
-        const lastNonManualPayment = [...sale.paymentHistory].reverse().find(p => p.paymentMethod !== 'manual_adjustment');
-         if (lastNonManualPayment && lastNonManualPayment.paymentMethod) {
-            doc.text('Primary Pymt:', marginPt, currentY); // Abbreviated for space
-            doc.text(lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1), thermalWidthPt - marginPt, currentY, { align: 'right' });
-            currentY += 10;
-         } else {
-            currentY +=10;
-         }
       } else {
          currentY +=10;
       }
-
 
       if (sale.notes && sale.notes.trim() !== "") {
         currentY += 3;
@@ -420,7 +412,7 @@ export default function SaleDetailPage() {
         doc.setFont(undefined, 'normal');
         const splitNotes = doc.splitTextToSize(sale.notes, contentWidthPt);
         doc.text(splitNotes, marginPt, currentY);
-        currentY += (splitNotes.length * 8) + 3; // 8 is approx height of font size 7-8
+        currentY += (splitNotes.length * 8) + 3; 
       }
 
       currentY += 8;
@@ -443,7 +435,6 @@ export default function SaleDetailPage() {
       setIsProcessingThermalPdf(false);
     }
   };
-
 
   const handlePreviewA4Bill = () => {
     const dataUri = generateInvoicePDF('datauristring', { primaryColor: session?.invoicePrimaryColor, shopDetails: currentShopDetails });
@@ -478,7 +469,7 @@ export default function SaleDetailPage() {
       case 'unpaid':
         return 'destructive';
       default:
-        return 'outline'; // A neutral outline for unknown/default
+        return 'outline'; 
     }
   };
   
@@ -486,7 +477,7 @@ export default function SaleDetailPage() {
     if (!sale) return;
     setIsUpdatingStatus(true);
     
-    const payload = {
+    const payload: UpdateSaleStatusPayload = {
       saleId: sale.id,
       newStatus: newStatus,
       currentTotalAmount: sale.totalAmount,
@@ -495,7 +486,6 @@ export default function SaleDetailPage() {
     const result = await updateSalePaymentStatusAction(payload);
     if (result.success) {
       toast({ title: "Success", description: result.message });
-      // Re-fetch sale data to reflect changes
       const updatedSale = await getSaleByIdAction(sale.id);
       setSale(updatedSale);
     } else {
@@ -503,7 +493,6 @@ export default function SaleDetailPage() {
     }
     setIsUpdatingStatus(false);
   };
-
 
   if (isLoading) {
     return (
@@ -514,7 +503,7 @@ export default function SaleDetailPage() {
     );
   }
 
-  if (sale === undefined) { // Check for undefined to mean "not found" after fetch attempt
+  if (sale === undefined) { 
     return (
       <div className="flex flex-col items-center justify-center h-full">
         <p className="text-xl text-muted-foreground">Sale not found.</p>
@@ -527,7 +516,7 @@ export default function SaleDetailPage() {
     );
   }
   
-  if (sale === null) { // Check for null if it means initial loading state before first fetch
+  if (sale === null) { 
      return (
       <div className="flex flex-col items-center justify-center h-full">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -536,6 +525,16 @@ export default function SaleDetailPage() {
     );
   }
 
+  const displayPaymentMethod = useMemo(() => {
+    if (!sale) return 'N/A';
+    if (sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment') {
+      return sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
+    }
+    const lastNonManualPayment = [...sale.paymentHistory].reverse().find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
+    return lastNonManualPayment?.paymentMethod 
+      ? lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1) 
+      : 'N/A';
+  }, [sale]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -585,12 +584,7 @@ export default function SaleDetailPage() {
             <div><strong>Sale Type:</strong> <span className="capitalize">{sale.saleType}</span></div>
             <div>
                 <strong>Payment Method:</strong> 
-                <span className="capitalize ml-1">
-                    {sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment' 
-                        ? sale.paymentMethod 
-                        : (sale.paymentHistory.find(p=>p.paymentMethod && p.paymentMethod !== 'manual_adjustment')?.paymentMethod || 'N/A')
-                    }
-                </span>
+                <span className="capitalize ml-1">{displayPaymentMethod}</span>
             </div>
             <div className="flex items-center gap-2">
               <strong>Status:</strong>
@@ -679,7 +673,7 @@ export default function SaleDetailPage() {
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{new Date(payment.date).toLocaleString()}</td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">{payment.amount.toFixed(2)}</td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground capitalize">{payment.paymentMethod?.replace('_', ' ') || 'N/A'}</td>
-                      <td className="px-4 py-2 whitespace-normal text-sm text-muted-foreground">{payment.notes || '-'}</td>
+                      <td className="px-4 py-2 whitespace-normal text-sm text-muted-foreground max-w-xs truncate" title={payment.notes}>{payment.notes || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
