@@ -11,9 +11,10 @@ import { useToast } from "@/hooks/use-toast";
 import { getSession, type SessionData } from "@/app/login/actions";
 import { 
   getOwnerEmailsAction, addOwnerEmailAction, removeOwnerEmailAction,
-  getStaffEmailsAction, addStaffEmailAction, removeStaffEmailAction
+  getStaffEmailsAction, addStaffEmailAction, removeStaffEmailAction,
+  getLoginTimeSettingsAction, updateLoginTimeSettingsAction
 } from "@/app/(app)/admin/actions";
-import { Loader2, PlusCircle, Trash2, ShieldAlert, UserCog, Users } from "lucide-react"; 
+import { Loader2, PlusCircle, Trash2, ShieldAlert, UserCog, Users, Clock } from "lucide-react"; 
 
 
 export default function AdminSettingsPage() {
@@ -32,6 +33,11 @@ export default function AdminSettingsPage() {
   const [newStaffEmail, setNewStaffEmail] = useState("");
   const [isSubmittingStaff, setIsSubmittingStaff] = useState(false);
 
+  const [staffLoginStartTime, setStaffLoginStartTime] = useState("09:00");
+  const [staffLoginEndTime, setStaffLoginEndTime] = useState("23:00");
+  const [isLoadingTimeSettings, setIsLoadingTimeSettings] = useState(false);
+  const [isSubmittingTimeSettings, setIsSubmittingTimeSettings] = useState(false);
+
 
   useEffect(() => {
     async function fetchSessionAndData() {
@@ -49,7 +55,7 @@ export default function AdminSettingsPage() {
         return;
       }
       
-      await Promise.all([fetchOwnerEmails(), fetchStaffEmails()]);
+      await Promise.all([fetchOwnerEmails(), fetchStaffEmails(), fetchLoginTimeSettings()]);
       setIsLoadingPage(false);
     }
     fetchSessionAndData();
@@ -76,6 +82,19 @@ export default function AdminSettingsPage() {
       toast({ title: "Error", description: "Failed to load staff emails.", variant: "destructive" });
     } finally {
       setIsLoadingStaffEmails(false);
+    }
+  }
+  
+  async function fetchLoginTimeSettings() {
+    setIsLoadingTimeSettings(true);
+    try {
+      const settings = await getLoginTimeSettingsAction();
+      setStaffLoginStartTime(settings.startTime);
+      setStaffLoginEndTime(settings.endTime);
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to load login time settings.", variant: "destructive" });
+    } finally {
+      setIsLoadingTimeSettings(false);
     }
   }
 
@@ -133,6 +152,19 @@ export default function AdminSettingsPage() {
       toast({ title: "Error", description: result.message, variant: "destructive" });
     }
     setIsSubmittingStaff(false);
+  };
+
+  const handleUpdateTimeSettings = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsSubmittingTimeSettings(true);
+    const result = await updateLoginTimeSettingsAction(staffLoginStartTime, staffLoginEndTime);
+    if (result.success) {
+      toast({ title: "Success", description: result.message });
+      await fetchLoginTimeSettings(); // Re-fetch to confirm
+    } else {
+      toast({ title: "Error", description: result.message, variant: "destructive" });
+    }
+    setIsSubmittingTimeSettings(false);
   };
 
 
@@ -284,13 +316,66 @@ export default function AdminSettingsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Clock className="h-6 w-6" />Staff Login Time Window</CardTitle>
+          <CardDescription>
+            Define the hours during which staff members are allowed to log in. Times are in 24-hour format (HH:MM).
+            This applies only if their individual login access is enabled on the "Staff Access" page.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoadingTimeSettings ? (
+            <div className="flex items-center text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading time settings...
+            </div>
+          ) : (
+            <form onSubmit={handleUpdateTimeSettings} className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="staffLoginStartTime">Login Start Time</Label>
+                  <Input
+                    id="staffLoginStartTime"
+                    type="time"
+                    value={staffLoginStartTime}
+                    onChange={(e) => setStaffLoginStartTime(e.target.value)}
+                    disabled={isSubmittingTimeSettings}
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="staffLoginEndTime">Login End Time (Exclusive)</Label>
+                  <Input
+                    id="staffLoginEndTime"
+                    type="time"
+                    value={staffLoginEndTime}
+                    onChange={(e) => setStaffLoginEndTime(e.target.value)}
+                    disabled={isSubmittingTimeSettings}
+                    className="w-full"
+                  />
+                   <p className="text-xs text-muted-foreground mt-1">
+                    E.g., if set to 23:00, staff can login up to 22:59.
+                  </p>
+                </div>
+              </div>
+              <Button type="submit" disabled={isSubmittingTimeSettings || isLoadingTimeSettings}>
+                {isSubmittingTimeSettings ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Save Time Settings
+              </Button>
+            </form>
+          )}
+        </CardContent>
+      </Card>
+
+
+      <Card>
+        <CardHeader>
              <CardTitle className="text-base text-muted-foreground">Initial Setup Note</CardTitle>
         </CardHeader>
         <CardContent>
             <p className="text-sm text-muted-foreground">
                 If you are setting up the application for the first time, ensure you have manually added your email to the `ownerEmails` array 
-                (and optionally, an empty `staffEmails` array) in the `app_settings/role_management` document in your Firestore database.
-                Your user document in the `users` collection (e.g., `users/youremail@example.com`) should also ideally exist with `loginManuallyDisabled: false` (though the system will attempt to set this correctly on your first login as owner).
+                (and optionally, an empty `staffEmails` array, `staffLoginStartTime: "09:00"`, `staffLoginEndTime: "23:00"`) 
+                in the `app_settings/role_management` document in your Firestore database.
+                Your user document in the `users` collection (e.g., `users/youremail@example.com`) should also ideally exist with `loginManuallyDisabled: false`.
             </p>
         </CardContent>
       </Card>

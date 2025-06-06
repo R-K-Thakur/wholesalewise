@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { doc, getDoc, setDoc, updateDoc, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { getLoginTimeSettingsAction } from "@/app/(app)/admin/actions"; // Import the new action
 
 const SESSION_COOKIE_NAME = "auth-session";
 const APP_SETTINGS_COLLECTION = "app_settings";
@@ -12,10 +13,10 @@ const ROLE_MANAGEMENT_DOC = "role_management";
 const USERS_COLLECTION = "users";
 
 export interface SessionData {
-  username: string; 
+  username: string;
   email: string;
   role: "owner" | "staff";
-  name: string; 
+  name: string;
   invoicePrimaryColor?: string;
   shopName?: string;
   shopAddress?: string;
@@ -29,8 +30,7 @@ interface UserDocumentData {
   shopName?: string;
   shopAddress?: string;
   shopContact?: string;
-  loginManuallyDisabled?: boolean; // Added for manual login control
-  // loginApprovalStatus and lastLoginRequestTimestamp are for the previous approval system, removed for clarity
+  loginManuallyDisabled?: boolean;
 }
 
 interface RoleEmails {
@@ -89,80 +89,86 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     }
 
     if (!userRole) {
-        if (ownerEmails.length === 0 && staffEmails.length === 0) {
-            return { error: "Login failed: No authorized users are configured in the system. Please contact an administrator." };
-        }
-        return { error: "Login failed: This email address is not authorized for access." };
+      if (ownerEmails.length === 0 && staffEmails.length === 0) {
+        return { error: "Login failed: No authorized users are configured in the system. Please contact an administrator." };
+      }
+      return { error: "Login failed: This email address is not authorized for access." };
     }
 
     const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
     let userDocSnap = await getDoc(userDocRef);
     let userDocDataFromDb: UserDocumentData | null = userDocSnap.exists() ? userDocSnap.data() as UserDocumentData : null;
 
-    // Staff specific checks
-    if (userRole === "staff") {
-      if (userDocDataFromDb?.loginManuallyDisabled === true) {
-        return { error: "Access denied. Your login has been disabled by an owner." };
-      }
-
-      const now = new Date();
-      const currentHour = now.getHours(); // Server's local time hour (0-23)
-      // Deny if before 9 AM (hour < 9) or at/after 11 PM (hour >= 23)
-      if (currentHour < 9 || currentHour >= 23) {
-        return { error: "Access denied. Staff login is only permitted between 9:00 AM and 10:59 PM." };
-      }
-    }
-
-    const userDisplayName = userDocDataFromDb?.displayName?.trim() || userEmailLower;
     const userDataToSet: Partial<UserDocumentData> = {
       email: userEmailLower,
-      displayName: userDisplayName,
     };
-
-    // Ensure loginManuallyDisabled is set correctly, especially for new users or owners
-    if (isOwner) {
-        userDataToSet.loginManuallyDisabled = false; // Owners should not be manually disabled
-    } else if (userRole === "staff" && userDocDataFromDb?.loginManuallyDisabled === undefined) {
-        // Default for new staff or staff without this field is enabled
-        userDataToSet.loginManuallyDisabled = false;
-    } else if (userDocDataFromDb?.loginManuallyDisabled !== undefined) {
-        userDataToSet.loginManuallyDisabled = userDocDataFromDb.loginManuallyDisabled;
+    
+    if (userDocDataFromDb?.displayName && userDocDataFromDb.displayName.trim() !== "") {
+      userDataToSet.displayName = userDocDataFromDb.displayName.trim();
+    } else {
+      userDataToSet.displayName = userEmailLower; // Default if not set or empty
     }
-
-
+    
+    // Handle optional fields, only add them if they exist in Firestore or are being set.
     if (userDocDataFromDb?.invoicePrimaryColor) userDataToSet.invoicePrimaryColor = userDocDataFromDb.invoicePrimaryColor;
     if (userDocDataFromDb?.shopName) userDataToSet.shopName = userDocDataFromDb.shopName;
     if (userDocDataFromDb?.shopAddress) userDataToSet.shopAddress = userDocDataFromDb.shopAddress;
     if (userDocDataFromDb?.shopContact) userDataToSet.shopContact = userDocDataFromDb.shopContact;
+
+
+    if (isOwner) {
+      userDataToSet.loginManuallyDisabled = false; // Owners always enabled
+    } else { // Staff
+      if (userDocDataFromDb?.loginManuallyDisabled === true) {
+        return { error: "Access denied. Your login has been disabled by an owner." };
+      }
+      userDataToSet.loginManuallyDisabled = userDocDataFromDb?.loginManuallyDisabled === true; // Persist if already set, else false (enabled by default)
+
+      // Time-based restriction for staff
+      const { startTime: startTimeStr, endTime: endTimeStr } = await getLoginTimeSettingsAction();
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+
+      const [startH, startM] = startTimeStr.split(':').map(Number);
+      const [endH, endM] = endTimeStr.split(':').map(Number); // endH is exclusive (e.g. 23 means up to 22:59)
+
+
+      const isAfterStartTime = currentHour > startH || (currentHour === startH && currentMinute >= startM);
+      const isBeforeEndTime = currentHour < endH; // If endH is 23, allows up to 22:XX.
+
+      if (!(isAfterStartTime && isBeforeEndTime)) {
+        return { error: `Access denied. Staff login is only permitted between ${startTimeStr} and ${endTimeStr}.` };
+      }
+    }
     
-    // Remove undefined fields before setting
-    Object.keys(userDataToSet).forEach(key => {
-        const K = key as keyof Partial<UserDocumentData>;
-        if (userDataToSet[K] === undefined) {
-            delete userDataToSet[K];
+    if (!userDocSnap.exists()) {
+        // If user doc doesn't exist, ensure displayName is set and loginManuallyDisabled (if staff) is false
+        userDataToSet.displayName = userEmailLower; 
+        if (userRole === 'staff' && userDataToSet.loginManuallyDisabled === undefined) {
+            userDataToSet.loginManuallyDisabled = false;
         }
-    });
+    }
 
     await setDoc(userDocRef, userDataToSet, { merge: true });
-    // console.log(`[signInWithEmailAction] User document for ${userEmailLower} ensured/updated in Firestore.`);
-
+    console.log(`[signInWithEmailAction] User document for ${userEmailLower} ensured/updated.`);
 
     const sessionData: SessionData = {
-      username: userEmailLower,
+      username: userEmailLower, // Ensure username is set
       email: userEmailLower,
       role: userRole!,
-      name: userDisplayName,
+      name: userDataToSet.displayName!, // displayName is guaranteed to be set now
     };
     if (userDataToSet.invoicePrimaryColor) sessionData.invoicePrimaryColor = userDataToSet.invoicePrimaryColor;
     if (userDataToSet.shopName) sessionData.shopName = userDataToSet.shopName;
     if (userDataToSet.shopAddress) sessionData.shopAddress = userDataToSet.shopAddress;
     if (userDataToSet.shopContact) sessionData.shopContact = userDataToSet.shopContact;
 
-    // console.log('[signInWithEmailAction] Creating session with data:', sessionData);
+    console.log('[signInWithEmailAction] Creating session with data:', sessionData);
 
     const cookieSecure = process.env.NODE_ENV === 'production';
     const cookieSameSite = cookieSecure ? "none" as const : "lax" as const;
-    
+
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
       httpOnly: true,
       secure: cookieSecure,
@@ -175,14 +181,14 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
 
   } catch (e: any) {
     if (typeof e.message === 'string' && e.message.includes('NEXT_REDIRECT')) {
-      throw e; 
+      throw e;
     }
     console.error("[signInWithEmailAction] Caught an unhandled server error during login:", e);
     let safeErrorMessage = "An unexpected server error occurred during login.";
     if (e instanceof Error && typeof e.message === 'string' && e.message.trim() !== "") {
-        safeErrorMessage = `Login failed: ${e.message}`;
+      safeErrorMessage = `Login failed: ${e.message}`;
     } else if (typeof e === 'string' && e.trim() !== "") {
-        safeErrorMessage = `Login failed: ${e}`;
+      safeErrorMessage = `Login failed: ${e}`;
     }
     return { error: safeErrorMessage };
   }
@@ -209,19 +215,19 @@ export async function getSession(): Promise<SessionData | null> {
       else if (typeof parsedData.name !== 'string' || parsedData.name.trim() === '') reason = "Name missing or invalid.";
       else if (typeof parsedData.username !== 'string' || parsedData.username.trim() === '') reason = "Username missing or invalid.";
       else {
-        // Validate optional string fields: if present, they must be strings
         const optionalStringFields: (keyof SessionData)[] = ['invoicePrimaryColor', 'shopName', 'shopAddress', 'shopContact'];
         for (const field of optionalStringFields) {
-            if (parsedData[field] !== undefined && typeof parsedData[field] !== 'string') {
-                reason = `Optional field ${String(field)} is present but not a string.`;
-                break;
-            }
+          if (parsedData[field] !== undefined && typeof parsedData[field] !== 'string') {
+            reason = `Optional field ${String(field)} is present but not a string.`;
+            break;
+          }
         }
       }
-      
+
       if (reason) {
-        // console.warn(`[getSession] Session cookie parsed, but data is invalid or incomplete. Reason: ${reason}. Deleting cookie.`);
+        console.warn(`[getSession] Session cookie parsed, but data is invalid or incomplete. Reason: ${reason}. Deleting cookie.`);
         cookies().delete(SESSION_COOKIE_NAME);
+        // Removed explicit redirect here; middleware should handle it.
         return null;
       }
       return parsedData as SessionData;
@@ -233,6 +239,7 @@ export async function getSession(): Promise<SessionData | null> {
   }
   return null;
 }
+
 
 export async function updateUserDisplayNameAction(newName: string): Promise<{ success: boolean; message?: string }> {
   const session = await getSession();
@@ -323,9 +330,10 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
   if (details.shopAddress !== undefined && details.shopAddress.trim() !== (session.shopAddress || "")) hasChanges = true;
   if (details.shopContact !== undefined && details.shopContact.trim() !== (session.shopContact || "")) hasChanges = true;
 
-  if (!hasChanges && Object.values(details).every(val => val !== undefined && val !== "")) { 
+  if (!hasChanges && Object.values(details).every(val => val !== undefined && val !== null && (typeof val === 'string' ? val.trim() !== "" : true) )) { 
       return { success: true, message: "No changes to shop details were made." };
   }
+
 
   try {
     await setDoc(userDocRef, dataToUpdate, { merge: true });
