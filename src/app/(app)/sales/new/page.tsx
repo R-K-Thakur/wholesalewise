@@ -61,16 +61,37 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     name: "items",
   });
 
-  const watchedItems = form.watch("items");
+  // Get watched values for reactivity
+  const currentWatchedItems = form.watch("items");
+  const currentWatchedAmountPaid = form.watch("amountPaid");
   const watchedSaleType = form.watch("saleType");
-  const watchedAmountPaid = form.watch("amountPaid"); // Watch amountPaid for reactive UI updates
+
+
+  // Calculate totals for display and effects based on current watched values
+  // These are calculated fresh on every render where currentWatchedItems or currentWatchedAmountPaid changes.
+  const grandTotal = (currentWatchedItems || []).reduce((sum, item) => {
+    const quantity = Number(item?.quantitySold) || 0;
+    const price = Number(item?.pricePerUnitSold) || 0;
+    return sum + (quantity * price);
+  }, 0);
+
+  const amountPaidDisplay = Number(currentWatchedAmountPaid) || 0;
+  const amountDue = parseFloat((grandTotal - amountPaidDisplay).toFixed(2));
+
 
   const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
-  const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>(() => fields.map(() => ""));
+  const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>(() => 
+    (form.getValues("items") || []).map(item => {
+      if (item.productId) {
+        const product = allProducts.find(p => p.id === item.productId);
+        return product ? product.name : "";
+      }
+      return "";
+    })
+  );
 
-  // Synchronize itemSearchTexts with form state, especially product name after selection
   React.useEffect(() => {
-    const newSearchTexts = watchedItems.map((item, i) => {
+    const newSearchTexts = currentWatchedItems.map((item, i) => {
       if (item.productId) {
         const product = allProducts.find(p => p.id === item.productId);
         return product ? product.name : (itemSearchTexts[i] || "");
@@ -81,48 +102,19 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     if (newSearchTexts.length !== itemSearchTexts.length || newSearchTexts.some((text, i) => text !== itemSearchTexts[i])) {
       setItemSearchTexts(newSearchTexts);
     }
-  }, [watchedItems, allProducts, itemSearchTexts.length]); // Rerun if watchedItems change or allProducts list changes (less likely)
-
-
-  const calculateGrandTotal = React.useCallback(() => {
-    // Use form.getValues() for the most current state during calculation
-    const currentItems = form.getValues("items");
-    return currentItems.reduce((sum, item) => {
-      const quantity = Number(item.quantitySold) || 0;
-      const price = Number(item.pricePerUnitSold) || 0;
-      return sum + (quantity * price);
-    }, 0);
-  }, [form]); // form reference is stable, getValues fetches current
-
-  // GrandTotal and AmountDue for display, reacts to watchedItems and watchedAmountPaid
-  const grandTotal = React.useMemo(() => {
-    return watchedItems.reduce((sum, item) => {
-      const quantity = Number(item.quantitySold) || 0;
-      const price = Number(item.pricePerUnitSold) || 0;
-      return sum + (quantity * price);
-    }, 0);
-  }, [watchedItems]);
-
-  const amountDue = React.useMemo(() => {
-    const total = grandTotal;
-    const paid = Number(watchedAmountPaid) || 0;
-    return parseFloat((total - paid).toFixed(2));
-  }, [grandTotal, watchedAmountPaid]);
+  }, [currentWatchedItems, allProducts, itemSearchTexts.length]);
 
 
   React.useEffect(() => {
-    const newTotal = grandTotal; // Use the memoized grandTotal
-    const currentAmountPaid = Number(form.getValues("amountPaid")) || 0;
-
-    if (form.formState.dirtyFields.amountPaid !== true && newTotal > 0) {
-      // If amountPaid hasn't been touched by the user and there's a total, auto-fill it
-      form.setValue("amountPaid", parseFloat(newTotal.toFixed(2)), { shouldValidate: true });
-    } else if (currentAmountPaid > newTotal && newTotal >= 0) {
-      // If user paid more than the new total (e.g. item removed), adjust payment to new total
-      // Or if newTotal is 0, set amountPaid to 0.
-      form.setValue("amountPaid", parseFloat(newTotal.toFixed(2)), { shouldValidate: true });
+    // grandTotal is calculated directly from currentWatchedItems in this render cycle
+    const actualFormAmountPaid = Number(form.getValues("amountPaid")) || 0;
+  
+    if (form.formState.dirtyFields.amountPaid !== true && grandTotal > 0) {
+      form.setValue("amountPaid", parseFloat(grandTotal.toFixed(2)), { shouldValidate: true });
+    } else if (actualFormAmountPaid > grandTotal && grandTotal >= 0) {
+      form.setValue("amountPaid", parseFloat(grandTotal.toFixed(2)), { shouldValidate: true });
     }
-  }, [grandTotal, form]); // Re-run when grandTotal changes
+  }, [grandTotal, form.formState.dirtyFields.amountPaid, form.setValue, form.getValues]);
 
 
   const handleAddItem = () => {
@@ -163,20 +155,19 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
 
       form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerBaseUnit.toFixed(2)));
 
-      // Update search text for this item to reflect selected product name
       setItemSearchTexts(prevTexts => {
         const newTexts = [...prevTexts];
         newTexts[itemIndex] = product.name;
         return newTexts;
       });
 
-      form.trigger(`items.${itemIndex}`); // Trigger validation and re-render for the item
-      setOpenComboboxIndex(null); // Close popover
+      form.trigger(`items.${itemIndex}`);
+      setOpenComboboxIndex(null);
     }
   };
 
   React.useEffect(() => {
-    watchedItems.forEach((item, index) => {
+    currentWatchedItems.forEach((item, index) => {
         const product = allProducts.find(p => p.id === item.productId);
         if (product) {
             const price = watchedSaleType === 'wholesale'
@@ -187,20 +178,27 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
             if (item.soldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor > 0) {
                 pricePerSoldUnit = price * product.purchaseUnitConversionFactor;
             }
-            // Only update if the price is different to avoid infinite loops
-            if (Math.abs(form.getValues(`items.${index}.pricePerUnitSold`) - pricePerSoldUnit) > 0.001) {
+            
+            const currentPriceInForm = form.getValues(`items.${index}.pricePerUnitSold`);
+            if (typeof currentPriceInForm !== 'number' || Math.abs(currentPriceInForm - pricePerSoldUnit) > 0.001) {
                  form.setValue(`items.${index}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), { shouldValidate: true });
             }
         }
     });
-  }, [watchedSaleType, watchedItems, allProducts, form]);
+  }, [watchedSaleType, currentWatchedItems, allProducts, form]);
 
 
   async function onSubmit(data: SaleFormData) {
     form.clearErrors();
-    const currentGrandTotal = calculateGrandTotal(); // Use the callback for final total
+    // Use the grandTotal calculated directly from current (watched) form state for submission
+    const finalGrandTotalForSubmission = (data.items || []).reduce((sum, item) => {
+        const quantity = Number(item?.quantitySold) || 0;
+        const price = Number(item?.pricePerUnitSold) || 0;
+        return sum + (quantity * price);
+    }, 0);
 
-    if (data.amountPaid > currentGrandTotal + 0.001) {
+
+    if (data.amountPaid > finalGrandTotalForSubmission + 0.001) {
         form.setError("amountPaid", {message: "Amount paid cannot exceed the grand total."});
         toast({title: "Validation Error", description: "Amount paid cannot exceed the grand total.", variant: "destructive"});
         return;
@@ -240,7 +238,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       notes: data.notes || undefined,
       paymentMethod: data.paymentMethod,
       items: itemsForAction,
-      totalAmount: currentGrandTotal,
+      totalAmount: finalGrandTotalForSubmission,
       amountPaid: data.amountPaid,
     };
 
@@ -373,7 +371,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         <div>
           <h3 className="text-lg font-medium text-foreground mb-2">Items</h3>
           {fields.map((fieldItem, index) => {
-            const selectedProductForUnits = allProducts.find(p => p.id === watchedItems[index]?.productId);
+            const selectedProductForUnits = allProducts.find(p => p.id === currentWatchedItems[index]?.productId);
             const availableUnits: ProductUnit[] = selectedProductForUnits ?
                 (selectedProductForUnits.baseUnit === selectedProductForUnits.purchaseUnit ? [selectedProductForUnits.baseUnit] : [selectedProductForUnits.baseUnit, selectedProductForUnits.purchaseUnit].filter(Boolean) as ProductUnit[])
                 : [PRODUCT_UNITS[0]];
@@ -383,7 +381,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
               <FormField
                 control={form.control}
                 name={`items.${index}.productId`}
-                render={({ field: RHFfield }) => ( // RHFfield is for react-hook-form's field object
+                render={({ field: RHFfield }) => ( 
                   <FormItem className="flex flex-col">
                     <FormLabel>Product</FormLabel>
                     <Popover
@@ -404,12 +402,11 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                                       newTexts[index] = currentVal;
                                       return newTexts;
                                     });
-                                    // If user types manually after a product was selected, clear the product ID to force re-selection from popover
                                     if (RHFfield.value && allProducts.find(p => p.id === RHFfield.value)?.name !== currentVal) {
-                                        RHFfield.onChange(''); // Clear product ID
-                                        form.setValue(`items.${index}.pricePerUnitSold`, 0); // Reset price
+                                        RHFfield.onChange(''); 
+                                        form.setValue(`items.${index}.pricePerUnitSold`, 0); 
                                     }
-                                    if (!openComboboxIndex) setOpenComboboxIndex(index); // Open if not already
+                                    if (!openComboboxIndex) setOpenComboboxIndex(index); 
                                 }}
                                 onFocus={() => {
                                     if (allProducts.length > 0) setOpenComboboxIndex(index);
@@ -428,7 +425,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                           {allProducts
                             .filter(p => {
                                 const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                if (!searchText) return true; // Show all if search is empty for this item
+                                if (!searchText) return true; 
                                 return p.name.toLowerCase().includes(searchText) ||
                                     (p.sku && p.sku.toLowerCase().includes(searchText));
                             })
@@ -539,7 +536,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                         type="text"
                         readOnly
                         disabled
-                        value={((Number(watchedItems[index]?.quantitySold) || 0) * (Number(watchedItems[index]?.pricePerUnitSold) || 0)).toFixed(2)}
+                        value={((Number(currentWatchedItems[index]?.quantitySold) || 0) * (Number(currentWatchedItems[index]?.pricePerUnitSold) || 0)).toFixed(2)}
                         className="bg-muted/50"
                     />
                 </div>
