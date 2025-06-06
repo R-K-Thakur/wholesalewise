@@ -120,3 +120,9 @@ export interface RecordAdditionalPaymentPayload {
   paymentNotes?: string;
 }
 
+// This interface is used in login/actions.ts and admin/actions.ts
+export interface UserAccessDetails {
+  email: string;
+  displayName: string;
+  loginManuallyDisabled: boolean;
+}

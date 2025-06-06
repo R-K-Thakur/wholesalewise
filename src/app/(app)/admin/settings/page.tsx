@@ -12,12 +12,9 @@ import { getSession, type SessionData } from "@/app/login/actions";
 import { 
   getOwnerEmailsAction, addOwnerEmailAction, removeOwnerEmailAction,
   getStaffEmailsAction, addStaffEmailAction, removeStaffEmailAction
-  // Removed getPendingStaffAction, approveStaffLoginAction, denyStaffLoginAction
 } from "@/app/(app)/admin/actions";
 import { Loader2, PlusCircle, Trash2, ShieldAlert, UserCog, Users } from "lucide-react"; 
-// Removed UserCheck, UserX, Clock as they were for the approval section
 
-// Interface PendingStaffUser removed
 
 export default function AdminSettingsPage() {
   const router = useRouter();
@@ -35,10 +32,6 @@ export default function AdminSettingsPage() {
   const [newStaffEmail, setNewStaffEmail] = useState("");
   const [isSubmittingStaff, setIsSubmittingStaff] = useState(false);
 
-  // State for staff login approvals removed
-  // const [pendingStaffList, setPendingStaffList] = useState<PendingStaffUser[]>([]);
-  // const [isLoadingPendingStaff, setIsLoadingPendingStaff] = useState(false);
-  // const [isSubmittingApproval, setIsSubmittingApproval] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchSessionAndData() {
@@ -56,7 +49,6 @@ export default function AdminSettingsPage() {
         return;
       }
       
-      // Removed fetchPendingStaff from Promise.all
       await Promise.all([fetchOwnerEmails(), fetchStaffEmails()]);
       setIsLoadingPage(false);
     }
@@ -87,7 +79,6 @@ export default function AdminSettingsPage() {
     }
   }
 
-  // Removed fetchPendingStaff function
 
   const handleAddOwnerEmail = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -99,7 +90,6 @@ export default function AdminSettingsPage() {
       setNewOwnerEmail("");
       await fetchOwnerEmails();
       await fetchStaffEmails(); 
-      // await fetchPendingStaff(); // Removed
     } else {
       toast({ title: "Error", description: result.message, variant: "destructive" });
     }
@@ -127,7 +117,6 @@ export default function AdminSettingsPage() {
       toast({ title: "Success", description: result.message });
       setNewStaffEmail("");
       await fetchStaffEmails(); 
-      // await fetchPendingStaff(); // Removed
     } else {
       toast({ title: "Error", description: result.message, variant: "destructive" });
     }
@@ -140,14 +129,12 @@ export default function AdminSettingsPage() {
     if (result.success) {
       toast({ title: "Success", description: result.message });
       await fetchStaffEmails();
-      // await fetchPendingStaff(); // Removed
     } else {
       toast({ title: "Error", description: result.message, variant: "destructive" });
     }
     setIsSubmittingStaff(false);
   };
 
-  // Removed handleApproveStaff and handleDenyStaff functions
 
   if (isLoadingPage) {
     return (
@@ -168,14 +155,12 @@ export default function AdminSettingsPage() {
         <UserCog className="h-8 w-8 text-primary" />
         <h1 className="text-3xl font-bold tracking-tight font-headline">Admin Settings</h1>
       </div>
-
-      {/* Staff Login Approvals Card Removed */}
       
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><UserCog className="h-6 w-6" />Manage Owner Access</CardTitle>
           <CardDescription>
-            Add or remove emails for 'owner' privileges. Owners have full access to the application.
+            Add or remove emails for 'owner' privileges. Owners have full access to the application, including managing staff access.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -239,9 +224,9 @@ export default function AdminSettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Users className="h-6 w-6" />Manage Staff Access</CardTitle>
+          <CardTitle className="flex items-center gap-2"><Users className="h-6 w-6" />Manage Staff List</CardTitle>
           <CardDescription>
-            Add or remove emails for 'staff' privileges. Staff added here can log in directly.
+            Add or remove staff emails from the system. Login access for these staff members (enabled/disabled and time-based) is managed on the separate "Staff Access" page.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -264,14 +249,14 @@ export default function AdminSettingsPage() {
           </form>
 
           <div className="space-y-3">
-            <h3 className="text-base font-medium text-foreground">Current Staff:</h3>
+            <h3 className="text-base font-medium text-foreground">Current Staff Members:</h3>
             {isLoadingStaffEmails ? (
               <div className="flex items-center text-muted-foreground">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading staff emails...
               </div>
             ) : staffEmails.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No staff emails configured. Add an email to grant staff access.
+                No staff emails configured. Add emails to build your staff list.
               </p>
             ) : (
               <ul className="space-y-2">
@@ -305,12 +290,10 @@ export default function AdminSettingsPage() {
             <p className="text-sm text-muted-foreground">
                 If you are setting up the application for the first time, ensure you have manually added your email to the `ownerEmails` array 
                 (and optionally, an empty `staffEmails` array) in the `app_settings/role_management` document in your Firestore database.
-                Your user document in the `users` collection should also have `loginApprovalStatus: "approved"` (though this field is no longer actively used by the reverted login system, it's good practice if it was set previously).
+                Your user document in the `users` collection (e.g., `users/youremail@example.com`) should also ideally exist with `loginManuallyDisabled: false` (though the system will attempt to set this correctly on your first login as owner).
             </p>
         </CardContent>
       </Card>
     </div>
   );
 }
-
-    
