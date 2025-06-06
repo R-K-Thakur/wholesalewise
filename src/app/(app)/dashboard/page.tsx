@@ -15,13 +15,24 @@ import { RecentActivityWidget } from "./recent-activity-widget";
 
 
 export default async function DashboardPage() {
+  console.time("DashboardPage_GetSession");
   const userSession: SessionData | null = await getSession();
+  console.timeEnd("DashboardPage_GetSession");
   const userRole = userSession?.role || 'staff'; 
 
+  console.time("DashboardPage_GetProductsAction");
   const products: Product[] = await getProductsAction();
-  const sales: Sale[] = await getSalesAction();
-  const purchases: Purchase[] = await getPurchasesAction(); 
+  console.timeEnd("DashboardPage_GetProductsAction");
 
+  console.time("DashboardPage_GetSalesAction");
+  const sales: Sale[] = await getSalesAction();
+  console.timeEnd("DashboardPage_GetSalesAction");
+
+  console.time("DashboardPage_GetPurchasesAction");
+  const purchases: Purchase[] = await getPurchasesAction(); 
+  console.timeEnd("DashboardPage_GetPurchasesAction");
+
+  console.time("DashboardPage_DataProcessing");
   let totalRevenue = 0;
   let totalSalesUnits = 0;
 
@@ -75,6 +86,7 @@ export default async function DashboardPage() {
 
   activityItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const recentActivities = activityItems.slice(0, MAX_ACTIVITY_ITEMS);
+  console.timeEnd("DashboardPage_DataProcessing");
 
 
   return (
