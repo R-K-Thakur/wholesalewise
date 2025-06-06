@@ -39,7 +39,7 @@ interface RoleEmails {
   staffEmails: string[];
 }
 
-async function getRoleEmailsFromFirestore(): Promise<RoleEmails | null> {
+async function getRoleEmailsFromFirestore(): Promise<RoleEmails> {
   if (!db) {
     console.error(
       "getRoleEmailsFromFirestore: Firestore (db) instance is not initialized. Cannot fetch roles. Returning empty lists."
@@ -63,7 +63,7 @@ async function getRoleEmailsFromFirestore(): Promise<RoleEmails | null> {
     return { ownerEmails: [], staffEmails: [] }; 
   } catch (error) {
     console.error("Error fetching role emails from Firestore:", error);
-    return null;
+    return { ownerEmails: [], staffEmails: [] }; // Return default instead of null
   }
 }
 
@@ -77,10 +77,7 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   }
 
   const roleEmailsResult = await getRoleEmailsFromFirestore();
-
-  if (roleEmailsResult === null) {
-    return { error: "Could not verify user authorization due to a database access issue. Please try again later." };
-  }
+  // No need to check if roleEmailsResult is null anymore, as it always returns RoleEmails
   
   const { ownerEmails, staffEmails } = roleEmailsResult;
   const userEmailLower = email.toLowerCase();
@@ -116,19 +113,10 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
       userShopName = userData.shopName;
       userShopAddress = userData.shopAddress;
       userShopContact = userData.shopContact;
-      // No longer checking or updating loginApprovalStatus here for staff. Owners might still update their own user doc.
-      if (userRole === 'owner' && userData.loginApprovalStatus !== 'approved') {
-           await updateDoc(userDocRef, { 
-            displayName: userDisplayName,
-            // loginApprovalStatus: 'approved' // Optionally keep this for owners if field is kept in DB
-          });
-      }
     } else {
-      // Create user document if it doesn't exist, especially for owners. Staff might or might not need it depending on if profile features are used.
       await setDoc(userDocRef, { 
         email: userEmailLower, 
         displayName: userEmailLower, 
-        // loginApprovalStatus: userRole === 'owner' ? 'approved' : undefined, // No approval status needed for staff now
         invoicePrimaryColor: undefined,
         shopName: undefined,
         shopAddress: undefined,
@@ -366,3 +354,6 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
     return { success: false, message: "Shop details were saved, but failed to update your current session. Changes will reflect on next login." };
   }
 }
+
+
+    
