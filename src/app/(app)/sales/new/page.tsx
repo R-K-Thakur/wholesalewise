@@ -6,7 +6,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, PlusCircle, Trash2, Loader2, Check } from "lucide-react"; // Removed IndianRupee
+import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, Search as SearchIcon } from "lucide-react"; // Added SearchIcon
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -82,7 +82,6 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   React.useEffect(() => {
     const newTotal = calculateGrandTotal();
     const currentAmountPaid = form.getValues("amountPaid");
-    // Set initial amount paid to total only if it hasn't been touched by user (or is 0)
     if (currentAmountPaid === 0 && newTotal > 0 && form.formState.dirtyFields.amountPaid !== true) {
       form.setValue("amountPaid", parseFloat(newTotal.toFixed(2)), { shouldValidate: true });
     } else if (currentAmountPaid > newTotal) {
@@ -92,10 +91,12 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
 
 
   React.useEffect(() => {
-    const newSearchTexts = form.getValues("items").map((item, i) => {
+    const currentFormItems = form.getValues("items");
+    const newSearchTexts = currentFormItems.map((item, i) => {
       const product = allProducts.find(p => p.id === item.productId);
       return product ? product.name : (itemSearchTexts[i] || "");
     });
+
     if (newSearchTexts.length !== itemSearchTexts.length || newSearchTexts.some((text, i) => text !== itemSearchTexts[i])) {
       setItemSearchTexts(newSearchTexts);
     }
@@ -139,7 +140,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     const product = allProducts.find(p => p.id === productId);
     if (product) {
       if (product.quantityInStock === 0) {
-        toast({ title: "Out of Stock", description: `${product.name} is out of stock.`, variant: "destructive" });
+        toast({ title: "Out of Stock", description: `${product.name} is out of stock. Cannot select.`, variant: "destructive" });
         return;
       }
       form.setValue(`items.${itemIndex}.productId`, product.id);
@@ -187,7 +188,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   async function onSubmit(data: SaleFormData) {
     form.clearErrors();
     const currentGrandTotal = calculateGrandTotal();
-    if (data.amountPaid > currentGrandTotal + 0.001) { // Add epsilon for float comparison
+    if (data.amountPaid > currentGrandTotal + 0.001) { 
         form.setError("amountPaid", {message: "Amount paid cannot exceed the grand total."});
         toast({title: "Validation Error", description: "Amount paid cannot exceed the grand total.", variant: "destructive"});
         return;
@@ -378,24 +379,28 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                         onOpenChange={(isOpen) => setOpenComboboxIndex(isOpen ? index : null)}
                     >
                       <PopoverTrigger asChild>
-                         <Input
-                            placeholder="Type to search product..."
-                            value={itemSearchTexts[index] || ""}
-                            onChange={(e) => {
-                                const currentVal = e.target.value;
-                                const newSearchTexts = [...itemSearchTexts];
-                                newSearchTexts[index] = currentVal;
-                                setItemSearchTexts(newSearchTexts);
-                                if (RHFfield.value) { RHFfield.onChange(''); }
-                                setOpenComboboxIndex(index);
-                            }}
-                            onFocus={() => {
-                                if (allProducts.length > 0) {
-                                    setOpenComboboxIndex(index);
-                                }
-                            }}
-                            className="w-full"
-                        />
+                        <div className="relative">
+                          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                              placeholder="Type to search product..."
+                              value={itemSearchTexts[index] || ""}
+                              onChange={(e) => {
+                                  const currentVal = e.target.value;
+                                  const newSearchTexts = [...itemSearchTexts];
+                                  newSearchTexts[index] = currentVal;
+                                  setItemSearchTexts(newSearchTexts);
+                                  // If text changes and a product was selected, clear the product ID to force re-selection
+                                  if (RHFfield.value && product?.name !== currentVal) { RHFfield.onChange(''); }
+                                  setOpenComboboxIndex(index);
+                              }}
+                              onFocus={() => {
+                                  if (allProducts.length > 0) {
+                                      setOpenComboboxIndex(index);
+                                  }
+                              }}
+                              className="w-full pl-10" // Added padding for icon
+                          />
+                        </div>
                       </PopoverTrigger>
                       <PopoverContent
                         className="w-[--radix-popover-trigger-width] p-0 max-h-60 overflow-y-auto"
@@ -406,28 +411,21 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                           {allProducts
                             .filter(p => {
                                 const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                if (!searchText) return true;
+                                if (!searchText && RHFfield.value === p.id) return true; // Keep selected item visible if search is cleared
+                                if (!searchText) return true; // Show all if search is empty
                                 return p.name.toLowerCase().includes(searchText) ||
                                     (p.sku && p.sku.toLowerCase().includes(searchText));
                             })
-                            .slice(0,10)
+                            .slice(0,10) // Limit to 10 results for performance
                             .map((product) => (
                             <div
                               key={product.id}
                               onClick={() => {
-                                if (product.quantityInStock === 0) {
-                                    toast({ title: "Out of Stock", description: `${product.name} is currently out of stock.`, variant: "destructive"});
-                                    return;
-                                }
                                 handleProductSelectInternal(index, product.id);
                               }}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
                                   e.preventDefault();
-                                  if (product.quantityInStock === 0) {
-                                    toast({ title: "Out of Stock", description: `${product.name} is currently out of stock.`, variant: "destructive"});
-                                    return;
-                                  }
                                   handleProductSelectInternal(index, product.id);
                                 }
                               }}
@@ -454,10 +452,11 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                           ))}
                           {allProducts.filter(p => {
                                 const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                if (!searchText) return true; 
+                                if (!searchText && !RHFfield.value) return true;
+                                 if (!searchText && RHFfield.value) return false; // Don't show "No product found" if an item is selected and search is cleared
                                 return p.name.toLowerCase().includes(searchText) ||
                                     (p.sku && p.sku.toLowerCase().includes(searchText));
-                            }).length === 0 && (
+                            }).length === 0 && itemSearchTexts[index].trim() !== "" && (
                                <div className="px-3 py-2 text-sm text-muted-foreground">No product found.</div>
                             )
                           }
