@@ -25,9 +25,6 @@ export interface SessionData {
 interface UserDocumentData {
   email: string;
   displayName: string;
-  // loginApprovalStatus and lastLoginRequestTimestamp are no longer actively used by the reverted logic
-  loginApprovalStatus?: 'pending' | 'approved' | 'denied'; 
-  lastLoginRequestTimestamp?: string;
   invoicePrimaryColor?: string;
   shopName?: string;
   shopAddress?: string;
@@ -63,7 +60,7 @@ async function getRoleEmailsFromFirestore(): Promise<RoleEmails> {
     return { ownerEmails: [], staffEmails: [] }; 
   } catch (error) {
     console.error("Error fetching role emails from Firestore:", error);
-    return { ownerEmails: [], staffEmails: [] }; // Return default instead of null
+    return { ownerEmails: [], staffEmails: [] };
   }
 }
 
@@ -77,7 +74,6 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   }
 
   const roleEmailsResult = await getRoleEmailsFromFirestore();
-  // No need to check if roleEmailsResult is null anymore, as it always returns RoleEmails
   
   const { ownerEmails, staffEmails } = roleEmailsResult;
   const userEmailLower = email.toLowerCase();
@@ -97,7 +93,7 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   }
 
   const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
-  let userDisplayName = userEmailLower;
+  let userDisplayName = userEmailLower; // Default display name to email
   let userInvoicePrimaryColor: string | undefined = undefined;
   let userShopName: string | undefined = undefined;
   let userShopAddress: string | undefined = undefined;
@@ -108,15 +104,16 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
 
     if (userDocSnap.exists()) {
       const userData = userDocSnap.data() as UserDocumentData;
-      userDisplayName = userData.displayName || userEmailLower;
+      userDisplayName = (userData.displayName && userData.displayName.trim() !== "") ? userData.displayName.trim() : userEmailLower;
       userInvoicePrimaryColor = userData.invoicePrimaryColor;
       userShopName = userData.shopName;
       userShopAddress = userData.shopAddress;
       userShopContact = userData.shopContact;
     } else {
+      // If user doc doesn't exist, userDisplayName remains userEmailLower
       await setDoc(userDocRef, { 
         email: userEmailLower, 
-        displayName: userEmailLower, 
+        displayName: userDisplayName, 
         invoicePrimaryColor: undefined,
         shopName: undefined,
         shopAddress: undefined,
@@ -129,15 +126,17 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   }
 
   const sessionData: SessionData = {
-    username: email, 
-    email: email,
+    username: userEmailLower, // Ensure username is always the email
+    email: userEmailLower,    // Ensure email is always the lowercased email
     role: userRole,
-    name: userDisplayName,
+    name: userDisplayName,    // Ensured to be a non-empty string
     invoicePrimaryColor: userInvoicePrimaryColor,
     shopName: userShopName,
     shopAddress: userShopAddress,
     shopContact: userShopContact,
   };
+
+  console.log('[signInWithEmailAction] Creating session with data:', sessionData); // CRITICAL LOG
 
   const cookieSecure = process.env.NODE_ENV === 'production';
   const cookieSameSite = cookieSecure ? "none" as "none" | "lax" | "strict" | undefined : "lax" as "none" | "lax" | "strict" | undefined;
@@ -182,11 +181,11 @@ export async function getSession(): Promise<SessionData | null> {
         isValid = false;
         validationErrorReason = "Parsed data is not a valid object.";
       } else {
-        if (typeof parsedData.email !== 'string') { isValid = false; validationErrorReason = "Email field missing or not a string."; }
-        if (typeof parsedData.role !== 'string') { isValid = false; validationErrorReason = "Role field missing or not a string."; }
+        if (typeof parsedData.email !== 'string' || parsedData.email.trim() === "") { isValid = false; validationErrorReason = "Email field missing, not a string, or empty."; }
+        if (typeof parsedData.role !== 'string' || parsedData.role.trim() === "") { isValid = false; validationErrorReason = "Role field missing, not a string, or empty."; }
         else if (!(parsedData.role === 'owner' || parsedData.role === 'staff')) { isValid = false; validationErrorReason = `Invalid role value: ${parsedData.role}`; }
-        if (typeof parsedData.name !== 'string') { isValid = false; validationErrorReason = "Name field missing or not a string."; }
-        if (typeof parsedData.username !== 'string') { isValid = false; validationErrorReason = "Username field missing or not a string."; }
+        if (typeof parsedData.name !== 'string' || parsedData.name.trim() === "") { isValid = false; validationErrorReason = "Name field missing, not a string, or empty."; }
+        if (typeof parsedData.username !== 'string' || parsedData.username.trim() === "") { isValid = false; validationErrorReason = "Username field missing, not a string, or empty."; }
       }
 
       if (isValid) {
@@ -194,6 +193,20 @@ export async function getSession(): Promise<SessionData | null> {
       } else {
         console.warn(`[getSession] Session cookie parsed, but data is invalid or incomplete. Reason: ${validationErrorReason}. Deleting cookie. Parsed data keys:`, Object.keys(parsedData || {}));
         cookies().delete(SESSION_COOKIE_NAME); 
+        // If on the server and getSession is called (e.g., from layout or page),
+        // and it invalidates the session, this redirect might be necessary if middleware
+        // hasn't already caught the no-cookie state for a protected route.
+        // For client-side calls via server actions, this redirect might throw NEXT_REDIRECT.
+        // try {
+        //   redirect('/login'); // Potentially problematic, might be better handled by middleware
+        // } catch (e: any) {
+        //   if (typeof e.message === 'string' && e.message.includes('NEXT_REDIRECT')) {
+        //      console.log('[getSession] NEXT_REDIRECT caught during attempt to redirect from getSession after invalidating cookie.');
+        //      throw e; // Re-throw to let Next.js handle it
+        //   }
+        //   // If it's not a NEXT_REDIRECT error, just log it. The main goal is to return null.
+        //   console.error('[getSession] Error during redirect attempt after invalidating cookie:', e);
+        // }
         return null;
       }
     } catch (error) {
@@ -354,6 +367,4 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
     return { success: false, message: "Shop details were saved, but failed to update your current session. Changes will reflect on next login." };
   }
 }
-
-
     

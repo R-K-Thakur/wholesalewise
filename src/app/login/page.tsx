@@ -137,8 +137,7 @@ export default function LoginPage() {
         </CardContent>
       </Card>
        <p className="mt-4 text-xs text-muted-foreground text-center max-w-sm">
-        To gain 'owner' access, ensure the email you enter is listed in the `ownerEmails` array in the Firestore `app_settings/role_management` document.
-      </p>
+        </p>
     </div>
   );
 }
