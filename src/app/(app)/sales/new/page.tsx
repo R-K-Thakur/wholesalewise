@@ -28,7 +28,7 @@ import type { Product } from "@/lib/types";
 import { getProductsAction } from "../../products/actions";
 import { useToast } from "@/hooks/use-toast";
 import { recordSaleAction } from "../actions";
-import { saleFormSchema, type SaleFormData, type RecordSaleActionPayload } from "../schema";
+import { saleFormSchema, type SaleFormData, type RecordSaleActionPayload, type SaleItemFormStructure } from "../schema";
 import type { ProductUnit } from "@/lib/constants";
 import { PRODUCT_UNITS } from "@/lib/constants";
 
@@ -46,8 +46,8 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         productId: '',
         quantitySold: 1,
         pricePerUnitSold: 0,
-        soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : PRODUCT_UNITS[0],
-        baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : PRODUCT_UNITS[0]
+        soldUnit: PRODUCT_UNITS[0], 
+        // baseUnitSnapshot is not part of the form item directly
       }],
       paymentMethod: 'cash',
       customerName: '',
@@ -61,14 +61,10 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     name: "items",
   });
 
-  // Get watched values for reactivity
   const currentWatchedItems = form.watch("items");
   const currentWatchedAmountPaid = form.watch("amountPaid");
   const watchedSaleType = form.watch("saleType");
 
-
-  // Calculate totals for display and effects based on current watched values
-  // These are calculated fresh on every render where currentWatchedItems or currentWatchedAmountPaid changes.
   const grandTotal = (currentWatchedItems || []).reduce((sum, item) => {
     const quantity = Number(item?.quantitySold) || 0;
     const price = Number(item?.pricePerUnitSold) || 0;
@@ -78,9 +74,8 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   const amountPaidDisplay = Number(currentWatchedAmountPaid) || 0;
   const amountDue = parseFloat((grandTotal - amountPaidDisplay).toFixed(2));
 
-
   const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
-  const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>(() => 
+  const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>(() =>
     (form.getValues("items") || []).map(item => {
       if (item.productId) {
         const product = allProducts.find(p => p.id === item.productId);
@@ -91,30 +86,29 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   );
 
   React.useEffect(() => {
-    const newSearchTexts = currentWatchedItems.map((item, i) => {
-      if (item.productId) {
-        const product = allProducts.find(p => p.id === item.productId);
-        return product ? product.name : (itemSearchTexts[i] || "");
+    const newSearchTexts = currentWatchedItems.map((formItem, i) => {
+      const existingSearchText = itemSearchTexts[i] || "";
+      if (formItem.productId) {
+        const product = allProducts.find(p => p.id === formItem.productId);
+        return product ? product.name : existingSearchText;
       }
-      return itemSearchTexts[i] || "";
+      return existingSearchText; // Keep manually typed text if no productId
     });
-
+  
     if (newSearchTexts.length !== itemSearchTexts.length || newSearchTexts.some((text, i) => text !== itemSearchTexts[i])) {
       setItemSearchTexts(newSearchTexts);
     }
-  }, [currentWatchedItems, allProducts, itemSearchTexts.length]);
+  }, [currentWatchedItems, allProducts, itemSearchTexts]);
 
 
   React.useEffect(() => {
-    // grandTotal is calculated directly from currentWatchedItems in this render cycle
     const actualFormAmountPaid = Number(form.getValues("amountPaid")) || 0;
-  
     if (form.formState.dirtyFields.amountPaid !== true && grandTotal > 0) {
       form.setValue("amountPaid", parseFloat(grandTotal.toFixed(2)), { shouldValidate: true });
     } else if (actualFormAmountPaid > grandTotal && grandTotal >= 0) {
       form.setValue("amountPaid", parseFloat(grandTotal.toFixed(2)), { shouldValidate: true });
     }
-  }, [grandTotal, form.formState.dirtyFields.amountPaid, form.setValue, form.getValues]);
+  }, [grandTotal, form]);
 
 
   const handleAddItem = () => {
@@ -122,8 +116,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       productId: '',
       quantitySold: 1,
       pricePerUnitSold: 0,
-      soldUnit: allProducts.length > 0 ? allProducts[0].baseUnit : PRODUCT_UNITS[0],
-      baseUnitSnapshot: allProducts.length > 0 ? allProducts[0].baseUnit : PRODUCT_UNITS[0]
+      soldUnit: PRODUCT_UNITS[0],
     });
     setItemSearchTexts(prev => [...prev, ""]);
   };
@@ -137,15 +130,15 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     setItemSearchTexts(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleProductSelectInternal = (itemIndex: number, productId: string) => {
-    const product = allProducts.find(p => p.id === productId);
+  const handleProductSelectInternal = (itemIndex: number, productIdToSelect: string) => {
+    const product = allProducts.find(p => p.id === productIdToSelect);
     if (product) {
       if (product.quantityInStock === 0) {
         toast({ title: "Out of Stock", description: `${product.name} is out of stock. Cannot select.`, variant: "destructive" });
         return;
       }
       form.setValue(`items.${itemIndex}.productId`, product.id);
-      form.setValue(`items.${itemIndex}.baseUnitSnapshot`, product.baseUnit);
+      // baseUnitSnapshot is derived, not set directly here.
       form.setValue(`items.${itemIndex}.soldUnit`, product.baseUnit);
 
       const currentSaleType = form.getValues("saleType");
@@ -165,11 +158,31 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       setOpenComboboxIndex(null);
     }
   };
+  
+  const handleProductSearchInputChange = (index: number, value: string) => {
+    setItemSearchTexts(prev => {
+      const newTexts = [...prev];
+      newTexts[index] = value;
+      return newTexts;
+    });
+    // If user types, clear selected productId to indicate manual/ad-hoc entry
+    // unless they re-select from popover
+    if (form.getValues(`items.${index}.productId`)) {
+        const selectedProduct = allProducts.find(p => p.id === form.getValues(`items.${index}.productId`));
+        if (selectedProduct?.name !== value) {
+            form.setValue(`items.${index}.productId`, '');
+            // For ad-hoc, price and unit are manual, so don't auto-clear them here.
+            // User might be editing name of previously selected product to make it ad-hoc.
+        }
+    }
+    if (!openComboboxIndex) setOpenComboboxIndex(index);
+  };
+
 
   React.useEffect(() => {
     currentWatchedItems.forEach((item, index) => {
         const product = allProducts.find(p => p.id === item.productId);
-        if (product) {
+        if (product) { // Only auto-update price if it's a selected product
             const price = watchedSaleType === 'wholesale'
                 ? product.wholesalePricePerBaseUnit
                 : product.retailPricePerBaseUnit;
@@ -190,13 +203,12 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
 
   async function onSubmit(data: SaleFormData) {
     form.clearErrors();
-    // Use the grandTotal calculated directly from current (watched) form state for submission
+    
     const finalGrandTotalForSubmission = (data.items || []).reduce((sum, item) => {
         const quantity = Number(item?.quantitySold) || 0;
         const price = Number(item?.pricePerUnitSold) || 0;
         return sum + (quantity * price);
     }, 0);
-
 
     if (data.amountPaid > finalGrandTotalForSubmission + 0.001) {
         form.setError("amountPaid", {message: "Amount paid cannot exceed the grand total."});
@@ -207,24 +219,42 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     const itemsForAction: RecordSaleActionPayload['items'] = [];
     let hasError = false;
 
-    for (const [index, item] of data.items.entries()) {
-      if (!item.productId) {
-        toast({ title: "Error", description: `Product not selected for item ${index + 1}. Please type and select a product from the list.`, variant: "destructive"});
-        form.setError(`items.${index}.productId`, {message: "Product selection is required."});
-        hasError = true;
-        continue;
+    for (const [index, formItem] of data.items.entries()) {
+      const currentItemSearchText = itemSearchTexts[index]?.trim() || "";
+      let productNameForPayload: string;
+      let baseUnitForPayload: ProductUnit;
+      let productIdForPayload: string | undefined = formItem.productId || undefined;
+
+      if (productIdForPayload) {
+        const product = allProducts.find(p => p.id === productIdForPayload);
+        if (!product) {
+          toast({ title: "Error", description: `Invalid product selected for item ${index + 1}. Please re-select.`, variant: "destructive"});
+          form.setError(`items.${index}.productId`, {message: "Invalid product selected."}); // Error on visual input
+          hasError = true;
+          continue;
+        }
+        productNameForPayload = product.name;
+        baseUnitForPayload = product.baseUnit;
+      } else { // Ad-hoc item
+        if (currentItemSearchText === "") {
+          toast({ title: "Error", description: `Product name is required for item ${index + 1} as it's not selected from inventory.`, variant: "destructive"});
+          form.setError(`items.${index}.productId`, {message: "Product name is required for unlisted items."}); // Error on visual input
+          hasError = true;
+          continue;
+        }
+        productNameForPayload = currentItemSearchText;
+        baseUnitForPayload = formItem.soldUnit; // For ad-hoc, base unit is same as sold unit
+        productIdForPayload = undefined; 
       }
-      const product = allProducts.find(p => p.id === item.productId);
-      if (!product) {
-        toast({ title: "Error", description: `Invalid product for item ${index + 1}.`, variant: "destructive"});
-        form.setError(`items.${index}.productId`, {message: "Invalid product selected."});
-        hasError = true;
-        continue;
-      }
-      const itemTotal = (item.quantitySold || 0) * (item.pricePerUnitSold || 0);
+
+      const itemTotal = (formItem.quantitySold || 0) * (formItem.pricePerUnitSold || 0);
       itemsForAction.push({
-        ...item,
-        productNameSnapshot: product.name,
+        productId: productIdForPayload,
+        productNameSnapshot: productNameForPayload,
+        quantitySold: formItem.quantitySold,
+        pricePerUnitSold: formItem.pricePerUnitSold,
+        soldUnit: formItem.soldUnit,
+        baseUnitSnapshot: baseUnitForPayload,
         total: itemTotal,
       });
     }
@@ -272,7 +302,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   const handleSoldUnitChange = (itemIndex: number, newSoldUnit: ProductUnit) => {
     form.setValue(`items.${itemIndex}.soldUnit`, newSoldUnit);
     const product = allProducts.find(p => p.id === form.getValues(`items.${itemIndex}.productId`));
-    if (product) {
+    if (product) { // Only auto-update price if it's a selected (not ad-hoc) product
         const currentSaleType = form.getValues("saleType");
         const pricePerBaseUnit = currentSaleType === 'wholesale'
             ? product.wholesalePricePerBaseUnit
@@ -310,7 +340,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                     Wholesale Sale
                   </FormLabel>
                   <ShadFormDescription>
-                    Mark if this is a wholesale transaction. Prices adjust automatically.
+                    Mark if this is a wholesale transaction. Prices adjust automatically for listed products.
                   </ShadFormDescription>
                 </div>
                 <FormMessage />
@@ -371,17 +401,22 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         <div>
           <h3 className="text-lg font-medium text-foreground mb-2">Items</h3>
           {fields.map((fieldItem, index) => {
-            const selectedProductForUnits = allProducts.find(p => p.id === currentWatchedItems[index]?.productId);
-            const availableUnits: ProductUnit[] = selectedProductForUnits ?
-                (selectedProductForUnits.baseUnit === selectedProductForUnits.purchaseUnit ? [selectedProductForUnits.baseUnit] : [selectedProductForUnits.baseUnit, selectedProductForUnits.purchaseUnit].filter(Boolean) as ProductUnit[])
-                : [PRODUCT_UNITS[0]];
+            const currentProductId = currentWatchedItems[index]?.productId;
+            const selectedProductForUnits = allProducts.find(p => p.id === currentProductId);
+            
+            let availableUnits: ProductUnit[] = [...PRODUCT_UNITS]; // Default for ad-hoc
+            if (selectedProductForUnits) {
+                availableUnits = (selectedProductForUnits.baseUnit === selectedProductForUnits.purchaseUnit)
+                    ? [selectedProductForUnits.baseUnit]
+                    : [selectedProductForUnits.baseUnit, selectedProductForUnits.purchaseUnit].filter(Boolean) as ProductUnit[];
+            }
 
             return (
             <Card key={fieldItem.id} className="mb-4 p-4 space-y-3 bg-card/50 dark:bg-card/80">
               <FormField
                 control={form.control}
-                name={`items.${index}.productId`}
-                render={({ field: RHFfield }) => ( 
+                name={`items.${index}.productId`} 
+                render={({ field }) => ( 
                   <FormItem className="flex flex-col">
                     <FormLabel>Product</FormLabel>
                     <Popover
@@ -393,24 +428,10 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                           <div className="relative">
                             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                             <Input
-                                placeholder="Type or click to search product..."
+                                placeholder="Type to search or enter product name..."
                                 value={itemSearchTexts[index] || ""}
-                                onChange={(e) => {
-                                    const currentVal = e.target.value;
-                                    setItemSearchTexts(prev => {
-                                      const newTexts = [...prev];
-                                      newTexts[index] = currentVal;
-                                      return newTexts;
-                                    });
-                                    if (RHFfield.value && allProducts.find(p => p.id === RHFfield.value)?.name !== currentVal) {
-                                        RHFfield.onChange(''); 
-                                        form.setValue(`items.${index}.pricePerUnitSold`, 0); 
-                                    }
-                                    if (!openComboboxIndex) setOpenComboboxIndex(index); 
-                                }}
-                                onFocus={() => {
-                                    if (allProducts.length > 0) setOpenComboboxIndex(index);
-                                }}
+                                onChange={(e) => handleProductSearchInputChange(index, e.target.value)}
+                                onFocus={() => setOpenComboboxIndex(index)}
                                 className="w-full pl-10"
                             />
                           </div>
@@ -425,7 +446,8 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                           {allProducts
                             .filter(p => {
                                 const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                if (!searchText) return true; 
+                                if (!searchText && !currentProductId) return true; // Show all if input empty & no product selected
+                                if (!searchText && currentProductId) return p.name.toLowerCase().includes((allProducts.find(pr => pr.id === currentProductId)?.name || "").toLowerCase()); // If product selected, filter around its name
                                 return p.name.toLowerCase().includes(searchText) ||
                                     (p.sku && p.sku.toLowerCase().includes(searchText));
                             })
@@ -442,10 +464,10 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                               }}
                               role="button"
                               tabIndex={0}
-                              aria-pressed={RHFfield.value === product.id}
+                              aria-pressed={field.value === product.id}
                               className={cn(
                                 "flex items-center justify-between px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground",
-                                RHFfield.value === product.id && "bg-accent text-accent-foreground",
+                                field.value === product.id && "bg-accent text-accent-foreground",
                                 product.quantityInStock === 0 && "opacity-50 cursor-not-allowed"
                               )}
                             >
@@ -453,7 +475,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                                 <Check
                                   className={cn(
                                     "h-4 w-4",
-                                    RHFfield.value === product.id ? "opacity-100" : "opacity-0"
+                                    field.value === product.id ? "opacity-100" : "opacity-0"
                                   )}
                                 />
                                 <span>{product.name} (Stock: {product.quantityInStock} {product.baseUnit})</span>
@@ -463,11 +485,11 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                           ))}
                           {allProducts.filter(p => {
                                 const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                if (!searchText) return true;
-                                return p.name.toLowerCase().includes(searchText) ||
-                                    (p.sku && p.sku.toLowerCase().includes(searchText));
+                                if (!searchText && !currentProductId) return true;
+                                if (!searchText && currentProductId) return p.name.toLowerCase().includes((allProducts.find(pr => pr.id === currentProductId)?.name || "").toLowerCase());
+                                return p.name.toLowerCase().includes(searchText) || (p.sku && p.sku.toLowerCase().includes(searchText));
                             }).length === 0 && itemSearchTexts[index]?.trim() !== "" && (
-                               <div className="px-3 py-2 text-sm text-muted-foreground">No product found.</div>
+                               <div className="px-3 py-2 text-sm text-muted-foreground">No product found. Type full name for unlisted item.</div>
                             )
                           }
                         </div>
@@ -500,7 +522,8 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                       <Select
                         onValueChange={(value) => handleSoldUnitChange(index, value as ProductUnit)}
                         value={field.value}
-                        disabled={!selectedProductForUnits}
+                        // For ad-hoc items, user can select any unit. For selected products, list is filtered.
+                        disabled={!currentProductId && availableUnits.length === 0} 
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -524,7 +547,13 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                     <FormItem>
                       <FormLabel>Price/Unit (Rs.)</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 700.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
+                        <Input 
+                            type="number" 
+                            placeholder="e.g., 700.00" 
+                            step="0.01" {...field} 
+                            onChange={e => field.onChange(parseFloat(e.target.value) || 0)} 
+                            disabled={!!currentProductId} // Disabled if a product is selected from inventory
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -658,7 +687,7 @@ export default function NewSalePage() {
       <Card className="max-w-3xl mx-auto w-full">
         <CardHeader>
           <CardTitle>Sale Transaction Details</CardTitle>
-          <CardDescription>Enter the details for the new sale. Select products and specify quantities, prices, and amount paid.</CardDescription>
+          <CardDescription>Enter the details for the new sale. Select products from inventory or enter new product names directly.</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -674,11 +703,12 @@ export default function NewSalePage() {
           ) : (
             <SaleForm allProducts={products} />
           )}
+           {/* Message for no products is okay even if ad-hoc is allowed, because ideally one would add products. */}
            { !isLoading && !error && products.length === 0 && (
              <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-               <p>No products found. Please add products first to record a sale.</p>
+               <p>No products found in inventory. You can still sell items by typing their names directly.</p>
                <Button variant="default" asChild className="mt-4">
-                 <Link href="/products/new">Add Product</Link>
+                 <Link href="/products/new">Add Product to Inventory</Link>
                </Button>
             </div>
           )}
@@ -687,5 +717,3 @@ export default function NewSalePage() {
     </div>
   );
 }
-
-    

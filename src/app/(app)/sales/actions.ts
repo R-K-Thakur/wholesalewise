@@ -43,7 +43,7 @@ const mapDocToSale = (document: import('firebase/firestore').DocumentSnapshot | 
   return {
     id: document.id,
     items: Array.isArray(data.items) ? data.items.map((item: any): SaleItem => ({
-      productId: typeof item.productId === 'string' ? item.productId : '',
+      productId: typeof item.productId === 'string' ? item.productId : undefined, // Updated to allow undefined
       productNameSnapshot: typeof item.productNameSnapshot === 'string' ? item.productNameSnapshot : '',
       quantitySold: typeof item.quantitySold === 'number' ? item.quantitySold : 0,
       pricePerUnitSold: typeof item.pricePerUnitSold === 'number' ? item.pricePerUnitSold : 0,
@@ -80,46 +80,59 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
 
   try {
     await runTransaction(db, async (transaction) => {
-      const saleItemsForDb: SaleItem[] = [];
+      const saleItemsForDb: SaleItem[] = []; // This type matches the DB structure (SaleItem from types.ts)
       let calculatedBillTotalAmount = 0;
 
-      for (const item of data.items) {
-        if (!item.productId) {
-          throw new Error(`Missing productId for item: ${item.productNameSnapshot}`);
+      for (const item of data.items) { // item here is from RecordSaleActionPayload['items']
+        if (item.productId && item.productId.trim() !== "") { // Item is from inventory
+          const productRef = doc(db, PRODUCTS_COLLECTION, item.productId);
+          const productSnap = await transaction.get(productRef);
+
+          if (!productSnap.exists()) {
+            throw new Error(`Product "${item.productNameSnapshot}" (ID: ${item.productId}) not found.`);
+          }
+
+          const product = productSnap.data() as Omit<Product, 'id'>;
+
+          let quantitySoldInBaseUnits = item.quantitySold;
+          if (item.soldUnit === product.purchaseUnit && product.baseUnit !== product.purchaseUnit) {
+            quantitySoldInBaseUnits = item.quantitySold * (product.purchaseUnitConversionFactor || 1);
+          }
+
+          if (product.quantityInStock < quantitySoldInBaseUnits) {
+            throw new Error(
+              `Insufficient stock for "${item.productNameSnapshot}". Available (base units): ${product.quantityInStock}, Requested (base units): ${quantitySoldInBaseUnits}.`
+            );
+          }
+
+          const newStock = product.quantityInStock - quantitySoldInBaseUnits;
+          transaction.update(productRef, { 
+              quantityInStock: newStock, 
+              updatedAt: Timestamp.now().toDate().toISOString(), 
+              lastStockUpdateByEmail: userEmail, 
+              lastStockUpdateByName: userName 
+          });
+
+          saleItemsForDb.push({
+            productId: item.productId, // Keep productId
+            productNameSnapshot: product.name, // Use actual product name
+            baseUnitSnapshot: product.baseUnit, // Use actual product base unit
+            quantitySold: item.quantitySold,
+            pricePerUnitSold: item.pricePerUnitSold,
+            soldUnit: item.soldUnit,
+            total: item.quantitySold * item.pricePerUnitSold,
+          });
+        } else { // Ad-hoc item (not from inventory)
+          saleItemsForDb.push({
+            // productId will be undefined or null here, as per SaleItem type
+            productNameSnapshot: item.productNameSnapshot, // This is the manually entered name
+            baseUnitSnapshot: item.baseUnitSnapshot, // This was set to item.soldUnit for ad-hoc items
+            quantitySold: item.quantitySold,
+            pricePerUnitSold: item.pricePerUnitSold,
+            soldUnit: item.soldUnit,
+            total: item.quantitySold * item.pricePerUnitSold,
+          });
         }
-        const productRef = doc(db, PRODUCTS_COLLECTION, item.productId);
-        const productSnap = await transaction.get(productRef);
-
-        if (!productSnap.exists()) {
-          throw new Error(`Product "${item.productNameSnapshot}" (ID: ${item.productId}) not found.`);
-        }
-
-        const product = productSnap.data() as Omit<Product, 'id'>;
-
-        let quantitySoldInBaseUnits = item.quantitySold;
-        if (item.soldUnit === product.purchaseUnit && product.baseUnit !== product.purchaseUnit) {
-          quantitySoldInBaseUnits = item.quantitySold * (product.purchaseUnitConversionFactor || 1);
-        }
-
-        if (product.quantityInStock < quantitySoldInBaseUnits) {
-          throw new Error(
-            `Insufficient stock for "${item.productNameSnapshot}". Available (base units): ${product.quantityInStock}, Requested (base units): ${quantitySoldInBaseUnits}.`
-          );
-        }
-
-        const newStock = product.quantityInStock - quantitySoldInBaseUnits;
-        transaction.update(productRef, { 
-            quantityInStock: newStock, 
-            updatedAt: Timestamp.now().toDate().toISOString(), 
-            lastStockUpdateByEmail: userEmail, 
-            lastStockUpdateByName: userName 
-        });
-
-        saleItemsForDb.push({
-          ...item,
-          productNameSnapshot: product.name,
-          total: item.quantitySold * item.pricePerUnitSold,
-        });
         calculatedBillTotalAmount += item.quantitySold * item.pricePerUnitSold;
       }
 
@@ -183,7 +196,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
     });
 
     revalidateTag('sales');
-    revalidateTag('products'); // Revalidate products due to stock changes
+    revalidateTag('products'); 
     revalidatePath('/sales');
     revalidatePath('/products');
     revalidatePath('/dashboard');
@@ -283,7 +296,7 @@ export async function updateSalePaymentStatusAction(
 
       const paymentHistoryEntry: PaymentTransaction = {
         date: now,
-        amount: 0, // Default, will be overridden if needed
+        amount: 0, 
         paymentMethod: 'manual_adjustment',
         recordedByEmail: userEmail,
         recordedByName: userName,
@@ -298,7 +311,7 @@ export async function updateSalePaymentStatusAction(
         if (amountNeededToMakePaid > EPSILON) {
              paymentHistoryEntry.amount = amountNeededToMakePaid;
              notesForHistory += ` Adjustment payment of Rs. ${amountNeededToMakePaid.toFixed(2)} recorded.`;
-        } else if (amountNeededToMakePaid < -EPSILON) { // Overpaid, now corrected
+        } else if (amountNeededToMakePaid < -EPSILON) { 
              notesForHistory += ` Corrected from overpayment. Original paid Rs. ${currentPaidNum.toFixed(2)}.`;
         }
         paymentHistoryEntry.notes = notesForHistory;
@@ -467,8 +480,8 @@ export async function deleteSaleAction(saleId: string): Promise<{ success: boole
       const saleData = mapDocToSale(saleDoc);
 
       for (const item of saleData.items) {
-        if (!item.productId) {
-          console.warn(`Sale item in sale ${saleId} is missing a productId. Skipping stock restoration for this item. Item snapshot: ${item.productNameSnapshot}`);
+        if (!item.productId) { // Skip stock restoration for ad-hoc items
+          console.log(`[deleteSaleAction] Item "${item.productNameSnapshot}" in sale ${saleId} is unlisted. Skipping stock restoration.`);
           continue;
         }
         const productRef = doc(db, PRODUCTS_COLLECTION, item.productId);
@@ -482,7 +495,6 @@ export async function deleteSaleAction(saleId: string): Promise<{ success: boole
         const productData = productDoc.data() as Product; 
         let quantityToRestoreInBaseUnits = item.quantitySold;
 
-        // Convert quantitySold to base units if it was sold in purchase units
         if (item.soldUnit === productData.purchaseUnit && productData.baseUnit !== productData.purchaseUnit && productData.purchaseUnitConversionFactor > 0) {
           quantityToRestoreInBaseUnits = item.quantitySold * productData.purchaseUnitConversionFactor;
         }
@@ -506,12 +518,10 @@ export async function deleteSaleAction(saleId: string): Promise<{ success: boole
     revalidateTag('products');
     revalidatePath('/sales');
     revalidatePath('/dashboard');
-    // Consider revalidating individual product pages if many products are affected, but tags should generally cover this.
 
-    return { success: true, message: 'Sale deleted successfully and product stock restored.' };
+    return { success: true, message: 'Sale deleted successfully and product stock (for listed items) restored.' };
   } catch (error) {
     console.error(`Error deleting sale ${saleId}:`, error);
     return { success: false, message: `Failed to delete sale: ${error instanceof Error ? error.message : 'Unknown error'}` };
   }
 }
-

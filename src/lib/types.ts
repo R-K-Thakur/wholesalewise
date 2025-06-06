@@ -24,9 +24,9 @@ export interface Product {
   createdAt: string;
   updatedAt: string;
   createdByEmail?: string;
-  createdByName?: string; // Added for consistency
+  createdByName?: string; 
   lastStockUpdateByEmail?: string;
-  lastStockUpdateByName?: string; // Added for consistency
+  lastStockUpdateByName?: string; 
 }
 
 export interface Purchase {
@@ -73,7 +73,7 @@ export interface Sale {
 }
 
 export interface SaleItem {
-  productId: string;
+  productId?: string; // Made optional
   productNameSnapshot: string;
   quantitySold: number;
   pricePerUnitSold: number;
@@ -86,7 +86,7 @@ export type ProductFormData = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | '
 export type PurchaseFormData = Omit<Purchase, 'id' | 'productNameSnapshot' | 'totalCost' | 'purchaseDate' | 'purchaseUnitSnapshot' | 'createdAt' | 'updatedAt' | 'recordedByEmail' | 'recordedByName'> & { purchaseDate?: Date };
 
 
-export type SaleItemFormData = Omit<SaleItem, 'productNameSnapshot' | 'total' | 'pricePerUnitSold'> & { pricePerUnitSold?: number };
+export type SaleItemFormData = Omit<SaleItem, 'productNameSnapshot' | 'total' | 'pricePerUnitSold' | 'baseUnitSnapshot'> & { pricePerUnitSold?: number }; // baseUnitSnapshot removed from direct form item data
 export type SaleFormData = {
   items: SaleItemFormData[];
   saleType: 'wholesale' | 'retail';
@@ -125,7 +125,6 @@ export interface RecordAdditionalPaymentPayload {
   paymentMethod: 'cash' | 'card' | 'online'; 
   paymentNotes?: string;
 }
-
     
     
 
@@ -133,4 +132,5 @@ export interface RecordAdditionalPaymentPayload {
 
     
 
+    
 

@@ -2,18 +2,17 @@
 "use client";
 
 import { z } from "zod";
-import { PRODUCT_UNITS } from "@/lib/constants"; // Assuming ProductUnit is defined
+import { PRODUCT_UNITS } from "@/lib/constants"; 
 import type { ProductUnit } from "@/lib/constants";
 
 
 export const saleItemSchema = z.object({
-  productId: z.string().min(1, "Product is required."),
-  productNameSnapshot: z.string().optional(), // Will be populated before sending to action
+  productId: z.string().optional(), 
+  // productNameSnapshot is not part of the direct form item schema, it's derived or from itemSearchTexts
   quantitySold: z.coerce.number().min(1, "Quantity must be at least 1."),
   pricePerUnitSold: z.coerce.number().min(0.01, "Price must be positive."),
   soldUnit: z.enum(PRODUCT_UNITS, { errorMap: () => ({ message: 'Invalid sold unit.'}) }),
-  baseUnitSnapshot: z.enum(PRODUCT_UNITS, { errorMap: () => ({ message: 'Invalid base unit snapshot.'}) }),
-  total: z.coerce.number().optional(), // Calculated field
+  // baseUnitSnapshot is not part of the direct form item schema, it's derived or defaulted
 });
 
 export const saleFormSchema = z.object({
@@ -40,14 +39,23 @@ export const saleFormSchema = z.object({
   }
 });
 
-export type SaleItemFormData = z.infer<typeof saleItemSchema>;
+export type SaleItemFormStructure = z.infer<typeof saleItemSchema>; // Represents one item in the form's items array
 export type SaleFormData = z.infer<typeof saleFormSchema>;
 
 // This type will be used for the data sent to the server action
 export type RecordSaleActionPayload = Omit<SaleFormData, 'customerName' | 'notes' | 'items'> & {
-  customerName?: string; // Making them truly optional for action
+  customerName?: string; 
   notes?: string;
-  items: Array<SaleItemFormData & { productNameSnapshot: string; total: number }>; // Ensure productNameSnapshot and total are present
-  totalAmount: number; // This is the grand total of the bill
-  amountPaid: number; // This is the amount paid in this specific transaction
+  items: Array<{ // Definition for items in the action payload
+    productId?: string; // Optional, for ad-hoc items
+    productNameSnapshot: string; // Always required
+    quantitySold: number;
+    pricePerUnitSold: number;
+    soldUnit: ProductUnit;
+    baseUnitSnapshot: ProductUnit; // Always required for payload
+    total: number;
+  }>;
+  totalAmount: number; 
+  amountPaid: number; 
 };
+
