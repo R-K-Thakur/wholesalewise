@@ -64,7 +64,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
   try {
     await runTransaction(db, async (transaction) => {
       const saleItemsForDb: SaleItem[] = [];
-      let calculatedBillTotalAmount = 0; 
+      let calculatedBillTotalAmount = 0;
 
       for (const item of data.items) {
         if (!item.productId) {
@@ -124,10 +124,9 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         paymentStatus = 'paid';
       } else if (amountPaidThisTransaction > EPSILON && totalAmountDueForSale > EPSILON) {
         paymentStatus = 'partially_paid';
-      } else if (amountPaidThisTransaction <= EPSILON && calculatedBillTotalAmount > EPSILON) {
+      } else if (amountPaidThisTransaction <= EPSILON && calculatedBillTotalAmount > EPSILON) { // If amountPaid is 0 (or effectively 0) and bill has a total
         paymentStatus = 'unpaid';
       }
-
 
       const paymentHistory: PaymentTransaction[] = [];
       if (amountPaidThisTransaction > EPSILON) {
@@ -147,7 +146,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         items: saleItemsForDb,
         totalAmount: calculatedBillTotalAmount,
         totalPaidAmount: amountPaidThisTransaction,
-        totalAmountDue: totalAmountDueForSale < 0 ? 0 : totalAmountDueForSale, // Ensure due is not negative
+        totalAmountDue: totalAmountDueForSale < 0 ? 0 : totalAmountDueForSale,
         paymentStatus: paymentStatus,
         paymentHistory: paymentHistory,
         notes: data.notes || '',
@@ -199,7 +198,7 @@ export async function getSaleByIdAction(id: string): Promise<Sale | undefined> {
   }
 }
 
-interface UpdateSaleStatusPayload {
+export interface UpdateSaleStatusPayload {
   saleId: string;
   newStatus: Sale['paymentStatus'];
   currentTotalAmount: number; // Total bill amount
@@ -224,9 +223,9 @@ export async function updateSalePaymentStatusAction(
       if (!saleDoc.exists()) {
         throw new Error('Sale not found.');
       }
-      const currentSaleData = mapDocToSale(saleDoc); // Use mapDocToSale to ensure correct types
+      const currentSaleData = mapDocToSale(saleDoc); 
 
-      const updateData: Partial<Sale> = { // Use Partial<Sale> for type safety
+      const updateData: { [key: string]: any } = { 
         paymentStatus: newStatus,
         updatedAt: now,
       };
@@ -239,22 +238,19 @@ export async function updateSalePaymentStatusAction(
         updateData.totalPaidAmount = saleTotalAmount;
         updateData.totalAmountDue = 0;
         
-        let paymentAmountForHistory = amountNeededToMakePaid;
+        let paymentAmountForHistory = amountNeededToMakePaid > EPSILON ? amountNeededToMakePaid : 0;
         let notesForHistory = `Status manually changed to 'Paid' by ${userEmail}.`;
         
         if (amountNeededToMakePaid < -EPSILON) { // Was overpaid
             notesForHistory += ` Original total paid Rs. ${currentSaleData.totalPaidAmount.toFixed(2)}. Amount adjusted to Rs. ${saleTotalAmount.toFixed(2)}.`;
-            paymentAmountForHistory = 0; 
         } else if (Math.abs(amountNeededToMakePaid) <= EPSILON && Math.abs(currentSaleData.totalPaidAmount - saleTotalAmount) <= EPSILON) {
-            notesForHistory += ` Status confirmed as 'Paid'.`;
-            paymentAmountForHistory = 0;
+            notesForHistory += ` Status confirmed as 'Paid'. No financial adjustment recorded.`;
         } else if (amountNeededToMakePaid > EPSILON) {
             notesForHistory += ` Adjustment payment of Rs. ${amountNeededToMakePaid.toFixed(2)} recorded.`;
-        } else { // amountNeededToMakePaid is effectively 0, but totalPaidAmount was not totalAmount
-             notesForHistory += ` Total paid amount (Rs. ${currentSaleData.totalPaidAmount.toFixed(2)}) considered full payment.`;
-             paymentAmountForHistory = 0;
+        } else { 
+             notesForHistory += ` Total paid amount (Rs. ${currentSaleData.totalPaidAmount.toFixed(2)}) considered full payment. No financial adjustment recorded.`;
         }
-
+        
         paymentHistoryEntry = {
             date: now,
             amount: paymentAmountForHistory,
@@ -270,19 +266,21 @@ export async function updateSalePaymentStatusAction(
           date: now,
           amount: 0, 
           paymentMethod: 'manual_adjustment',
-          notes: `Status manually changed to 'Unpaid' by ${userEmail}. Original paid amount Rs. ${currentSaleData.totalPaidAmount.toFixed(2)} is now voided for status purposes.`,
+          notes: `Status manually changed to 'Unpaid' by ${userEmail}. Original paid amount Rs. ${currentSaleData.totalPaidAmount.toFixed(2)} zeroed for status.`,
           recordedByEmail: userEmail,
         };
       } else if (newStatus === 'partially_paid') {
-         updateData.totalPaidAmount = currentSaleData.totalPaidAmount; // Keep existing paid amount
+         updateData.totalPaidAmount = currentSaleData.totalPaidAmount;
          updateData.totalAmountDue = parseFloat((saleTotalAmount - currentSaleData.totalPaidAmount).toFixed(2));
          if (updateData.totalAmountDue < 0) updateData.totalAmountDue = 0;
 
          let notesForPartial = `Status manually changed to 'Partially Paid' by ${userEmail}.`;
-         if (currentSaleData.paymentStatus === 'paid') {
-            notesForPartial += ` Was previously 'Paid'. Current paid amount: Rs. ${currentSaleData.totalPaidAmount.toFixed(2)}.`;
+         if (currentSaleData.paymentStatus === 'paid' && currentSaleData.totalPaidAmount > EPSILON) {
+            notesForPartial += ` Was 'Paid'. Current paid: Rs. ${currentSaleData.totalPaidAmount.toFixed(2)}. Due: Rs. ${updateData.totalAmountDue.toFixed(2)}.`;
          } else if (currentSaleData.paymentStatus === 'unpaid') {
-            notesForPartial += ` Was previously 'Unpaid'. Current paid amount: Rs. ${currentSaleData.totalPaidAmount.toFixed(2)}. Ensure payments are recorded if any.`;
+            notesForPartial += ` Was 'Unpaid'. Current paid: Rs. ${currentSaleData.totalPaidAmount.toFixed(2)}. Due: Rs. ${updateData.totalAmountDue.toFixed(2)}.`;
+         } else {
+            notesForPartial += ` Current paid: Rs. ${currentSaleData.totalPaidAmount.toFixed(2)}. Due: Rs. ${updateData.totalAmountDue.toFixed(2)}.`;
          }
          paymentHistoryEntry = {
             date: now,
@@ -337,7 +335,7 @@ export async function recordAdditionalPaymentAction(
       const currentSaleData = mapDocToSale(saleDoc);
 
       const currentDue = parseFloat(currentSaleData.totalAmountDue.toFixed(2));
-      if (amountPaidNow > currentDue + EPSILON) { // Allow for tiny float discrepancies
+      if (amountPaidNow > currentDue + EPSILON) {
         throw new Error(`Payment amount (Rs. ${amountPaidNow.toFixed(2)}) exceeds amount due (Rs. ${currentDue.toFixed(2)}). Please adjust or mark as full payment.`);
       }
 
@@ -345,15 +343,20 @@ export async function recordAdditionalPaymentAction(
         date: now,
         amount: parseFloat(amountPaidNow.toFixed(2)),
         paymentMethod: paymentMethod,
-        notes: paymentNotes || undefined,
         recordedByEmail: userEmail,
       };
+      
+      // Only add notes if paymentNotes has a value
+      if (paymentNotes && paymentNotes.trim() !== "") {
+        newPaymentTransaction.notes = paymentNotes.trim();
+      }
+
 
       const updatedPaymentHistory = [...currentSaleData.paymentHistory, newPaymentTransaction];
       const newTotalPaidAmount = parseFloat((currentSaleData.totalPaidAmount + amountPaidNow).toFixed(2));
       let newTotalAmountDue = parseFloat((currentSaleData.totalAmount - newTotalPaidAmount).toFixed(2));
       
-      if (newTotalAmountDue < 0) { // Handle potential float precision issues making it slightly negative
+      if (newTotalAmountDue < EPSILON) { 
           newTotalAmountDue = 0;
       }
 
