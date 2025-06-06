@@ -5,14 +5,13 @@ import { revalidatePath } from "next/cache";
 import { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, collection, query, where, getDocs, Timestamp, writeBatch, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { getSession, type SessionData } from "@/app/login/actions";
-import type { UserAccessDetails } from "@/lib/types";
+// UserAccessDetails type import is removed as it's no longer used
 
 const APP_SETTINGS_COLLECTION = "app_settings";
 const ROLE_MANAGEMENT_DOC = "role_management";
 const USERS_COLLECTION = "users";
 
-const DEFAULT_STAFF_LOGIN_START_TIME = "09:00";
-const DEFAULT_STAFF_LOGIN_END_TIME = "23:00";
+// Removed default login times, as they are hardcoded in login/actions.ts again
 
 
 async function verifyOwner(): Promise<SessionData> {
@@ -65,16 +64,13 @@ export async function addOwnerEmailAction(emailToAdd: string): Promise<{ success
       const roleDoc = await transaction.get(roleManagementRef);
       let ownerEmails: string[] = [];
       let staffEmails: string[] = [];
-      let staffLoginStartTime = DEFAULT_STAFF_LOGIN_START_TIME;
-      let staffLoginEndTime = DEFAULT_STAFF_LOGIN_END_TIME;
-
+      // Removed staffLoginStartTime, staffLoginEndTime from local vars
 
       if (roleDoc.exists()) {
         const data = roleDoc.data();
         ownerEmails = (data?.ownerEmails && Array.isArray(data.ownerEmails)) ? data.ownerEmails.map(e => String(e).toLowerCase()) : [];
         staffEmails = (data?.staffEmails && Array.isArray(data.staffEmails)) ? data.staffEmails.map(e => String(e).toLowerCase()) : [];
-        staffLoginStartTime = data?.staffLoginStartTime || DEFAULT_STAFF_LOGIN_START_TIME;
-        staffLoginEndTime = data?.staffLoginEndTime || DEFAULT_STAFF_LOGIN_END_TIME;
+        // Removed reading staffLoginStartTime, staffLoginEndTime
       }
 
       if (ownerEmails.includes(normalizedEmail)) {
@@ -90,25 +86,24 @@ export async function addOwnerEmailAction(emailToAdd: string): Promise<{ success
       if (roleDoc.exists()) {
         transaction.update(roleManagementRef, updatePayload);
       } else {
+        // Simplified initial role data, no login times
         const initialRoleData: any = { 
           ownerEmails: [normalizedEmail], 
           staffEmails: [],
-          staffLoginStartTime: staffLoginStartTime, // Use existing or default
-          staffLoginEndTime: staffLoginEndTime,     // Use existing or default
         };
         transaction.set(roleManagementRef, initialRoleData);
       }
       
+      // No loginManuallyDisabled field for owners
       transaction.set(userDocRef, { 
         email: normalizedEmail, 
         displayName: normalizedEmail,
-        loginManuallyDisabled: false, 
       }, { merge: true });
     });
     
     revalidatePath("/admin/settings");
-    revalidatePath("/admin/staff-access"); 
-    return { success: true, message: "Owner email added successfully. Their login is enabled." };
+    // No revalidatePath for /admin/staff-access as it's being removed
+    return { success: true, message: "Owner email added successfully." };
   } catch (error) {
     console.error("Error adding owner email:", error);
     return { success: false, message: `Failed to add owner email: ${error instanceof Error ? error.message : "Unknown error"}` };
@@ -150,7 +145,7 @@ export async function removeOwnerEmailAction(emailToRemove: string): Promise<{ s
     });
     
     revalidatePath("/admin/settings");
-    revalidatePath("/admin/staff-access");
+    // No revalidatePath for /admin/staff-access
     return { success: true, message: "Owner email removed successfully." };
   } catch (error) {
     console.error("Error removing owner email:", error);
@@ -200,50 +195,47 @@ export async function addStaffEmailAction(emailToAdd: string): Promise<{ success
       const roleDoc = await transaction.get(roleManagementRef);
       let ownerEmails: string[] = [];
       let staffEmails: string[] = [];
-      let staffLoginStartTime = DEFAULT_STAFF_LOGIN_START_TIME;
-      let staffLoginEndTime = DEFAULT_STAFF_LOGIN_END_TIME;
+      // Removed staffLoginStartTime, staffLoginEndTime from local vars
 
       if (roleDoc.exists()) {
         const data = roleDoc.data();
         ownerEmails = (data?.ownerEmails && Array.isArray(data.ownerEmails)) ? data.ownerEmails.map(e => String(e).toLowerCase()) : [];
         staffEmails = (data?.staffEmails && Array.isArray(data.staffEmails)) ? data.staffEmails.map(e => String(e).toLowerCase()) : [];
-        staffLoginStartTime = data?.staffLoginStartTime || DEFAULT_STAFF_LOGIN_START_TIME;
-        staffLoginEndTime = data?.staffLoginEndTime || DEFAULT_STAFF_LOGIN_END_TIME;
+        // Removed reading staffLoginStartTime, staffLoginEndTime
       }
 
       if (ownerEmails.includes(normalizedEmail)) {
         throw new Error("Email already exists in the owner list. Cannot be both owner and staff.");
       }
       if (staffEmails.includes(normalizedEmail)) {
+        // Just ensure user doc exists, no loginManuallyDisabled logic
          transaction.set(userDocRef, {
           email: normalizedEmail,
           displayName: normalizedEmail, 
-          loginManuallyDisabled: false,
         }, { merge: true });
-        throw new Error("Email already exists in the staff list. Their login access has been ensured to be enabled.");
+        throw new Error("Email already exists in the staff list.");
       }
       
       if (roleDoc.exists()) {
         transaction.update(roleManagementRef, { staffEmails: arrayUnion(normalizedEmail) });
       } else {
+        // Simplified initial role data, no login times
         transaction.set(roleManagementRef, { 
             ownerEmails: [], 
             staffEmails: [normalizedEmail],
-            staffLoginStartTime: staffLoginStartTime,
-            staffLoginEndTime: staffLoginEndTime,
         });
       }
       
+      // No loginManuallyDisabled field
       transaction.set(userDocRef, { 
         email: normalizedEmail, 
         displayName: normalizedEmail, 
-        loginManuallyDisabled: false,
       }, { merge: true });
     });
         
     revalidatePath("/admin/settings");
-    revalidatePath("/admin/staff-access");
-    return { success: true, message: "Staff email added. Their login is enabled by default." };
+    // No revalidatePath for /admin/staff-access
+    return { success: true, message: "Staff email added. Login is subject to time restrictions." };
   } catch (error) {
     console.error("Error adding staff email:", error);
     return { success: false, message: `Failed to add staff email: ${error instanceof Error ? error.message : "Unknown error"}` };
@@ -263,7 +255,8 @@ export async function removeStaffEmailAction(emailToRemove: string): Promise<{ s
     const normalizedEmailToRemove = emailToRemove.toLowerCase();
 
     const roleManagementRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
-    const userDocRef = doc(db, USERS_COLLECTION, normalizedEmailToRemove);
+    // No need to interact with userDoc for loginManuallyDisabled
+    // const userDocRef = doc(db, USERS_COLLECTION, normalizedEmailToRemove);
 
     await runTransaction(db, async (transaction) => {
       const roleDoc = await transaction.get(roleManagementRef);
@@ -280,168 +273,25 @@ export async function removeStaffEmailAction(emailToRemove: string): Promise<{ s
       transaction.update(roleManagementRef, {
         staffEmails: arrayRemove(normalizedEmailToRemove)
       });
-      transaction.set(userDocRef, { loginManuallyDisabled: true }, { merge: true });
+      // No update to userDoc for loginManuallyDisabled
+      // transaction.set(userDocRef, { loginManuallyDisabled: true }, { merge: true });
     });
     
     revalidatePath("/admin/settings");
-    revalidatePath("/admin/staff-access");
-    return { success: true, message: "Staff email removed successfully and their login access has been disabled." };
+    // No revalidatePath for /admin/staff-access
+    return { success: true, message: "Staff email removed successfully." };
   } catch (error) {
     console.error("Error removing staff email:", error);
     return { success: false, message: `Failed to remove staff email: ${error instanceof Error ? error.message : "Unknown error"}` };
   }
 }
 
-// --- Staff Login Access Management Actions ---
+// --- Staff Login Access Management Actions (REMOVED) ---
+// getStaffWithAccessStatusAction is removed
+// toggleStaffLoginAccessAction is removed
 
-export async function getStaffWithAccessStatusAction(): Promise<UserAccessDetails[]> {
-  try {
-    await verifyOwner();
-    if (!db) {
-      console.error("DB not available for getStaffWithAccessStatusAction");
-      return [];
-    }
+// --- Staff Login Time Window Actions (REMOVED) ---
+// getLoginTimeSettingsAction is removed
+// updateLoginTimeSettingsAction is removed
 
-    const roleManagementRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
-    const roleDocSnap = await getDoc(roleManagementRef);
-
-    if (!roleDocSnap.exists()) {
-      console.warn("Role management document not found.");
-      return [];
-    }
-
-    const roleData = roleDocSnap.data();
-    const staffEmails: string[] = (roleData?.staffEmails && Array.isArray(roleData.staffEmails))
-      ? roleData.staffEmails.map((e: any) => String(e).toLowerCase())
-      : [];
-
-    if (staffEmails.length === 0) {
-      return [];
-    }
-
-    const staffAccessDetails: UserAccessDetails[] = [];
-
-    for (const email of staffEmails) {
-      const userDocRef = doc(db, USERS_COLLECTION, email);
-      const userDocSnap = await getDoc(userDocRef);
-
-      if (userDocSnap.exists()) {
-        const userData = userDocSnap.data();
-        staffAccessDetails.push({
-          email: email,
-          displayName: userData?.displayName || email,
-          loginManuallyDisabled: userData?.loginManuallyDisabled === true, 
-        });
-      } else {
-        await setDoc(userDocRef, {
-            email: email,
-            displayName: email,
-            loginManuallyDisabled: false,
-        }, { merge: true });
-        staffAccessDetails.push({
-          email: email,
-          displayName: email,
-          loginManuallyDisabled: false,
-        });
-      }
-    }
-    return staffAccessDetails;
-
-  } catch (error) {
-    console.error("Error in getStaffWithAccessStatusAction:", error);
-    return [];
-  }
-}
-
-export async function toggleStaffLoginAccessAction(staffEmail: string, newDisabledState: boolean): Promise<{ success: boolean; message: string }> {
-  try {
-    await verifyOwner();
-    if (!db) {
-      return { success: false, message: "Database service not available." };
-    }
-    if (!staffEmail || !staffEmail.includes('@')) {
-      return { success: false, message: "Invalid staff email provided." };
-    }
-
-    const normalizedEmail = staffEmail.toLowerCase();
-    const userDocRef = doc(db, USERS_COLLECTION, normalizedEmail);
     
-    const roleManagementRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
-    const roleDocSnap = await getDoc(roleManagementRef);
-    if (roleDocSnap.exists()) {
-        const roleData = roleDocSnap.data();
-        const staffEmails: string[] = (roleData?.staffEmails && Array.isArray(roleData.staffEmails))
-        ? roleData.staffEmails.map((e: any) => String(e).toLowerCase())
-        : [];
-        if(!staffEmails.includes(normalizedEmail)){
-            return { success: false, message: "This email is not listed as a staff member." };
-        }
-    } else {
-        return { success: false, message: "Role management data not found." };
-    }
-
-    await setDoc(userDocRef, { loginManuallyDisabled: newDisabledState }, { merge: true });
-
-    revalidatePath("/admin/staff-access");
-    const actionVerb = newDisabledState ? "disabled" : "enabled";
-    return { success: true, message: `Login access for ${staffEmail} has been ${actionVerb}.` };
-
-  } catch (error) {
-    console.error("Error in toggleStaffLoginAccessAction:", error);
-    return { success: false, message: `Failed to update login access: ${error instanceof Error ? error.message : "Unknown error"}` };
-  }
-}
-
-// --- Staff Login Time Window Actions ---
-
-export async function getLoginTimeSettingsAction(): Promise<{ startTime: string; endTime: string }> {
-  if (!db) {
-    console.error("Firestore (db) instance is not initialized. Returning default times.");
-    return { startTime: DEFAULT_STAFF_LOGIN_START_TIME, endTime: DEFAULT_STAFF_LOGIN_END_TIME };
-  }
-  try {
-    const docRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      return {
-        startTime: data?.staffLoginStartTime || DEFAULT_STAFF_LOGIN_START_TIME,
-        endTime: data?.staffLoginEndTime || DEFAULT_STAFF_LOGIN_END_TIME,
-      };
-    }
-    return { startTime: DEFAULT_STAFF_LOGIN_START_TIME, endTime: DEFAULT_STAFF_LOGIN_END_TIME };
-  } catch (error) {
-    console.error("Error fetching login time settings:", error);
-    return { startTime: DEFAULT_STAFF_LOGIN_START_TIME, endTime: DEFAULT_STAFF_LOGIN_END_TIME };
-  }
-}
-
-export async function updateLoginTimeSettingsAction(newStartTime: string, newEndTime: string): Promise<{ success: boolean; message: string }> {
-  try {
-    await verifyOwner();
-    if (!db) {
-      return { success: false, message: "Database service not available." };
-    }
-
-    // Basic validation for HH:MM format
-    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
-    if (!timeRegex.test(newStartTime) || !timeRegex.test(newEndTime)) {
-      return { success: false, message: "Invalid time format. Please use HH:MM (24-hour)." };
-    }
-    
-    // Optional: Add logic to ensure start time is before end time if needed for your business rules,
-    // though for simple "between HH:MM and HH:MM" it might not be strictly necessary if interpreted correctly.
-
-    const settingsRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
-    await setDoc(settingsRef, {
-      staffLoginStartTime: newStartTime,
-      staffLoginEndTime: newEndTime,
-    }, { merge: true });
-
-    revalidatePath("/admin/settings");
-    return { success: true, message: "Staff login time window updated successfully." };
-  } catch (error) {
-    console.error("Error updating login time settings:", error);
-    return { success: false, message: `Failed to update settings: ${error instanceof Error ? error.message : "Unknown error"}` };
-  }
-}

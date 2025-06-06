@@ -5,12 +5,15 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { doc, getDoc, setDoc, updateDoc, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { getLoginTimeSettingsAction } from "@/app/(app)/admin/actions"; // Import the new action
+// Removed getLoginTimeSettingsAction as time window is hardcoded again.
 
 const SESSION_COOKIE_NAME = "auth-session";
 const APP_SETTINGS_COLLECTION = "app_settings";
 const ROLE_MANAGEMENT_DOC = "role_management";
 const USERS_COLLECTION = "users";
+
+const DEFAULT_STAFF_LOGIN_START_TIME = { H: 9, M: 0 };
+const DEFAULT_STAFF_LOGIN_END_TIME = { H: 23, M: 0 }; // Exclusive: up to 22:59
 
 export interface SessionData {
   username: string;
@@ -30,7 +33,7 @@ interface UserDocumentData {
   shopName?: string;
   shopAddress?: string;
   shopContact?: string;
-  loginManuallyDisabled?: boolean;
+  // loginManuallyDisabled is removed from here
 }
 
 interface RoleEmails {
@@ -79,11 +82,9 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     const { ownerEmails, staffEmails } = roleEmailsResult;
 
     let userRole: SessionData['role'] | null = null;
-    let isOwner = false;
 
     if (ownerEmails.includes(userEmailLower)) {
       userRole = "owner";
-      isOwner = true;
     } else if (staffEmails.includes(userEmailLower)) {
       userRole = "staff";
     }
@@ -103,61 +104,43 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
       email: userEmailLower,
     };
     
-    if (userDocDataFromDb?.displayName && userDocDataFromDb.displayName.trim() !== "") {
-      userDataToSet.displayName = userDocDataFromDb.displayName.trim();
-    } else {
-      userDataToSet.displayName = userEmailLower; // Default if not set or empty
-    }
+    const userDisplayName = (userDocDataFromDb?.displayName && userDocDataFromDb.displayName.trim() !== "") 
+                            ? userDocDataFromDb.displayName.trim() 
+                            : userEmailLower;
+    userDataToSet.displayName = userDisplayName;
     
-    // Handle optional fields, only add them if they exist in Firestore or are being set.
     if (userDocDataFromDb?.invoicePrimaryColor) userDataToSet.invoicePrimaryColor = userDocDataFromDb.invoicePrimaryColor;
     if (userDocDataFromDb?.shopName) userDataToSet.shopName = userDocDataFromDb.shopName;
     if (userDocDataFromDb?.shopAddress) userDataToSet.shopAddress = userDocDataFromDb.shopAddress;
     if (userDocDataFromDb?.shopContact) userDataToSet.shopContact = userDocDataFromDb.shopContact;
 
 
-    if (isOwner) {
-      userDataToSet.loginManuallyDisabled = false; // Owners always enabled
-    } else { // Staff
-      if (userDocDataFromDb?.loginManuallyDisabled === true) {
-        return { error: "Access denied. Your login has been disabled by an owner." };
-      }
-      userDataToSet.loginManuallyDisabled = userDocDataFromDb?.loginManuallyDisabled === true; // Persist if already set, else false (enabled by default)
-
-      // Time-based restriction for staff
-      const { startTime: startTimeStr, endTime: endTimeStr } = await getLoginTimeSettingsAction();
+    if (userRole === "staff") {
+      // Time-based restriction for staff (hardcoded 9 AM to 11 PM exclusive)
       const now = new Date();
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
 
-      const [startH, startM] = startTimeStr.split(':').map(Number);
-      const [endH, endM] = endTimeStr.split(':').map(Number); // endH is exclusive (e.g. 23 means up to 22:59)
-
-
-      const isAfterStartTime = currentHour > startH || (currentHour === startH && currentMinute >= startM);
-      const isBeforeEndTime = currentHour < endH; // If endH is 23, allows up to 22:XX.
+      const isAfterStartTime = currentHour > DEFAULT_STAFF_LOGIN_START_TIME.H || (currentHour === DEFAULT_STAFF_LOGIN_START_TIME.H && currentMinute >= DEFAULT_STAFF_LOGIN_START_TIME.M);
+      const isBeforeEndTime = currentHour < DEFAULT_STAFF_LOGIN_END_TIME.H; 
 
       if (!(isAfterStartTime && isBeforeEndTime)) {
-        return { error: `Access denied. Staff login is only permitted between ${startTimeStr} and ${endTimeStr}.` };
+        return { error: `Access denied. Staff login is only permitted between ${DEFAULT_STAFF_LOGIN_START_TIME.H.toString().padStart(2,'0')}:${DEFAULT_STAFF_LOGIN_START_TIME.M.toString().padStart(2,'0')} and ${DEFAULT_STAFF_LOGIN_END_TIME.H.toString().padStart(2,'0')}:00 (exclusive).` };
       }
     }
     
     if (!userDocSnap.exists()) {
-        // If user doc doesn't exist, ensure displayName is set and loginManuallyDisabled (if staff) is false
-        userDataToSet.displayName = userEmailLower; 
-        if (userRole === 'staff' && userDataToSet.loginManuallyDisabled === undefined) {
-            userDataToSet.loginManuallyDisabled = false;
-        }
+        userDataToSet.displayName = userEmailLower; // Ensure displayName if new user
     }
 
     await setDoc(userDocRef, userDataToSet, { merge: true });
     console.log(`[signInWithEmailAction] User document for ${userEmailLower} ensured/updated.`);
 
     const sessionData: SessionData = {
-      username: userEmailLower, // Ensure username is set
+      username: userEmailLower,
       email: userEmailLower,
       role: userRole!,
-      name: userDataToSet.displayName!, // displayName is guaranteed to be set now
+      name: userDisplayName,
     };
     if (userDataToSet.invoicePrimaryColor) sessionData.invoicePrimaryColor = userDataToSet.invoicePrimaryColor;
     if (userDataToSet.shopName) sessionData.shopName = userDataToSet.shopName;
@@ -227,7 +210,6 @@ export async function getSession(): Promise<SessionData | null> {
       if (reason) {
         console.warn(`[getSession] Session cookie parsed, but data is invalid or incomplete. Reason: ${reason}. Deleting cookie.`);
         cookies().delete(SESSION_COOKIE_NAME);
-        // Removed explicit redirect here; middleware should handle it.
         return null;
       }
       return parsedData as SessionData;
@@ -359,3 +341,5 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
     return { success: false, message: "Shop details saved, but session update failed. Changes reflect on next login." };
   }
 }
+
+    

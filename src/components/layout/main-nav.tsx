@@ -10,7 +10,7 @@ import {
   PackagePlus,
   IndianRupee,
   UserCog, 
-  UsersRound, // New Icon for Staff Access Management
+  // UsersRound, // Icon for Staff Access Management removed
 } from "lucide-react";
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
@@ -21,7 +21,7 @@ interface NavItem {
   label: string;
   icon: React.ElementType;
   roles?: Array<SessionData['role']>; 
-  exactMatch?: boolean; // For paths like /admin/settings vs /admin/staff-access
+  exactMatch?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -31,7 +31,7 @@ const navItems: NavItem[] = [
   { href: "/sales", label: "Sales", icon: IndianRupee },
   { href: "/alerts", label: "Reorder Alerts", icon: Bell, exactMatch: true },
   { href: "/admin/settings", label: "Admin Settings", icon: UserCog, roles: ["owner"], exactMatch: true },
-  { href: "/admin/staff-access", label: "Staff Access", icon: UsersRound, roles: ["owner"], exactMatch: true },
+  // { href: "/admin/staff-access", label: "Staff Access", icon: UsersRound, roles: ["owner"], exactMatch: true }, // Removed
 ];
 
 interface MainNavProps {
@@ -57,10 +57,7 @@ export function MainNav({ userRole }: MainNavProps) {
         }
         
         // Special handling for /admin settings sub-routes
-        if (item.href === "/admin/settings" && pathname.startsWith("/admin/") && pathname !== "/admin/staff-access") {
-            isActive = true;
-        }
-         if (item.href === "/admin/staff-access" && pathname === "/admin/staff-access") {
+        if (item.href === "/admin/settings" && pathname.startsWith("/admin/")) { // Simplified, as staff-access is removed
             isActive = true;
         }
 
@@ -86,3 +83,5 @@ export function MainNav({ userRole }: MainNavProps) {
     </SidebarMenu>
   );
 }
+
+    
