@@ -83,11 +83,12 @@ export default function SaleDetailPage() {
     if (!sale) return;
     setIsProcessingA4Pdf(true);
 
-    const userPrimaryColorHex = options?.primaryColor || session?.invoicePrimaryColor || DEFAULT_INVOICE_COLOR_HEX;
-    const headerColorRgb = hexToRgb(userPrimaryColorHex) || DEFAULT_INVOICE_COLOR_RGB_ARRAY;
-    const currentShopName = options?.shopDetails?.shopName || session?.shopName || APP_NAME;
-    const currentShopAddress = options?.shopDetails?.shopAddress || session?.shopAddress;
-    const currentShopContact = options?.shopDetails?.shopContact || session?.shopContact;
+    const primaryColorHex = options?.primaryColor || session?.invoicePrimaryColor || DEFAULT_INVOICE_COLOR_HEX;
+    const headerColorRgb = hexToRgb(primaryColorHex) || DEFAULT_INVOICE_COLOR_RGB_ARRAY;
+    
+    const shopName = options?.shopDetails?.shopName && options.shopDetails.shopName.trim() !== "" ? options.shopDetails.shopName : APP_NAME;
+    const shopAddress = options?.shopDetails?.shopAddress;
+    const shopContact = options?.shopDetails?.shopContact;
 
     try {
       const doc = new jsPDF() as jsPDFWithAutoTable;
@@ -100,23 +101,23 @@ export default function SaleDetailPage() {
       // Shop Name
       doc.setFontSize(16);
       doc.setFont(undefined, 'bold');
-      doc.text(currentShopName, pageWidth / 2, startY, { align: 'center' });
+      doc.text(shopName, pageWidth / 2, startY, { align: 'center' });
       startY += 7;
 
       // Shop Address (if available)
-      if (currentShopAddress) {
+      if (shopAddress && shopAddress.trim() !== "") {
         doc.setFontSize(9);
         doc.setFont(undefined, 'normal');
-        const addressLines = doc.splitTextToSize(currentShopAddress, pageWidth - (leftMargin * 2));
+        const addressLines = doc.splitTextToSize(shopAddress, pageWidth - (leftMargin * 2));
         doc.text(addressLines, pageWidth / 2, startY, { align: 'center' });
         startY += (addressLines.length * 4) + 3;
       }
 
       // Shop Contact (if available)
-      if (currentShopContact) {
+      if (shopContact && shopContact.trim() !== "") {
         doc.setFontSize(9);
         doc.setFont(undefined, 'normal');
-        doc.text(currentShopContact, pageWidth / 2, startY, { align: 'center' });
+        doc.text(shopContact, pageWidth / 2, startY, { align: 'center' });
         startY += 7;
       }
 
@@ -193,7 +194,7 @@ export default function SaleDetailPage() {
         startY += 10;
       }
 
-      if (sale.notes) {
+      if (sale.notes && sale.notes.trim() !== "") {
         if (startY > pageHeight - 40) { 
             doc.addPage();
             startY = 20;
@@ -232,15 +233,15 @@ export default function SaleDetailPage() {
     if (!sale) return;
     setIsProcessingThermalPdf(true);
 
-    const currentShopName = options?.shopDetails?.shopName || session?.shopName || APP_NAME;
-    const currentShopAddress = options?.shopDetails?.shopAddress || session?.shopAddress;
-    const currentShopContact = options?.shopDetails?.shopContact || session?.shopContact;
+    const shopName = options?.shopDetails?.shopName && options.shopDetails.shopName.trim() !== "" ? options.shopDetails.shopName : APP_NAME;
+    const shopAddress = options?.shopDetails?.shopAddress;
+    const shopContact = options?.shopDetails?.shopContact;
 
 
     try {
       const thermalWidthMm = 80;
       const thermalWidthPt = thermalWidthMm * (72 / 25.4); 
-      const marginPt = 8; // Reduced margin slightly for more content space
+      const marginPt = 8; 
       const contentWidthPt = thermalWidthPt - 2 * marginPt;
       const initialPageHeightPt = 800; 
 
@@ -252,27 +253,27 @@ export default function SaleDetailPage() {
       let currentY = marginPt + 5;
 
       // Shop Name
-      doc.setFontSize(10); // Slightly smaller for thermal
+      doc.setFontSize(10); 
       doc.setFont(undefined, 'bold');
-      doc.text(currentShopName, thermalWidthPt / 2, currentY, { align: 'center', maxWidth: contentWidthPt });
-      currentY += doc.getTextDimensions(currentShopName, {fontSize: 10, maxWidth: contentWidthPt}).h + 2;
+      doc.text(shopName, thermalWidthPt / 2, currentY, { align: 'center', maxWidth: contentWidthPt });
+      currentY += doc.getTextDimensions(shopName, {fontSize: 10, maxWidth: contentWidthPt}).h + 2;
 
 
-      // Shop Address (if available) - smaller font
-      if (currentShopAddress) {
+      // Shop Address (if available) 
+      if (shopAddress && shopAddress.trim() !== "") {
         doc.setFontSize(7);
         doc.setFont(undefined, 'normal');
-        const addressLines = doc.splitTextToSize(currentShopAddress, contentWidthPt);
+        const addressLines = doc.splitTextToSize(shopAddress, contentWidthPt);
         doc.text(addressLines, thermalWidthPt / 2, currentY, { align: 'center' });
         currentY += (addressLines.length * (doc.getTextDimensions('X', {fontSize: 7}).h)) + 2;
       }
 
-      // Shop Contact (if available) - smaller font
-      if (currentShopContact) {
+      // Shop Contact (if available) 
+      if (shopContact && shopContact.trim() !== "") {
         doc.setFontSize(7);
         doc.setFont(undefined, 'normal');
-        doc.text(currentShopContact, thermalWidthPt / 2, currentY, { align: 'center', maxWidth: contentWidthPt });
-        currentY += doc.getTextDimensions(currentShopContact, {fontSize: 7, maxWidth: contentWidthPt}).h + 4;
+        doc.text(shopContact, thermalWidthPt / 2, currentY, { align: 'center', maxWidth: contentWidthPt });
+        currentY += doc.getTextDimensions(shopContact, {fontSize: 7, maxWidth: contentWidthPt}).h + 4;
       }
       
       // Sale Info
@@ -300,7 +301,7 @@ export default function SaleDetailPage() {
       const tableRows: (string | number)[][] = [];
       sale.items.forEach(item => {
         tableRows.push([
-          `${item.productNameSnapshot}`, // productName might wrap
+          `${item.productNameSnapshot}`, 
           item.quantitySold,
           item.pricePerUnitSold.toFixed(2),
           item.total.toFixed(2)
@@ -314,11 +315,11 @@ export default function SaleDetailPage() {
         theme: 'plain',
         styles: {
           fontSize: 7,
-          cellPadding: {top: 1, right: 1, bottom: 1, left: 1}, // Tighter padding
+          cellPadding: {top: 1, right: 1, bottom: 1, left: 1}, 
           overflow: 'linebreak',
         },
         headStyles: {
-          fontSize: 7.5, // Slightly smaller head
+          fontSize: 7.5, 
           fontStyle: 'bold',
           fillColor: [255,255,255], 
           textColor: [0,0,0],
@@ -326,10 +327,10 @@ export default function SaleDetailPage() {
           lineColor: [180,180,180], 
         },
         columnStyles: {
-          0: { cellWidth: contentWidthPt * 0.48, fontStyle: 'normal' }, // Item (more space)
-          1: { cellWidth: contentWidthPt * 0.12, halign: 'right' }, // Qty (less space)
-          2: { cellWidth: contentWidthPt * 0.20, halign: 'right' }, // Price
-          3: { cellWidth: contentWidthPt * 0.20, halign: 'right' }, // Total
+          0: { cellWidth: contentWidthPt * 0.48, fontStyle: 'normal' }, 
+          1: { cellWidth: contentWidthPt * 0.12, halign: 'right' }, 
+          2: { cellWidth: contentWidthPt * 0.20, halign: 'right' }, 
+          3: { cellWidth: contentWidthPt * 0.20, halign: 'right' }, 
         },
         margin: { left: marginPt, right: marginPt },
         tableWidth: 'auto',
@@ -356,7 +357,7 @@ export default function SaleDetailPage() {
         currentY += 10;
       }
 
-      if (sale.notes) {
+      if (sale.notes && sale.notes.trim() !== "") {
         currentY += 3;
         doc.setFont(undefined, 'bold');
         doc.text("Notes:", marginPt, currentY);
@@ -576,5 +577,3 @@ export default function SaleDetailPage() {
     </div>
   );
 }
-
-    
