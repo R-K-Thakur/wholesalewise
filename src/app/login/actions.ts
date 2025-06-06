@@ -112,10 +112,6 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     if (userDocDataFromDb?.shopAddress) userDataForFirestore.shopAddress = userDocDataFromDb.shopAddress;
     if (userDocDataFromDb?.shopContact) userDataForFirestore.shopContact = userDocDataFromDb.shopContact;
     
-    // Firestore does not allow 'undefined' values. If a field was previously defined and is now cleared,
-    // it should be explicitly set to null or removed using FieldValue.delete() if updating.
-    // For set with merge, omitting the key is usually sufficient if it was undefined.
-    // Let's ensure we don't pass undefined.
     Object.keys(userDataForFirestore).forEach(key => {
         const K = key as keyof Partial<UserDocumentData>;
         if (userDataForFirestore[K] === undefined) {
@@ -126,19 +122,18 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     await setDoc(userDocRef, userDataForFirestore, { merge: true });
 
     const sessionData: SessionData = {
-      username: userEmailLower, // username is the email
+      username: userEmailLower, 
       email: userEmailLower,
       role: userRole!,
-      name: userDisplayName, // name is the displayName
+      name: userDisplayName, 
     };
 
-    // Add optional fields to sessionData only if they exist
     if (userDataForFirestore.invoicePrimaryColor) sessionData.invoicePrimaryColor = userDataForFirestore.invoicePrimaryColor;
     if (userDataForFirestore.shopName) sessionData.shopName = userDataForFirestore.shopName;
     if (userDataForFirestore.shopAddress) sessionData.shopAddress = userDataForFirestore.shopAddress;
     if (userDataForFirestore.shopContact) sessionData.shopContact = userDataForFirestore.shopContact;
 
-    console.log('[signInWithEmailAction] Creating session with data:', sessionData);
+    // console.log('[signInWithEmailAction] Creating session with data:', sessionData); // Reverted: removed this specific log for now
 
     const cookieSecure = process.env.NODE_ENV === 'production';
     const cookieSameSite = cookieSecure ? "none" as const : "lax" as const;
@@ -180,40 +175,31 @@ export async function getSession(): Promise<SessionData | null> {
   if (sessionCookie?.value) {
     try {
       const parsedData = JSON.parse(sessionCookie.value);
-      let isValid = true;
-      let reason = "";
-
-      if (!parsedData || typeof parsedData !== 'object') {
-        isValid = false;
-        reason = "Parsed data is null or not an object";
-      } else if (typeof parsedData.email !== 'string' || !parsedData.email.includes('@')) {
-        isValid = false;
-        reason = "Email field missing, not a string, or invalid format";
-      } else if (typeof parsedData.role !== 'string' || (parsedData.role !== 'owner' && parsedData.role !== 'staff')) {
-        isValid = false;
-        reason = "Role field missing or invalid";
-      } else if (typeof parsedData.name !== 'string' || parsedData.name.trim() === "") { // name must be non-empty string
-        isValid = false;
-        reason = "Name field missing, not a string, or empty";
-      } else if (typeof parsedData.username !== 'string' || parsedData.username.trim() === "") { // username must be non-empty string
-        isValid = false;
-        reason = "Username field missing, not a string, or empty";
-      }
-      
-      // Validate optional string fields: if present, they must be strings
-      const optionalStringFields: (keyof SessionData)[] = ['invoicePrimaryColor', 'shopName', 'shopAddress', 'shopContact'];
-      for (const field of optionalStringFields) {
-          if (parsedData[field] !== undefined && typeof parsedData[field] !== 'string') {
-              isValid = false;
-              reason = `Optional field ${String(field)} is present but not a string (type: ${typeof parsedData[field]})`;
-              break; 
-          }
-      }
-
-      if (isValid) {
+      // Basic validation: check for essential fields
+      if (
+        parsedData &&
+        typeof parsedData === 'object' &&
+        typeof parsedData.email === 'string' &&
+        parsedData.email.includes('@') &&
+        typeof parsedData.role === 'string' &&
+        (parsedData.role === 'owner' || parsedData.role === 'staff') &&
+        typeof parsedData.name === 'string' && // name is displayName
+        parsedData.name.trim() !== '' &&
+        typeof parsedData.username === 'string' && // username is email
+        parsedData.username.trim() !== ''
+      ) {
+         // Validate optional string fields: if present, they must be strings
+        const optionalStringFields: (keyof SessionData)[] = ['invoicePrimaryColor', 'shopName', 'shopAddress', 'shopContact'];
+        for (const field of optionalStringFields) {
+            if (parsedData[field] !== undefined && typeof parsedData[field] !== 'string') {
+                // console.warn(`[getSession] Optional field ${String(field)} is invalid. Deleting cookie.`);
+                cookies().delete(SESSION_COOKIE_NAME);
+                return null;
+            }
+        }
         return parsedData as SessionData;
       } else {
-        console.warn(`[getSession] Session cookie parsed, but data is invalid/incomplete. Reason: ${reason}. Deleting cookie. Parsed keys:`, Object.keys(parsedData || {}));
+        // console.warn("[getSession] Session cookie parsed, but data is invalid or incomplete. Deleting cookie.");
         cookies().delete(SESSION_COOKIE_NAME);
         return null;
       }
@@ -244,7 +230,7 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
 
   try {
     const updatePayload: Partial<UserDocumentData> = { displayName: newTrimmedName };
-    await setDoc(userDocRef, updatePayload, { merge: true }); // Use set with merge to create if not exists
+    await setDoc(userDocRef, updatePayload, { merge: true }); 
   } catch (dbError) {
     console.error("Error updating user displayName in Firestore:", dbError);
     return { success: false, message: "Failed to save display name to the database." };
@@ -311,20 +297,16 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
   if (details.shopAddress !== undefined) dataToUpdate.shopAddress = details.shopAddress.trim();
   if (details.shopContact !== undefined) dataToUpdate.shopContact = details.shopContact.trim();
   
-  // Only update if there are actual changes or if fields are being explicitly cleared
   let hasChanges = false;
   if (details.shopName !== undefined && details.shopName.trim() !== (session.shopName || "")) hasChanges = true;
   if (details.shopAddress !== undefined && details.shopAddress.trim() !== (session.shopAddress || "")) hasChanges = true;
   if (details.shopContact !== undefined && details.shopContact.trim() !== (session.shopContact || "")) hasChanges = true;
 
-  if (!hasChanges && Object.values(details).every(val => val !== undefined && val !== "")) { // Check if all provided fields are same as session and not empty
+  if (!hasChanges && Object.values(details).every(val => val !== undefined && val !== "")) { 
       return { success: true, message: "No changes to shop details were made." };
   }
 
-
   try {
-    // Use set with merge: true to create the document if it doesn't exist, or update existing fields.
-    // Firestore handles undefined values by not writing them with merge:true, which is fine.
     await setDoc(userDocRef, dataToUpdate, { merge: true });
   } catch (dbError) {
     console.error("Error updating shop details in Firestore:", dbError);
@@ -349,4 +331,6 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
   }
 }
     
+    
+
     

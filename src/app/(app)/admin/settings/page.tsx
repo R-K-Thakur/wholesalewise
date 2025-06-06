@@ -11,18 +11,13 @@ import { useToast } from "@/hooks/use-toast";
 import { getSession, type SessionData } from "@/app/login/actions";
 import { 
   getOwnerEmailsAction, addOwnerEmailAction, removeOwnerEmailAction,
-  getStaffEmailsAction, addStaffEmailAction, removeStaffEmailAction,
-  getPendingStaffAction, approveStaffLoginAction, denyStaffLoginAction // Import new actions
+  getStaffEmailsAction, addStaffEmailAction, removeStaffEmailAction
+  // Removed getPendingStaffAction, approveStaffLoginAction, denyStaffLoginAction
 } from "@/app/(app)/admin/actions";
-import { Loader2, PlusCircle, Trash2, ShieldAlert, UserCog, Users, UserCheck, UserX, Clock } from "lucide-react"; // Added icons
-import { formatDistanceToNow } from "date-fns";
+import { Loader2, PlusCircle, Trash2, ShieldAlert, UserCog, Users } from "lucide-react"; 
+// Removed UserCheck, UserX, Clock as they were for the approval section
 
-
-interface PendingStaffUser {
-  email: string;
-  displayName?: string;
-  lastLoginRequestTimestamp?: string;
-}
+// Interface PendingStaffUser removed
 
 export default function AdminSettingsPage() {
   const router = useRouter();
@@ -40,10 +35,10 @@ export default function AdminSettingsPage() {
   const [newStaffEmail, setNewStaffEmail] = useState("");
   const [isSubmittingStaff, setIsSubmittingStaff] = useState(false);
 
-  // State for staff login approvals
-  const [pendingStaffList, setPendingStaffList] = useState<PendingStaffUser[]>([]);
-  const [isLoadingPendingStaff, setIsLoadingPendingStaff] = useState(false);
-  const [isSubmittingApproval, setIsSubmittingApproval] = useState<string | null>(null); // Store email of staff being processed
+  // State for staff login approvals removed
+  // const [pendingStaffList, setPendingStaffList] = useState<PendingStaffUser[]>([]);
+  // const [isLoadingPendingStaff, setIsLoadingPendingStaff] = useState(false);
+  // const [isSubmittingApproval, setIsSubmittingApproval] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchSessionAndData() {
@@ -61,7 +56,8 @@ export default function AdminSettingsPage() {
         return;
       }
       
-      await Promise.all([fetchOwnerEmails(), fetchStaffEmails(), fetchPendingStaff()]);
+      // Removed fetchPendingStaff from Promise.all
+      await Promise.all([fetchOwnerEmails(), fetchStaffEmails()]);
       setIsLoadingPage(false);
     }
     fetchSessionAndData();
@@ -91,18 +87,8 @@ export default function AdminSettingsPage() {
     }
   }
 
-  async function fetchPendingStaff() {
-    setIsLoadingPendingStaff(true);
-    try {
-      const pending = await getPendingStaffAction();
-      setPendingStaffList(pending);
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to load pending staff requests.", variant: "destructive" });
-    } finally {
-      setIsLoadingPendingStaff(false);
-    }
-  }
-  
+  // Removed fetchPendingStaff function
+
   const handleAddOwnerEmail = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!newOwnerEmail) return;
@@ -112,8 +98,8 @@ export default function AdminSettingsPage() {
       toast({ title: "Success", description: result.message });
       setNewOwnerEmail("");
       await fetchOwnerEmails();
-      await fetchStaffEmails(); // Refresh staff if one was promoted
-      await fetchPendingStaff(); // Refresh pending list in case an owner was added who was pending
+      await fetchStaffEmails(); 
+      // await fetchPendingStaff(); // Removed
     } else {
       toast({ title: "Error", description: result.message, variant: "destructive" });
     }
@@ -141,7 +127,7 @@ export default function AdminSettingsPage() {
       toast({ title: "Success", description: result.message });
       setNewStaffEmail("");
       await fetchStaffEmails(); 
-      await fetchPendingStaff(); // Refresh pending list
+      // await fetchPendingStaff(); // Removed
     } else {
       toast({ title: "Error", description: result.message, variant: "destructive" });
     }
@@ -154,37 +140,14 @@ export default function AdminSettingsPage() {
     if (result.success) {
       toast({ title: "Success", description: result.message });
       await fetchStaffEmails();
-      await fetchPendingStaff(); // Refresh pending list
+      // await fetchPendingStaff(); // Removed
     } else {
       toast({ title: "Error", description: result.message, variant: "destructive" });
     }
     setIsSubmittingStaff(false);
   };
 
-  const handleApproveStaff = async (email: string) => {
-    setIsSubmittingApproval(email);
-    const result = await approveStaffLoginAction(email);
-    if (result.success) {
-      toast({ title: "Success", description: result.message });
-      await fetchPendingStaff(); // Refresh the list
-    } else {
-      toast({ title: "Error", description: result.message, variant: "destructive" });
-    }
-    setIsSubmittingApproval(null);
-  };
-
-  const handleDenyStaff = async (email: string) => {
-    setIsSubmittingApproval(email);
-    const result = await denyStaffLoginAction(email);
-    if (result.success) {
-      toast({ title: "Success", description: result.message });
-      await fetchPendingStaff(); // Refresh the list
-    } else {
-      toast({ title: "Error", description: result.message, variant: "destructive" });
-    }
-    setIsSubmittingApproval(null);
-  };
-
+  // Removed handleApproveStaff and handleDenyStaff functions
 
   if (isLoadingPage) {
     return (
@@ -206,67 +169,13 @@ export default function AdminSettingsPage() {
         <h1 className="text-3xl font-bold tracking-tight font-headline">Admin Settings</h1>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><UserCheck className="h-6 w-6" /> Staff Login Approvals</CardTitle>
-          <CardDescription>
-            Approve or deny login requests from staff members. Staff cannot log in until approved.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {isLoadingPendingStaff ? (
-            <div className="flex items-center text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading pending requests...
-            </div>
-          ) : pendingStaffList.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No pending staff login requests.</p>
-          ) : (
-            <ul className="space-y-3">
-              {pendingStaffList.map((staff) => (
-                <li key={staff.email} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 border rounded-md bg-muted/20">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{staff.displayName || staff.email}</p>
-                    {staff.displayName && staff.displayName !== staff.email && <p className="text-xs text-muted-foreground">{staff.email}</p>}
-                    {staff.lastLoginRequestTimestamp && (
-                        <p className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Clock className="h-3 w-3"/> 
-                            Requested: {formatDistanceToNow(new Date(staff.lastLoginRequestTimestamp), { addSuffix: true })}
-                        </p>
-                    )}
-                  </div>
-                  <div className="flex gap-2 self-start sm:self-center flex-shrink-0">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleApproveStaff(staff.email)}
-                      disabled={isSubmittingApproval === staff.email}
-                      className="text-green-600 border-green-600 hover:bg-green-500/10"
-                    >
-                      {isSubmittingApproval === staff.email ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserCheck className="mr-1 h-4 w-4" />}
-                      Approve
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleDenyStaff(staff.email)}
-                      disabled={isSubmittingApproval === staff.email}
-                    >
-                      {isSubmittingApproval === staff.email ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserX className="mr-1 h-4 w-4" />}
-                      Deny
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      {/* Staff Login Approvals Card Removed */}
       
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><UserCog className="h-6 w-6" />Manage Owner Access</CardTitle>
           <CardDescription>
-            Add or remove emails for 'owner' privileges. Owners have full access and can approve staff logins.
+            Add or remove emails for 'owner' privileges. Owners have full access to the application.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -332,7 +241,7 @@ export default function AdminSettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Users className="h-6 w-6" />Manage Staff Access</CardTitle>
           <CardDescription>
-            Add or remove emails for 'staff' privileges. Staff added here will require login approval from an owner.
+            Add or remove emails for 'staff' privileges. Staff added here can log in directly.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -362,7 +271,7 @@ export default function AdminSettingsPage() {
               </div>
             ) : staffEmails.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No staff emails configured. Add an email to grant staff access (will require approval).
+                No staff emails configured. Add an email to grant staff access.
               </p>
             ) : (
               <ul className="space-y-2">
@@ -396,13 +305,12 @@ export default function AdminSettingsPage() {
             <p className="text-sm text-muted-foreground">
                 If you are setting up the application for the first time, ensure you have manually added your email to the `ownerEmails` array 
                 (and optionally, an empty `staffEmails` array) in the `app_settings/role_management` document in your Firestore database.
-                Your user document in the `users` collection should also have `loginApprovalStatus: "approved"`.
+                Your user document in the `users` collection should also have `loginApprovalStatus: "approved"` (though this field is no longer actively used by the reverted login system, it's good practice if it was set previously).
             </p>
         </CardContent>
       </Card>
     </div>
   );
 }
-    
 
     

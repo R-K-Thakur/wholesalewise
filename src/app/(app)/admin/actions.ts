@@ -61,7 +61,6 @@ export async function addOwnerEmailAction(emailToAdd: string): Promise<{ success
       const roleDoc = await transaction.get(roleManagementRef);
       let ownerEmails: string[] = [];
       let staffEmails: string[] = [];
-      // staffEmailsUpdated = false; // This variable was unused
 
       if (roleDoc.exists()) {
         const data = roleDoc.data();
@@ -77,27 +76,19 @@ export async function addOwnerEmailAction(emailToAdd: string): Promise<{ success
 
       if (staffEmails.includes(normalizedEmail)) {
         updatePayload.staffEmails = arrayRemove(normalizedEmail);
-        // staffEmailsUpdated = true;
       }
       
       if (roleDoc.exists()) {
         transaction.update(roleManagementRef, updatePayload);
       } else {
-        // If role_management doc doesn't exist, create it with the new owner and an empty staff list
         const initialRoleData: any = { ownerEmails: [normalizedEmail], staffEmails: [] };
-        if (updatePayload.staffEmails && Array.isArray(updatePayload.staffEmails) && updatePayload.staffEmails.length > 0) {
-            // This case is tricky: updatePayload.staffEmails contains arrayRemove.
-            // For a new doc, if a staff was removed, it implies it shouldn't be in initial staffEmails.
-        } else if (staffEmails.includes(normalizedEmail) && updatePayload.staffEmails === undefined) {
-             // If it was in staffEmails, and we decided to remove it, ensure staffEmails starts empty or without it.
-        }
         transaction.set(roleManagementRef, initialRoleData);
       }
       
+      // Ensure user document exists with displayName, but remove loginApprovalStatus as system is reverted
       transaction.set(userDocRef, { 
         email: normalizedEmail, 
         displayName: normalizedEmail, 
-        loginApprovalStatus: 'approved' 
       }, { merge: true });
     });
     
@@ -193,36 +184,33 @@ export async function addStaffEmailAction(emailToAdd: string): Promise<{ success
     await runTransaction(db, async (transaction) => {
       const roleDoc = await transaction.get(roleManagementRef);
       let ownerEmails: string[] = [];
-      let staffEmails: string[] = [];
+      // let staffEmails: string[] = []; // Not strictly needed for validation here anymore
 
       if (roleDoc.exists()) {
         const data = roleDoc.data();
         ownerEmails = (data?.ownerEmails && Array.isArray(data.ownerEmails)) ? data.ownerEmails.map(e => String(e).toLowerCase()) : [];
-        staffEmails = (data?.staffEmails && Array.isArray(data.staffEmails)) ? data.staffEmails.map(e => String(e).toLowerCase()) : [];
+        // staffEmails = (data?.staffEmails && Array.isArray(data.staffEmails)) ? data.staffEmails.map(e => String(e).toLowerCase()) : [];
       }
 
       if (ownerEmails.includes(normalizedEmail)) {
         throw new Error("Email already exists in the owner list. Cannot be both owner and staff.");
       }
-      // It's okay if they are already in staffEmails, this action will just re-ensure their user doc is set for pending.
       
       if (roleDoc.exists()) {
         transaction.update(roleManagementRef, { staffEmails: arrayUnion(normalizedEmail) });
       } else {
-        // If role_management doc doesn't exist, create it with the new staff and an empty owner list
         transaction.set(roleManagementRef, { ownerEmails: [], staffEmails: [normalizedEmail] });
       }
       
+      // Ensure user document exists with displayName, remove loginApprovalStatus and lastLoginRequestTimestamp
       transaction.set(userDocRef, { 
         email: normalizedEmail, 
         displayName: normalizedEmail, 
-        loginApprovalStatus: 'pending',
-        lastLoginRequestTimestamp: new Date().toISOString()
       }, { merge: true });
     });
         
     revalidatePath("/admin/settings");
-    return { success: true, message: "Staff email added. Their login will require owner approval." };
+    return { success: true, message: "Staff email added. They can log in directly." };
   } catch (error) {
     console.error("Error adding staff email:", error);
     return { success: false, message: `Failed to add staff email: ${error instanceof Error ? error.message : "Unknown error"}` };
@@ -242,7 +230,7 @@ export async function removeStaffEmailAction(emailToRemove: string): Promise<{ s
     const normalizedEmailToRemove = emailToRemove.toLowerCase();
 
     const roleManagementRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
-    const userDocRef = doc(db, USERS_COLLECTION, normalizedEmailToRemove);
+    // const userDocRef = doc(db, USERS_COLLECTION, normalizedEmailToRemove); // No longer need to update userDoc for approval status
 
     await runTransaction(db, async (transaction) => {
       const roleDoc = await transaction.get(roleManagementRef);
@@ -260,7 +248,8 @@ export async function removeStaffEmailAction(emailToRemove: string): Promise<{ s
         staffEmails: arrayRemove(normalizedEmailToRemove)
       });
 
-      transaction.set(userDocRef, { loginApprovalStatus: 'denied' }, { merge: true });
+      // No longer setting loginApprovalStatus to 'denied' as the system is reverted
+      // transaction.set(userDocRef, { loginApprovalStatus: 'denied' }, { merge: true });
     });
     
     revalidatePath("/admin/settings");
@@ -271,104 +260,15 @@ export async function removeStaffEmailAction(emailToRemove: string): Promise<{ s
   }
 }
 
-// --- Staff Login Approval Actions ---
-interface PendingStaffUser {
-  email: string;
-  displayName?: string;
-  lastLoginRequestTimestamp?: string;
-}
-
-export async function getPendingStaffAction(): Promise<PendingStaffUser[]> {
-  try {
-    await verifyOwner(); // Ensures only owners can call this
-    if (!db) {
-      console.error("Firestore (db) instance is not initialized. Cannot fetch pending staff. Returning empty list.");
-      return [];
-    }
-    
-    const usersRef = collection(db, USERS_COLLECTION);
-    const roleManagementRef = doc(db, APP_SETTINGS_COLLECTION, ROLE_MANAGEMENT_DOC);
-    const roleDocSnap = await getDoc(roleManagementRef);
-    let currentStaffEmails: string[] = [];
-
-    if (roleDocSnap.exists() && Array.isArray(roleDocSnap.data()?.staffEmails)) {
-        currentStaffEmails = (roleDocSnap.data()?.staffEmails as string[]).map(e => String(e).toLowerCase());
-    }
-
-    const q = query(usersRef, where("loginApprovalStatus", "==", "pending"));
-    const querySnapshot = await getDocs(q);
-    
-    const pendingUsers: PendingStaffUser[] = [];
-    querySnapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      const userEmail = (data.email || docSnap.id).toLowerCase();
-      
-      // Only consider users for pending approval if they are currently listed in staffEmails
-      if (currentStaffEmails.includes(userEmail)) {
-        pendingUsers.push({
-          email: userEmail,
-          displayName: data.displayName,
-          lastLoginRequestTimestamp: data.lastLoginRequestTimestamp,
-        });
-      }
-    });
-
-    pendingUsers.sort((a, b) => {
-        if (a.lastLoginRequestTimestamp && b.lastLoginRequestTimestamp) {
-            return new Date(b.lastLoginRequestTimestamp).getTime() - new Date(a.lastLoginRequestTimestamp).getTime();
-        }
-        if (a.lastLoginRequestTimestamp) return -1;
-        if (b.lastLoginRequestTimestamp) return 1;
-        return 0;
-    });
-    return pendingUsers;
-  } catch (error) {
-    console.error("Error in getPendingStaffAction:", error);
-    // This catch block will handle errors from verifyOwner() or Firestore operations.
-    // Returning an empty array is a safe default to prevent client-side crashes.
-    // The client-side component (AdminSettingsPage) should independently verify session and redirect if not owner.
-    return [];
-  }
-}
-
-
-export async function approveStaffLoginAction(staffEmail: string): Promise<{ success: boolean; message: string }> {
-  try {
-    await verifyOwner();
-    if (!db) {
-      return { success: false, message: "Database service not available." };
-    }
-    if (!staffEmail) {
-      return { success: false, message: "Staff email is required." };
-    }
-    const userDocRef = doc(db, USERS_COLLECTION, staffEmail.toLowerCase());
-    await updateDoc(userDocRef, { loginApprovalStatus: 'approved' });
-    revalidatePath("/admin/settings");
-    return { success: true, message: `Login approved for ${staffEmail}.` };
-  } catch (error) {
-    console.error(`Error approving staff login for ${staffEmail}:`, error);
-    return { success: false, message: `Failed to approve login: ${error instanceof Error ? error.message : "Unknown error"}` };
-  }
-}
-
-export async function denyStaffLoginAction(staffEmail: string): Promise<{ success: boolean; message: string }> {
-  try {
-    await verifyOwner();
-    if (!db) {
-      return { success: false, message: "Database service not available." };
-    }
-    if (!staffEmail) {
-      return { success: false, message: "Staff email is required." };
-    }
-    const userDocRef = doc(db, USERS_COLLECTION, staffEmail.toLowerCase());
-    await updateDoc(userDocRef, { loginApprovalStatus: 'denied' });
-    revalidatePath("/admin/settings");
-    return { success: true, message: `Login denied for ${staffEmail}.` };
-  } catch (error) {
-    console.error(`Error denying staff login for ${staffEmail}:`, error);
-    return { success: false, message: `Failed to deny login: ${error instanceof Error ? error.message : "Unknown error"}` };
-  }
-}
+// --- Staff Login Approval Actions (Removed as system is reverted) ---
+// interface PendingStaffUser {
+//   email: string;
+//   displayName?: string;
+//   lastLoginRequestTimestamp?: string;
+// }
+// export async function getPendingStaffAction(): Promise<PendingStaffUser[]> { return []; }
+// export async function approveStaffLoginAction(staffEmail: string): Promise<{ success: boolean; message: string }> { return {success: false, message: "Feature disabled."}; }
+// export async function denyStaffLoginAction(staffEmail: string): Promise<{ success: boolean; message: string }> { return {success: false, message: "Feature disabled."}; }
     
 
     
