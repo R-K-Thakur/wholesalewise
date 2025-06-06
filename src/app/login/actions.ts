@@ -98,21 +98,17 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
     let userDocSnap = await getDoc(userDocRef);
     let userDocDataFromDb: UserDocumentData | null = userDocSnap.exists() ? userDocSnap.data() as UserDocumentData : null;
 
-    const userDataToSet: Partial<UserDocumentData> & { email: string; displayName?: string } = { 
+    console.log(`[signInWithEmailAction] Firestore displayName for ${userEmailLower}: '${userDocDataFromDb?.displayName}'`);
+
+    const userDataToSet: UserDocumentData = {
       email: userEmailLower,
+      displayName: userDocDataFromDb?.displayName?.trim() ? userDocDataFromDb.displayName.trim() : userEmailLower,
+      invoicePrimaryColor: userDocDataFromDb?.invoicePrimaryColor,
+      shopName: userDocDataFromDb?.shopName,
+      shopAddress: userDocDataFromDb?.shopAddress,
+      shopContact: userDocDataFromDb?.shopContact,
     };
-    if (userDocDataFromDb?.displayName?.trim()) {
-        userDataToSet.displayName = userDocDataFromDb.displayName.trim();
-    } else {
-        userDataToSet.displayName = userEmailLower; 
-    }
     
-    if (userDocDataFromDb?.invoicePrimaryColor) userDataToSet.invoicePrimaryColor = userDocDataFromDb.invoicePrimaryColor;
-    if (userDocDataFromDb?.shopName) userDataToSet.shopName = userDocDataFromDb.shopName;
-    if (userDocDataFromDb?.shopAddress) userDataToSet.shopAddress = userDocDataFromDb.shopAddress;
-    if (userDocDataFromDb?.shopContact) userDataToSet.shopContact = userDocDataFromDb.shopContact;
-
-
     if (userRole === "staff") {
       const now = new Date();
       const currentHour = now.getHours();
@@ -126,22 +122,31 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
       }
     }
     
-    await setDoc(userDocRef, userDataToSet, { merge: true });
+    // Ensure user document is up-to-date in Firestore (especially if displayName was defaulted to email)
+    await setDoc(userDocRef, {
+      email: userDataToSet.email,
+      displayName: userDataToSet.displayName, // Persist the chosen displayName
+      // Persist other details if they were read or defaulted
+      invoicePrimaryColor: userDataToSet.invoicePrimaryColor,
+      shopName: userDataToSet.shopName,
+      shopAddress: userDataToSet.shopAddress,
+      shopContact: userDataToSet.shopContact,
+    }, { merge: true });
     
-    const finalUserDisplayName = userDataToSet.displayName || userEmailLower; 
-
     const sessionData: SessionData = {
       username: userEmailLower, 
       email: userEmailLower,    
       role: userRole!,
-      name: finalUserDisplayName, 
+      name: userDataToSet.displayName, // This uses the (potentially defaulted) displayName
+      invoicePrimaryColor: userDataToSet.invoicePrimaryColor,
+      shopName: userDataToSet.shopName,
+      shopAddress: userDataToSet.shopAddress,
+      shopContact: userDataToSet.shopContact,
     };
-    if (userDataToSet.invoicePrimaryColor) sessionData.invoicePrimaryColor = userDataToSet.invoicePrimaryColor;
-    if (userDataToSet.shopName) sessionData.shopName = userDataToSet.shopName;
-    if (userDataToSet.shopAddress) sessionData.shopAddress = userDataToSet.shopAddress;
-    if (userDataToSet.shopContact) sessionData.shopContact = userDataToSet.shopContact;
     
+    console.log(`[signInWithEmailAction] Setting session cookie. SessionData.name: '${sessionData.name}'`);
     console.log('[signInWithEmailAction] EXACT Session data being set in cookie:', JSON.stringify(sessionData, null, 2));
+
 
     const cookieStore = cookies();
     const cookieSecure = process.env.NODE_ENV === 'production';
@@ -155,7 +160,7 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
       sameSite: "lax" as const, 
     });
 
-    return { success: true }; // Return success status
+    return { success: true };
 
   } catch (e: any) {
     console.error("[signInWithEmailAction] Caught an unhandled server error during login:", e);
@@ -170,9 +175,8 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
 }
 
 export async function logoutAction() {
-  const cookieStore = cookies(); // Get store first
+  const cookieStore = cookies(); 
   cookieStore.delete(SESSION_COOKIE_NAME);
-  // redirect("/login"); // This will be handled client-side or by middleware now
 }
 
 export async function getSession(): Promise<SessionData | null> {
@@ -213,7 +217,7 @@ export async function getSession(): Promise<SessionData | null> {
           return null;
         }
       }
-      
+      console.log(`[getSession] Successfully parsed session. Name from cookie: '${parsedData.name}'`);
       return parsedData as SessionData;
 
     } catch (error) {
@@ -251,6 +255,7 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
   }
 
   const updatedSessionData: SessionData = { ...session, name: newTrimmedName };
+  console.log(`[updateUserDisplayNameAction] Updating session cookie. New name: '${updatedSessionData.name}'`);
   const cookieStore = cookies();
   const cookieSecure = process.env.NODE_ENV === 'production';
   const cookieSameSite = "lax" as const; 
@@ -356,3 +361,4 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
     
 
     
+

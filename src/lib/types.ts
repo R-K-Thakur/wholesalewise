@@ -24,7 +24,9 @@ export interface Product {
   createdAt: string;
   updatedAt: string;
   createdByEmail?: string;
+  createdByName?: string; // Added for consistency
   lastStockUpdateByEmail?: string;
+  lastStockUpdateByName?: string; // Added for consistency
 }
 
 export interface Purchase {
@@ -45,7 +47,7 @@ export interface Purchase {
 export interface PaymentTransaction {
   date: string;
   amount: number;
-  paymentMethod: 'cash' | 'card' | 'online' | 'manual_adjustment'; // Non-optional
+  paymentMethod: 'cash' | 'card' | 'online' | 'manual_adjustment';
   notes?: string;
   recordedByEmail?: string;
   recordedByName?: string;
@@ -80,7 +82,7 @@ export interface SaleItem {
   total: number;
 }
 
-export type ProductFormData = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'quantityInStock' | 'createdByEmail' | 'lastStockUpdateByEmail'> & { initialStockInPurchaseUnits: number };
+export type ProductFormData = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'quantityInStock' | 'createdByEmail' | 'createdByName' | 'lastStockUpdateByEmail' | 'lastStockUpdateByName'> & { initialStockInPurchaseUnits: number };
 export type PurchaseFormData = Omit<Purchase, 'id' | 'productNameSnapshot' | 'totalCost' | 'purchaseDate' | 'purchaseUnitSnapshot' | 'createdAt' | 'updatedAt' | 'recordedByEmail' | 'recordedByName'> & { purchaseDate?: Date };
 
 
@@ -120,20 +122,15 @@ export interface PurchaseTrend {
 export interface RecordAdditionalPaymentPayload {
   saleId: string;
   amountPaidNow: number;
-  paymentMethod: 'cash' | 'card' | 'online'; // Kept as is, since this is from form
+  paymentMethod: 'cash' | 'card' | 'online'; 
   paymentNotes?: string;
 }
 
-// UserAccessDetails type is removed as it's no longer used.
-// export interface UserAccessDetails {
-//   email: string;
-//   displayName: string;
-//   loginManuallyDisabled: boolean;
-// }
     
     
 
     
 
     
+
 

@@ -43,7 +43,9 @@ const mapDocToProduct = (document: import('firebase/firestore').DocumentSnapshot
     createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (data.createdAt || nowAsISO),
     updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : (data.updatedAt || nowAsISO),
     createdByEmail: typeof data.createdByEmail === 'string' ? data.createdByEmail : undefined,
+    createdByName: typeof data.createdByName === 'string' ? data.createdByName : undefined, // Added
     lastStockUpdateByEmail: typeof data.lastStockUpdateByEmail === 'string' ? data.lastStockUpdateByEmail : undefined,
+    lastStockUpdateByName: typeof data.lastStockUpdateByName === 'string' ? data.lastStockUpdateByName : undefined, // Added
   };
 };
 
@@ -56,8 +58,13 @@ export async function addProduct(data: ValidatedProductFormData) {
   }
 
   const session = await getSession();
-  const userEmail = session?.email || 'system';
-  const userName = session?.name || userEmail;
+  if (!session) {
+    return { success: false, message: "User session not found or invalid. Cannot add product." };
+  }
+  const userEmail = session.email;
+  const userName = session.name;
+  console.log(`[addProduct] Adding product. User Name: '${userName}', User Email: '${userEmail}'`);
+
 
   try {
     const now = Timestamp.now().toDate().toISOString();
@@ -90,7 +97,9 @@ export async function addProduct(data: ValidatedProductFormData) {
       createdAt: now,
       updatedAt: now,
       createdByEmail: userEmail,
+      createdByName: userName,
       lastStockUpdateByEmail: userEmail,
+      lastStockUpdateByName: userName,
     };
 
     const productDocRef = await runTransaction(db, async (transaction) => {
@@ -184,8 +193,11 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
   if (!session) {
     return { success: false, message: "User session not found. Please log in." };
   }
-  const userEmail = session.email || 'system_update';
+  const userEmail = session.email;
+  const userName = session.name;
   const userRole = session.role;
+  console.log(`[updateProductAction] Updating product. User Name: '${userName}', User Email: '${userEmail}'`);
+
 
   try {
     const productRef = doc(db, PRODUCTS_COLLECTION, id);
@@ -239,16 +251,17 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
 
         if (data.initialStock !== currentProductData.quantityInStock) {
             updateData.quantityInStock = data.initialStock;
-            updateData.lastStockUpdateByEmail = userEmail; // Record who made the change
-        } else if (updateData.quantityInStock === undefined) { // Only set if not already set by direct quantity change
-            // No change to quantityInStock, no need to update lastStockUpdateByEmail unless other fields change
+            updateData.lastStockUpdateByEmail = userEmail; 
+            updateData.lastStockUpdateByName = userName; 
+        } else if (updateData.quantityInStock === undefined) { 
+            // No change to quantityInStock
         }
     }
     if (data.reorderThreshold !== undefined) updateData.reorderThreshold = data.reorderThreshold;
 
 
     if (Object.keys(updateData).length === 0) {
-      return { success: false, message: 'No changes provided to update.' };
+      return { success: true, message: 'No changes provided to update.' }; // Changed to success: true as no actual failure
     }
 
     updateData.updatedAt = Timestamp.now().toDate().toISOString();
@@ -303,8 +316,10 @@ export async function addStockToProductAction(
   if (!session) {
     return { success: false, message: "User session not found. Please log in." };
   }
-  const userEmail = session.email || 'system_stock_add';
-  const userName = session.name || userEmail;
+  const userEmail = session.email;
+  const userName = session.name;
+  console.log(`[addStockToProductAction] Adding stock. User Name: '${userName}', User Email: '${userEmail}'`);
+
 
   try {
     const productRef = doc(db, PRODUCTS_COLLECTION, productId);
@@ -328,6 +343,7 @@ export async function addStockToProductAction(
         quantityInStock: newStockInBaseUnits,
         updatedAt: nowISO,
         lastStockUpdateByEmail: userEmail,
+        lastStockUpdateByName: userName,
       };
 
       let purchasePriceForRecord = productData.purchasePrice;
@@ -435,4 +451,5 @@ const getPurchasesCached = unstable_cache(
 export async function getPurchasesAction(): Promise<Purchase[]> {
   return getPurchasesCached();
 }
+
 

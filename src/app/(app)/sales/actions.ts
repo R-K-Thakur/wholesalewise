@@ -70,8 +70,13 @@ const mapDocToSale = (document: import('firebase/firestore').DocumentSnapshot | 
 
 export async function recordSaleAction(data: RecordSaleActionPayload) {
   const session = await getSession();
-  const userEmail = session?.email || 'system_sale_creation';
-  const userName = session?.name || userEmail;
+  if (!session) {
+    return { success: false, message: "User session not found or invalid. Cannot record sale." };
+  }
+  const userEmail = session.email; 
+  const userName = session.name;
+  console.log(`[recordSaleAction] Recording sale. User Name: '${userName}', User Email: '${userEmail}'`);
+
 
   try {
     await runTransaction(db, async (transaction) => {
@@ -103,7 +108,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         }
 
         const newStock = product.quantityInStock - quantitySoldInBaseUnits;
-        transaction.update(productRef, { quantityInStock: newStock, updatedAt: Timestamp.now().toDate().toISOString(), lastStockUpdateByEmail: userEmail });
+        transaction.update(productRef, { quantityInStock: newStock, updatedAt: Timestamp.now().toDate().toISOString(), lastStockUpdateByEmail: userEmail, lastStockUpdateByName: userName }); // Added lastStockUpdateByName
 
         saleItemsForDb.push({
           ...item,
@@ -239,8 +244,10 @@ export async function updateSalePaymentStatusAction(
   if (!session || session.role !== 'owner') {
     return { success: false, message: 'Unauthorized: Only owners can change sale status.' };
   }
-  const userEmail = session.email || 'system_status_update';
-  const userName = session.name || userEmail;
+  const userEmail = session.email;
+  const userName = session.name;
+  console.log(`[updateSalePaymentStatusAction] Updating status. User Name: '${userName}', User Email: '${userEmail}'`);
+
 
   const { saleId, newStatus, currentTotalAmount } = payload;
   const saleRef = doc(db, SALES_COLLECTION, saleId);
@@ -338,8 +345,10 @@ export async function recordAdditionalPaymentAction(
   if (!session) {
     return { success: false, message: 'Unauthorized: You must be logged in to record a payment.' };
   }
-  const userEmail = session.email || 'system_payment_record';
-  const userName = session.name || userEmail;
+  const userEmail = session.email;
+  const userName = session.name;
+  console.log(`[recordAdditionalPaymentAction] Recording payment. User Name: '${userName}', User Email: '${userEmail}'`);
+
   const { saleId, amountPaidNow, paymentMethod, paymentNotes } = payload;
 
   const paymentAmountReceived = Number(amountPaidNow);
@@ -426,5 +435,6 @@ export async function recordAdditionalPaymentAction(
     return { success: false, message: `Failed to record payment: ${error instanceof Error ? error.message : 'Unknown error'}` };
   }
 }
+
 
 
