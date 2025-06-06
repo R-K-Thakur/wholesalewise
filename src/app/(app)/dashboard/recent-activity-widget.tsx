@@ -85,7 +85,7 @@ export function RecentActivityWidget({ activities }: RecentActivityWidgetProps) 
                 }
 
                 let descriptionWithUser = activity.description;
-                if (activity.type === 'purchase' && activity.recordedByEmail) {
+                if (activity.recordedByEmail) {
                   descriptionWithUser += ` by ${activity.recordedByEmail}`;
                 }
 
@@ -118,3 +118,4 @@ export function RecentActivityWidget({ activities }: RecentActivityWidgetProps) 
     </Card>
   );
 }
+

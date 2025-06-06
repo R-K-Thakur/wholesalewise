@@ -64,6 +64,7 @@ export default async function DashboardPage() {
       description: `Sale of Rs. ${sale.totalAmount.toFixed(2)} to ${sale.customerName || 'N/A'}.`,
       amount: sale.totalAmount,
       link: `/sales/${sale.id}`,
+      recordedByEmail: sale.recordedByEmail, // Add recordedByEmail for sales
     });
   });
 
@@ -182,4 +183,5 @@ export default async function DashboardPage() {
     </div>
   );
 }
+
 

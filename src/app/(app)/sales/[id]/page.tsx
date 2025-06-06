@@ -13,7 +13,7 @@ import {
   DialogFooter,
   DialogDescription
 } from "@/components/ui/dialog";
-import { ArrowLeft, Printer, Eye, Loader2, Edit, PlusCircle } from 'lucide-react';
+import { ArrowLeft, Printer, Eye, Loader2, Edit, PlusCircle, UserCircle } from 'lucide-react';
 import { getSaleByIdAction, updateSalePaymentStatusAction, recordAdditionalPaymentAction, type UpdateSaleStatusPayload } from '../actions';
 import type { Sale, PaymentTransaction, RecordAdditionalPaymentPayload } from '@/lib/types';
 import { APP_NAME } from '@/lib/constants';
@@ -225,8 +225,15 @@ export default function SaleDetailPage() {
 
       if (sale.customerName) {
         doc.text(`Customer: ${sale.customerName}`, leftMargin, startY);
+        if (sale.recordedByEmail) {
+            doc.text(`Recorded by: ${sale.recordedByEmail}`, rightMargin, startY, { align: 'right' });
+        }
         startY += 7;
+      } else if (sale.recordedByEmail) {
+         doc.text(`Recorded by: ${sale.recordedByEmail}`, rightMargin, startY, { align: 'right' });
+         startY += 7;
       }
+
 
       doc.text(`Sale Type: ${sale.saleType.charAt(0).toUpperCase() + sale.saleType.slice(1)}`, leftMargin, startY);
       startY += 10;
@@ -387,7 +394,13 @@ export default function SaleDetailPage() {
         doc.text(`Customer: ${sale.customerName}`, marginPt, currentY, {maxWidth: contentWidthPt - marginPt });
         currentY += doc.getTextDimensions(sale.customerName, {fontSize: 8, maxWidth: contentWidthPt - marginPt}).h + 2;
       }
+      
+      if (sale.recordedByEmail) {
+        doc.text(`Rec by: ${sale.recordedByEmail}`, marginPt, currentY, {maxWidth: contentWidthPt});
+        currentY += doc.getTextDimensions(`Rec by: ${sale.recordedByEmail}`, {fontSize: 8, maxWidth: contentWidthPt}).h + 2;
+      }
       currentY += 3;
+
 
       doc.text('-'.repeat(Math.floor(contentWidthPt / (doc.getStringUnitWidth('-') * 8 * 0.9))), thermalWidthPt / 2, currentY, { align: 'center' });
       currentY += 10;
@@ -753,6 +766,12 @@ export default function SaleDetailPage() {
                 </Select>
               )}
             </div>
+            {sale.recordedByEmail && (
+                 <div className="flex items-center gap-1">
+                    <UserCircle className="h-4 w-4 text-muted-foreground" />
+                    <strong>Recorded by:</strong> {sale.recordedByEmail}
+                </div>
+            )}
             {sale.notes && <div className="md:col-span-full"><strong>Notes:</strong> {sale.notes}</div>}
           </div>
           <div className="mt-4 pt-4 border-t grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
@@ -881,4 +900,5 @@ export default function SaleDetailPage() {
     </div>
   );
 }
+
 

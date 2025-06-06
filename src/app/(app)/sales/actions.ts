@@ -28,13 +28,11 @@ const mapDocToSale = (document: import('firebase/firestore').DocumentSnapshot | 
         date: ph.date?.toDate ? ph.date.toDate().toISOString() : (typeof ph.date === 'string' ? ph.date : nowAsISO),
         amount: typeof ph.amount === 'number' ? ph.amount : 0,
         paymentMethod: ['cash', 'card', 'online', 'manual_adjustment'].includes(ph.paymentMethod) ? ph.paymentMethod : 'manual_adjustment',
+        recordedByEmail: typeof ph.recordedByEmail === 'string' ? ph.recordedByEmail : undefined,
       };
 
       if (ph.notes && typeof ph.notes === 'string' && ph.notes.trim() !== "") {
         mappedTransaction.notes = ph.notes.trim();
-      }
-      if (ph.recordedByEmail && typeof ph.recordedByEmail === 'string' && ph.recordedByEmail.trim() !== "") {
-        mappedTransaction.recordedByEmail = ph.recordedByEmail.trim();
       }
       paymentHistory.push(mappedTransaction);
     });
@@ -419,4 +417,5 @@ export async function recordAdditionalPaymentAction(
     return { success: false, message: `Failed to record payment: ${error instanceof Error ? error.message : 'Unknown error'}` };
   }
 }
+
 
