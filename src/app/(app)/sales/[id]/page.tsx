@@ -5,23 +5,26 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, Printer, Eye, Loader2 } from 'lucide-react';
-import { getSaleByIdAction } from '../actions';
+import { ArrowLeft, Printer, Eye, Loader2, Edit } from 'lucide-react';
+import { getSaleByIdAction, updateSalePaymentStatusAction } from '../actions';
 import type { Sale, PaymentTransaction } from '@/lib/types';
 import { APP_NAME } from '@/lib/constants';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { getSession, type SessionData } from '@/app/login/actions';
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+
 
 interface jsPDFWithAutoTable extends jsPDF {
   autoTable: (options: any) => jsPDFWithAutoTable;
 }
 
-const DEFAULT_INVOICE_COLOR_HEX = "#73A7B3";
+const DEFAULT_INVOICE_COLOR_HEX = "#73A7B3"; // Muted Teal
 const DEFAULT_INVOICE_COLOR_RGB_ARRAY = [115, 167, 179];
 
 interface ShopDetails {
@@ -50,6 +53,7 @@ export default function SaleDetailPage() {
   const [sale, setSale] = useState<Sale | undefined | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [session, setSession] = useState<SessionData | null>(null);
+  const { toast } = useToast();
 
   const [isProcessingA4Pdf, setIsProcessingA4Pdf] = useState(false);
   const [isA4PreviewModalOpen, setIsA4PreviewModalOpen] = useState(false);
@@ -58,6 +62,8 @@ export default function SaleDetailPage() {
   const [isProcessingThermalPdf, setIsProcessingThermalPdf] = useState(false);
   const [isThermalPreviewModalOpen, setIsThermalPreviewModalOpen] = useState(false);
   const [thermalPreviewPdfUrl, setThermalPreviewPdfUrl] = useState<string | null>(null);
+  
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
 
   useEffect(() => {
@@ -73,17 +79,26 @@ export default function SaleDetailPage() {
           setSession(currentSession);
         } catch (err) {
           console.error("Failed to fetch sale details or session:", err);
-          setSale(undefined);
+          setSale(undefined); // Explicitly undefined for "not found"
         }
       }
       setIsLoading(false);
     }
     fetchData();
   }, [saleId]);
+  
+  const currentShopDetails = useMemo((): ShopDetails => {
+    return {
+      shopName: session?.shopName,
+      shopAddress: session?.shopAddress,
+      shopContact: session?.shopContact,
+    };
+  }, [session]);
 
   const generateInvoicePDF = (outputType: 'save' | 'datauristring' = 'save', options?: PdfOptions): string | void => {
     if (!sale) return;
-    setIsProcessingA4Pdf(true);
+    if (outputType === 'datauristring') setIsProcessingA4Pdf(true);
+
 
     const primaryColorHex = options?.primaryColor || session?.invoicePrimaryColor || DEFAULT_INVOICE_COLOR_HEX;
     const headerColorRgb = hexToRgb(primaryColorHex) || DEFAULT_INVOICE_COLOR_RGB_ARRAY;
@@ -194,9 +209,19 @@ export default function SaleDetailPage() {
 
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
-      if (sale.paymentMethod) { // Primary payment method for the sale
+      if (sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment') { 
         doc.text(`Payment Method: ${sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1)}`, rightMargin, startY, { align: 'right' });
         startY += 10;
+      } else if (sale.paymentMethod === 'manual_adjustment' && sale.paymentHistory.length > 0) {
+        const lastNonManualPayment = [...sale.paymentHistory].reverse().find(p => p.paymentMethod !== 'manual_adjustment');
+        if (lastNonManualPayment && lastNonManualPayment.paymentMethod) {
+           doc.text(`Primary Payment: ${lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1)}`, rightMargin, startY, { align: 'right' });
+           startY += 10;
+        } else {
+            startY += 10; // maintain spacing
+        }
+      } else {
+        startY += 10; // maintain spacing
       }
 
 
@@ -224,20 +249,23 @@ export default function SaleDetailPage() {
 
 
       if (outputType === 'datauristring') {
-        return doc.output('datauristring');
+        const dataUri = doc.output('datauristring');
+        setIsProcessingA4Pdf(false);
+        return dataUri;
       } else {
         doc.save(`invoice-${sale.id}.pdf`);
+        setIsProcessingA4Pdf(false);
       }
     } catch (error) {
         console.error("Error generating A4 PDF:", error);
-    } finally {
         setIsProcessingA4Pdf(false);
     }
   };
 
   const generateThermalReceiptPDF = (outputType: 'save' | 'datauristring' = 'save', options?: PdfOptions): string | void => {
     if (!sale) return;
-    setIsProcessingThermalPdf(true);
+    if (outputType === 'datauristring') setIsProcessingThermalPdf(true);
+
 
     const shopName = options?.shopDetails?.shopName && options.shopDetails.shopName.trim() !== "" ? options.shopDetails.shopName : APP_NAME;
     const shopAddress = options?.shopDetails?.shopAddress;
@@ -249,11 +277,11 @@ export default function SaleDetailPage() {
       const thermalWidthPt = thermalWidthMm * (72 / 25.4);
       const marginPt = 8;
       const contentWidthPt = thermalWidthPt - 2 * marginPt;
-      const initialPageHeightPt = 800;
+      const initialPageHeightPt = 800; // Approximate initial height, will auto-extend
 
       const doc = new jsPDF({
         unit: 'pt',
-        format: [thermalWidthPt, initialPageHeightPt],
+        format: [thermalWidthPt, initialPageHeightPt], // Height will be dynamic
       }) as jsPDFWithAutoTable;
 
       let currentY = marginPt + 5;
@@ -285,8 +313,11 @@ export default function SaleDetailPage() {
       currentY += 10;
 
       const saleDate = new Date(sale.saleDate);
-      const saleTime = new Date(sale.createdAt);
-      doc.text(`Date: ${saleDate.toLocaleDateString()} ${saleTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, marginPt, currentY);
+      // Use sale.createdAt for time part if available and different, otherwise saleDate
+      const timePartDate = sale.createdAt && (new Date(sale.createdAt).toDateString() === saleDate.toDateString()) 
+                         ? new Date(sale.createdAt) 
+                         : saleDate;
+      doc.text(`Date: ${saleDate.toLocaleDateString()} ${timePartDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, marginPt, currentY);
       currentY += 10;
 
       if (sale.customerName) {
@@ -321,19 +352,19 @@ export default function SaleDetailPage() {
         headStyles: {
           fontSize: 7.5,
           fontStyle: 'bold',
-          fillColor: [255,255,255],
-          textColor: [0,0,0],
+          fillColor: [255,255,255], // white
+          textColor: [0,0,0], // black
           lineWidth: 0.1,
-          lineColor: [180,180,180],
+          lineColor: [180,180,180], // light grey for subtle lines
         },
         columnStyles: {
-          0: { cellWidth: contentWidthPt * 0.48, fontStyle: 'normal' },
+          0: { cellWidth: contentWidthPt * 0.48, fontStyle: 'normal' }, // Item name can wrap
           1: { cellWidth: contentWidthPt * 0.12, halign: 'right' },
           2: { cellWidth: contentWidthPt * 0.20, halign: 'right' },
           3: { cellWidth: contentWidthPt * 0.20, halign: 'right' },
         },
         margin: { left: marginPt, right: marginPt },
-        tableWidth: 'auto',
+        tableWidth: 'auto', // ensure table uses contentWidth
         didDrawPage: (data) => {
           currentY = data.cursor?.y || currentY;
         }
@@ -363,11 +394,23 @@ export default function SaleDetailPage() {
 
       doc.setFontSize(8);
       doc.setFont(undefined, 'normal');
-      if (sale.paymentMethod) {
+      if (sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment') {
         doc.text('Payment:', marginPt, currentY);
         doc.text(sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1), thermalWidthPt - marginPt, currentY, { align: 'right' });
         currentY += 10;
+      } else if (sale.paymentMethod === 'manual_adjustment' && sale.paymentHistory.length > 0) {
+        const lastNonManualPayment = [...sale.paymentHistory].reverse().find(p => p.paymentMethod !== 'manual_adjustment');
+         if (lastNonManualPayment && lastNonManualPayment.paymentMethod) {
+            doc.text('Primary Pymt:', marginPt, currentY); // Abbreviated for space
+            doc.text(lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1), thermalWidthPt - marginPt, currentY, { align: 'right' });
+            currentY += 10;
+         } else {
+            currentY +=10;
+         }
+      } else {
+         currentY +=10;
       }
+
 
       if (sale.notes && sale.notes.trim() !== "") {
         currentY += 3;
@@ -377,7 +420,7 @@ export default function SaleDetailPage() {
         doc.setFont(undefined, 'normal');
         const splitNotes = doc.splitTextToSize(sale.notes, contentWidthPt);
         doc.text(splitNotes, marginPt, currentY);
-        currentY += (splitNotes.length * 8) + 3;
+        currentY += (splitNotes.length * 8) + 3; // 8 is approx height of font size 7-8
       }
 
       currentY += 8;
@@ -388,22 +431,19 @@ export default function SaleDetailPage() {
 
 
       if (outputType === 'datauristring') {
-        return doc.output('datauristring');
+        const dataUri = doc.output('datauristring');
+        setIsProcessingThermalPdf(false);
+        return dataUri;
       } else {
         doc.save(`receipt-${sale.id}.pdf`);
+        setIsProcessingThermalPdf(false);
       }
     } catch (error) {
       console.error("Error generating thermal PDF:", error);
-    } finally {
       setIsProcessingThermalPdf(false);
     }
   };
 
-  const currentShopDetails: ShopDetails = {
-    shopName: session?.shopName,
-    shopAddress: session?.shopAddress,
-    shopContact: session?.shopContact,
-  };
 
   const handlePreviewA4Bill = () => {
     const dataUri = generateInvoicePDF('datauristring', { primaryColor: session?.invoicePrimaryColor, shopDetails: currentShopDetails });
@@ -429,17 +469,39 @@ export default function SaleDetailPage() {
     generateThermalReceiptPDF('save', { shopDetails: currentShopDetails });
   };
 
-  const getStatusBadgeVariant = (status: Sale['paymentStatus']): "default" | "secondary" | "destructive" => {
+  const getStatusBadgeVariant = (status: Sale['paymentStatus']): "default" | "secondary" | "destructive" | "outline" => {
     switch (status) {
       case 'paid':
-        return 'default';
+        return 'default'; 
       case 'partially_paid':
         return 'secondary';
       case 'unpaid':
         return 'destructive';
       default:
-        return 'secondary';
+        return 'outline'; // A neutral outline for unknown/default
     }
+  };
+  
+  const handleStatusChange = async (newStatus: Sale['paymentStatus']) => {
+    if (!sale) return;
+    setIsUpdatingStatus(true);
+    
+    const payload = {
+      saleId: sale.id,
+      newStatus: newStatus,
+      currentTotalAmount: sale.totalAmount,
+    };
+
+    const result = await updateSalePaymentStatusAction(payload);
+    if (result.success) {
+      toast({ title: "Success", description: result.message });
+      // Re-fetch sale data to reflect changes
+      const updatedSale = await getSaleByIdAction(sale.id);
+      setSale(updatedSale);
+    } else {
+      toast({ title: "Error", description: result.message, variant: "destructive" });
+    }
+    setIsUpdatingStatus(false);
   };
 
 
@@ -452,7 +514,7 @@ export default function SaleDetailPage() {
     );
   }
 
-  if (!sale) {
+  if (sale === undefined) { // Check for undefined to mean "not found" after fetch attempt
     return (
       <div className="flex flex-col items-center justify-center h-full">
         <p className="text-xl text-muted-foreground">Sale not found.</p>
@@ -464,6 +526,16 @@ export default function SaleDetailPage() {
       </div>
     );
   }
+  
+  if (sale === null) { // Check for null if it means initial loading state before first fetch
+     return (
+      <div className="flex flex-col items-center justify-center h-full">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-lg text-muted-foreground mt-4">Initializing...</p>
+      </div>
+    );
+  }
+
 
   return (
     <div className="flex flex-col gap-6">
@@ -480,19 +552,19 @@ export default function SaleDetailPage() {
           </h1>
         </div>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-          <Button onClick={handlePreviewA4Bill} disabled={isProcessingA4Pdf || isProcessingThermalPdf} variant="outline" className="flex-grow sm:flex-grow-0">
+          <Button onClick={handlePreviewA4Bill} disabled={isProcessingA4Pdf || isProcessingThermalPdf || isUpdatingStatus} variant="outline" className="flex-grow sm:flex-grow-0">
             {(isProcessingA4Pdf && a4PreviewPdfUrl === null) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}
             Preview Bill
           </Button>
-          <Button onClick={handleDownloadA4Pdf} disabled={isProcessingA4Pdf || isProcessingThermalPdf} className="flex-grow sm:flex-grow-0">
+          <Button onClick={handleDownloadA4Pdf} disabled={isProcessingA4Pdf || isProcessingThermalPdf || isUpdatingStatus} className="flex-grow sm:flex-grow-0">
             {(isProcessingA4Pdf && a4PreviewPdfUrl !== null) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
             Download PDF
           </Button>
-          <Button onClick={handlePreviewThermalReceipt} disabled={isProcessingThermalPdf || isProcessingA4Pdf} variant="outline" className="flex-grow sm:flex-grow-0">
+          <Button onClick={handlePreviewThermalReceipt} disabled={isProcessingThermalPdf || isProcessingA4Pdf || isUpdatingStatus} variant="outline" className="flex-grow sm:flex-grow-0">
             {(isProcessingThermalPdf && thermalPreviewPdfUrl === null) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}
             Preview Thermal
           </Button>
-          <Button onClick={handleDownloadThermalReceipt} disabled={isProcessingThermalPdf || isProcessingA4Pdf} className="flex-grow sm:flex-grow-0">
+          <Button onClick={handleDownloadThermalReceipt} disabled={isProcessingThermalPdf || isProcessingA4Pdf || isUpdatingStatus} className="flex-grow sm:flex-grow-0">
             {(isProcessingThermalPdf && thermalPreviewPdfUrl !== null) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
             Download Thermal
           </Button>
@@ -511,18 +583,44 @@ export default function SaleDetailPage() {
             <div><strong>Customer:</strong> {sale.customerName || 'N/A'}</div>
             <div><strong>Sale Date:</strong> {new Date(sale.saleDate).toLocaleDateString()}</div>
             <div><strong>Sale Type:</strong> <span className="capitalize">{sale.saleType}</span></div>
-            <div><strong>Payment Method:</strong> <span className="capitalize">{sale.paymentMethod || 'N/A'}</span></div>
-            <div className="lg:col-span-2"><strong>Status:</strong>
-              <Badge variant={getStatusBadgeVariant(sale.paymentStatus)} className="ml-2 capitalize">
+            <div>
+                <strong>Payment Method:</strong> 
+                <span className="capitalize ml-1">
+                    {sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment' 
+                        ? sale.paymentMethod 
+                        : (sale.paymentHistory.find(p=>p.paymentMethod && p.paymentMethod !== 'manual_adjustment')?.paymentMethod || 'N/A')
+                    }
+                </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <strong>Status:</strong>
+              <Badge variant={getStatusBadgeVariant(sale.paymentStatus)} className="ml-1 capitalize">
                 {sale.paymentStatus.replace('_', ' ')}
               </Badge>
+              {session?.role === 'owner' && (
+                <Select
+                  value={sale.paymentStatus}
+                  onValueChange={(value) => handleStatusChange(value as Sale['paymentStatus'])}
+                  disabled={isUpdatingStatus}
+                >
+                  <SelectTrigger className="h-8 w-[150px] text-xs ml-2" aria-label="Change payment status">
+                    {isUpdatingStatus ? <Loader2 className="h-3 w-3 animate-spin mr-1"/> : <Edit className="h-3 w-3 mr-1" />}
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="partially_paid">Partially Paid</SelectItem>
+                    <SelectItem value="unpaid">Unpaid</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             {sale.notes && <div className="md:col-span-full"><strong>Notes:</strong> {sale.notes}</div>}
           </div>
           <div className="mt-4 pt-4 border-t grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
-            <div className="font-medium">Total Bill Amount: <span className="font-semibold">Rs. {sale.totalAmount.toFixed(2)}</span></div>
+            <div className="font-medium">Total Bill: <span className="font-semibold">Rs. {sale.totalAmount.toFixed(2)}</span></div>
             <div className="font-medium">Total Paid: <span className="font-semibold text-green-600">Rs. {sale.totalPaidAmount.toFixed(2)}</span></div>
-            <div className="font-medium">Amount Due: <span className={cn("font-semibold", sale.totalAmountDue > 0 ? "text-destructive" : "text-green-600")}>Rs. {sale.totalAmountDue.toFixed(2)}</span></div>
+            <div className="font-medium">Amount Due: <span className={cn("font-semibold", sale.totalAmountDue > 0.001 ? "text-destructive" : "text-green-600")}>Rs. {sale.totalAmountDue.toFixed(2)}</span></div>
           </div>
         </CardContent>
       </Card>
@@ -572,6 +670,7 @@ export default function SaleDetailPage() {
                     <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
                     <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Amount Paid (Rs.)</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Method</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Notes</th>
                   </tr>
                 </thead>
                 <tbody className="bg-card divide-y divide-border">
@@ -579,7 +678,8 @@ export default function SaleDetailPage() {
                     <tr key={index}>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{new Date(payment.date).toLocaleString()}</td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">{payment.amount.toFixed(2)}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground capitalize">{payment.paymentMethod || 'N/A'}</td>
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground capitalize">{payment.paymentMethod?.replace('_', ' ') || 'N/A'}</td>
+                      <td className="px-4 py-2 whitespace-normal text-sm text-muted-foreground">{payment.notes || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -641,3 +741,4 @@ export default function SaleDetailPage() {
     </div>
   );
 }
+
