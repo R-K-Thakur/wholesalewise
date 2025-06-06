@@ -4,7 +4,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { doc, getDoc, setDoc, updateDoc, Timestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase"; 
+import { db } from "@/lib/firebase";
 
 const SESSION_COOKIE_NAME = "auth-session";
 const APP_SETTINGS_COLLECTION = "app_settings";
@@ -12,10 +12,10 @@ const ROLE_MANAGEMENT_DOC = "role_management";
 const USERS_COLLECTION = "users";
 
 export interface SessionData {
-  username: string; 
+  username: string;
   email: string;
   role: "owner" | "staff";
-  name: string; 
+  name: string;
   invoicePrimaryColor?: string;
   shopName?: string;
   shopAddress?: string;
@@ -48,16 +48,16 @@ async function getRoleEmailsFromFirestore(): Promise<RoleEmails> {
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
-      const ownerEmails = (data?.ownerEmails && Array.isArray(data.ownerEmails)) 
-        ? data.ownerEmails.map(email => String(email).toLowerCase()).filter(email => email.includes('@')) 
+      const ownerEmails = (data?.ownerEmails && Array.isArray(data.ownerEmails))
+        ? data.ownerEmails.map(email => String(email).toLowerCase()).filter(email => email.includes('@'))
         : [];
-      const staffEmails = (data?.staffEmails && Array.isArray(data.staffEmails)) 
-        ? data.staffEmails.map(email => String(email).toLowerCase()).filter(email => email.includes('@')) 
+      const staffEmails = (data?.staffEmails && Array.isArray(data.staffEmails))
+        ? data.staffEmails.map(email => String(email).toLowerCase()).filter(email => email.includes('@'))
         : [];
       return { ownerEmails, staffEmails };
     }
     console.warn(`Firestore: '${APP_SETTINGS_COLLECTION}/${ROLE_MANAGEMENT_DOC}' document not found or fields missing. Defaulting to no authorized users.`);
-    return { ownerEmails: [], staffEmails: [] }; 
+    return { ownerEmails: [], staffEmails: [] };
   } catch (error) {
     console.error("Error fetching role emails from Firestore:", error);
     return { ownerEmails: [], staffEmails: [] };
@@ -93,7 +93,7 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   }
 
   const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
-  let userDisplayName = userEmailLower; // Default display name to email
+  let userDisplayName = userEmailLower;
   let userInvoicePrimaryColor: string | undefined = undefined;
   let userShopName: string | undefined = undefined;
   let userShopAddress: string | undefined = undefined;
@@ -110,10 +110,9 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
       userShopAddress = userData.shopAddress;
       userShopContact = userData.shopContact;
     } else {
-      // If user doc doesn't exist, userDisplayName remains userEmailLower
-      await setDoc(userDocRef, { 
-        email: userEmailLower, 
-        displayName: userDisplayName, 
+      await setDoc(userDocRef, {
+        email: userEmailLower,
+        displayName: userDisplayName,
         invoicePrimaryColor: undefined,
         shopName: undefined,
         shopAddress: undefined,
@@ -126,30 +125,28 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   }
 
   const sessionData: SessionData = {
-    username: userEmailLower, // Ensure username is always the email
-    email: userEmailLower,    // Ensure email is always the lowercased email
+    username: userEmailLower,
+    email: userEmailLower,
     role: userRole,
-    name: userDisplayName,    // Ensured to be a non-empty string
+    name: userDisplayName,
     invoicePrimaryColor: userInvoicePrimaryColor,
     shopName: userShopName,
     shopAddress: userShopAddress,
     shopContact: userShopContact,
   };
 
-  console.log('[signInWithEmailAction] Creating session with data:', sessionData); // CRITICAL LOG
-
   const cookieSecure = process.env.NODE_ENV === 'production';
   const cookieSameSite = cookieSecure ? "none" as "none" | "lax" | "strict" | undefined : "lax" as "none" | "lax" | "strict" | undefined;
-  
+
   try {
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
       httpOnly: true,
-      secure: cookieSecure, 
-      maxAge: 60 * 60 * 24 * 7, 
+      secure: cookieSecure,
+      maxAge: 60 * 60 * 24 * 7,
       path: "/",
       sameSite: cookieSameSite,
     });
-    
+
     redirect('/dashboard');
   } catch (e: any) {
     if (typeof e.message === 'string' && e.message.includes('NEXT_REDIRECT')) {
@@ -173,50 +170,27 @@ export async function getSession(): Promise<SessionData | null> {
   if (sessionCookie?.value) {
     try {
       const parsedData = JSON.parse(sessionCookie.value);
-      
-      let isValid = true;
-      let validationErrorReason = "";
 
-      if (!parsedData || typeof parsedData !== 'object' || parsedData === null) {
-        isValid = false;
-        validationErrorReason = "Parsed data is not a valid object.";
-      } else {
-        if (typeof parsedData.email !== 'string' || parsedData.email.trim() === "") { isValid = false; validationErrorReason = "Email field missing, not a string, or empty."; }
-        if (typeof parsedData.role !== 'string' || parsedData.role.trim() === "") { isValid = false; validationErrorReason = "Role field missing, not a string, or empty."; }
-        else if (!(parsedData.role === 'owner' || parsedData.role === 'staff')) { isValid = false; validationErrorReason = `Invalid role value: ${parsedData.role}`; }
-        if (typeof parsedData.name !== 'string' || parsedData.name.trim() === "") { isValid = false; validationErrorReason = "Name field missing, not a string, or empty."; }
-        if (typeof parsedData.username !== 'string' || parsedData.username.trim() === "") { isValid = false; validationErrorReason = "Username field missing, not a string, or empty."; }
-      }
-
-      if (isValid) {
+      if (parsedData && typeof parsedData === 'object' &&
+          typeof parsedData.email === 'string' && parsedData.email.trim() !== "" &&
+          typeof parsedData.role === 'string' && (parsedData.role === 'owner' || parsedData.role === 'staff') &&
+          typeof parsedData.name === 'string' && parsedData.name.trim() !== "" &&
+          typeof parsedData.username === 'string' && parsedData.username.trim() !== "") {
         return parsedData as SessionData;
       } else {
-        console.warn(`[getSession] Session cookie parsed, but data is invalid or incomplete. Reason: ${validationErrorReason}. Deleting cookie. Parsed data keys:`, Object.keys(parsedData || {}));
-        cookies().delete(SESSION_COOKIE_NAME); 
-        // If on the server and getSession is called (e.g., from layout or page),
-        // and it invalidates the session, this redirect might be necessary if middleware
-        // hasn't already caught the no-cookie state for a protected route.
-        // For client-side calls via server actions, this redirect might throw NEXT_REDIRECT.
-        // try {
-        //   redirect('/login'); // Potentially problematic, might be better handled by middleware
-        // } catch (e: any) {
-        //   if (typeof e.message === 'string' && e.message.includes('NEXT_REDIRECT')) {
-        //      console.log('[getSession] NEXT_REDIRECT caught during attempt to redirect from getSession after invalidating cookie.');
-        //      throw e; // Re-throw to let Next.js handle it
-        //   }
-        //   // If it's not a NEXT_REDIRECT error, just log it. The main goal is to return null.
-        //   console.error('[getSession] Error during redirect attempt after invalidating cookie:', e);
-        // }
+        console.warn(`[getSession] Session cookie parsed, but data is invalid or incomplete. Deleting cookie. Parsed data keys:`, Object.keys(parsedData || {}));
+        cookies().delete(SESSION_COOKIE_NAME);
         return null;
       }
     } catch (error) {
       console.error("[getSession] Failed to parse session cookie:", error);
-      cookies().delete(SESSION_COOKIE_NAME); 
+      cookies().delete(SESSION_COOKIE_NAME);
       return null;
     }
   }
   return null;
 }
+
 
 export async function updateUserDisplayNameAction(newName: string): Promise<{ success: boolean; message?: string }> {
   const session = await getSession();
@@ -250,9 +224,9 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
 
   const updatedSessionData: SessionData = {
     ...session,
-    name: newTrimmedName, 
+    name: newTrimmedName,
   };
-  
+
   const cookieSecure = process.env.NODE_ENV === 'production';
   const cookieSameSite = cookieSecure ? "none" as "none" | "lax" | "strict" | undefined : "lax" as "none" | "lax" | "strict" | undefined;
 
@@ -260,7 +234,7 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(updatedSessionData), {
       httpOnly: true,
       secure: cookieSecure,
-      maxAge: 60 * 60 * 24 * 7, 
+      maxAge: 60 * 60 * 24 * 7,
       path: "/",
       sameSite: cookieSameSite,
     });
@@ -333,7 +307,7 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
   if (details.shopName !== undefined) dataToUpdate.shopName = details.shopName.trim();
   if (details.shopAddress !== undefined) dataToUpdate.shopAddress = details.shopAddress.trim();
   if (details.shopContact !== undefined) dataToUpdate.shopContact = details.shopContact.trim();
-  
+
   if (Object.keys(dataToUpdate).length === 0) {
     return { success: true, message: "No shop details to update." };
   }
