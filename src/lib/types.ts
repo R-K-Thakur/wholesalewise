@@ -44,27 +44,27 @@ export interface Purchase {
 export interface PaymentTransaction {
   date: string;
   amount: number;
-  paymentMethod?: Sale['paymentMethod'] | 'manual_adjustment'; // Allow 'manual_adjustment'
+  paymentMethod: 'cash' | 'card' | 'online' | 'manual_adjustment'; // Non-optional
   notes?: string;
-  recordedByEmail?: string; // Optional: Who recorded this specific payment
+  recordedByEmail?: string; 
 }
 
 export interface Sale {
   id: string;
   items: SaleItem[];
-  totalAmount: number; // The grand total value of the sale
-  totalPaidAmount: number; // The total amount paid for this sale so far
-  totalAmountDue: number; // The remaining balance (totalAmount - totalPaidAmount)
+  totalAmount: number; 
+  totalPaidAmount: number; 
+  totalAmountDue: number; 
   paymentStatus: 'paid' | 'partially_paid' | 'unpaid';
   paymentHistory: PaymentTransaction[];
   saleType: 'wholesale' | 'retail';
   saleDate: string;
   customerName?: string;
-  paymentMethod?: 'cash' | 'card' | 'online'; // Represents the method of the *initial* payment transaction
+  paymentMethod?: 'cash' | 'card' | 'online'; 
   notes?: string;
   createdAt: string;
   updatedAt: string;
-  recordedByEmail?: string; // Who created the sale
+  recordedByEmail?: string; 
 }
 
 export interface SaleItem {
@@ -85,11 +85,11 @@ export type SaleItemFormData = Omit<SaleItem, 'productNameSnapshot' | 'total' | 
 export type SaleFormData = {
   items: SaleItemFormData[];
   saleType: 'wholesale' | 'retail';
-  saleDate?: Date; // Will be string in form
+  saleDate?: Date; 
   customerName?: string;
   paymentMethod?: 'cash' | 'card' | 'online';
   notes?: string;
-  amountPaid: number; // Amount paid in this transaction
+  amountPaid: number; 
 };
 
 export interface ActivityItem {
@@ -99,7 +99,7 @@ export interface ActivityItem {
   description: string;
   amount?: number;
   link?: string;
-  recordedByEmail?: string; // Added to show who recorded a purchase/stock update
+  recordedByEmail?: string; 
 }
 
 export interface SalesTrend {
@@ -116,7 +116,7 @@ export interface PurchaseTrend {
 export interface RecordAdditionalPaymentPayload {
   saleId: string;
   amountPaidNow: number;
-  paymentMethod: Sale['paymentMethod'];
+  paymentMethod: 'cash' | 'card' | 'online'; // Kept as is, since this is from form
   paymentNotes?: string;
 }
 
