@@ -2,7 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Package, ShoppingCart, PlusCircle, Search, TrendingUp, History, PackagePlus, IndianRupee, ClipboardList } from "lucide-react";
+import { Package, PlusCircle, Search, TrendingUp, History, PackagePlus, IndianRupee, ClipboardList } from "lucide-react"; // Removed ShoppingCart
 import { getProductsAction, getPurchasesAction } from "../products/actions";
 import { getSalesAction } from "../sales/actions";
 import type { Product, Purchase, Sale, ActivityItem } from "@/lib/types";
@@ -34,13 +34,13 @@ export default async function DashboardPage() {
 
   console.time("DashboardPage_DataProcessing");
   let totalRevenue = 0;
-  let totalSalesUnits = 0;
+  // let totalSalesUnits = 0; // Removed as the card is being removed
 
   sales.forEach(sale => {
     totalRevenue += sale.totalAmount;
-    sale.items.forEach(item => {
-      totalSalesUnits += item.quantitySold;
-    });
+    // sale.items.forEach(item => { // Calculation for totalSalesUnits removed
+    //   totalSalesUnits += item.quantitySold;
+    // });
   });
 
   const totalProducts = products.length;
@@ -48,7 +48,7 @@ export default async function DashboardPage() {
 
   const summaryData = {
     totalRevenue: totalRevenue,
-    totalSalesUnits: totalSalesUnits,
+    // totalSalesUnits: totalSalesUnits, // Removed
     totalProducts: totalProducts,
     numberOfSaleTransactions: numberOfSaleTransactions,
   };
@@ -120,6 +120,7 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
         </Link>
+        {/* Card for Total Sales (Units) removed
         <Link href="/sales" className="hover:shadow-md transition-shadow duration-200 rounded-lg block hover:cursor-pointer">
           <Card className="h-full">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -131,6 +132,7 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
         </Link>
+        */}
         <Link href="/products" className="hover:shadow-md transition-shadow duration-200 rounded-lg block hover:cursor-pointer">
           <Card className="h-full">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -180,3 +182,4 @@ export default async function DashboardPage() {
     </div>
   );
 }
+
