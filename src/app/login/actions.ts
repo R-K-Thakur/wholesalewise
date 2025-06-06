@@ -119,16 +119,16 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   let userShopContact = userDocDataFromDb?.shopContact;
 
   if (isOwner) {
-    // Owners bypass approval and are always approved
-    const ownerDataToSet: UserDocumentData = {
+    const ownerDataToSet: Partial<UserDocumentData> & Pick<UserDocumentData, 'email' | 'displayName' | 'loginApprovalStatus'> = {
       email: userEmailLower,
       displayName: userDisplayName,
       loginApprovalStatus: 'approved',
-      invoicePrimaryColor: userInvoicePrimaryColor,
-      shopName: userShopName,
-      shopAddress: userShopAddress,
-      shopContact: userShopContact,
     };
+    if (userInvoicePrimaryColor !== undefined) ownerDataToSet.invoicePrimaryColor = userInvoicePrimaryColor;
+    if (userShopName !== undefined) ownerDataToSet.shopName = userShopName;
+    if (userShopAddress !== undefined) ownerDataToSet.shopAddress = userShopAddress;
+    if (userShopContact !== undefined) ownerDataToSet.shopContact = userShopContact;
+    
     await setDoc(userDocRef, ownerDataToSet, { merge: true });
   } else if (isStaff) {
     const currentApprovalStatus = userDocDataFromDb?.loginApprovalStatus;
@@ -138,19 +138,20 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
       // Staff is approved, proceed to login
     } else if (currentApprovalStatus === 'denied') {
       return { error: "Your login request was denied. Please contact an owner." };
-    } else { // 'pending', not set, or any other value
-      // This is a new request or still pending
-      const staffDataToSet: UserDocumentData = {
+    } else { 
+      const staffDataToSet: Partial<UserDocumentData> & Pick<UserDocumentData, 'email' | 'displayName' | 'loginApprovalStatus' | 'lastLoginRequestTimestamp'> = {
         email: userEmailLower,
         displayName: userDisplayName,
         loginApprovalStatus: 'pending',
         lastLoginRequestTimestamp: nowISO,
-        invoicePrimaryColor: userInvoicePrimaryColor,
-        shopName: userShopName,
-        shopAddress: userShopAddress,
-        shopContact: userShopContact,
       };
+      if (userInvoicePrimaryColor !== undefined) staffDataToSet.invoicePrimaryColor = userInvoicePrimaryColor;
+      if (userShopName !== undefined) staffDataToSet.shopName = userShopName;
+      if (userShopAddress !== undefined) staffDataToSet.shopAddress = userShopAddress;
+      if (userShopContact !== undefined) staffDataToSet.shopContact = userShopContact;
+
       await setDoc(userDocRef, staffDataToSet, { merge: true });
+      
       if (currentApprovalStatus === 'pending') {
         return { error: "Your login request is still awaiting owner approval." };
       }
@@ -158,11 +159,10 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     }
   }
 
-  // If we reach here, the user is authorized and approved (or is an owner)
   const sessionData: SessionData = {
     username: userEmailLower,
     email: userEmailLower,
-    role: userRole, // userRole is guaranteed to be set if we reach here
+    role: userRole!,
     name: userDisplayName,
     invoicePrimaryColor: userInvoicePrimaryColor,
     shopName: userShopName,
@@ -230,11 +230,32 @@ export async function getSession(): Promise<SessionData | null> {
         reason = "Username field missing, not a string, or empty";
       }
       
+      // Optional fields in session can be undefined, so no strict check for their presence or type here
+      // unless a specific type is required (e.g. string if present)
+      if (parsedData.invoicePrimaryColor !== undefined && typeof parsedData.invoicePrimaryColor !== 'string') {
+        isValid = false;
+        reason = "invoicePrimaryColor, if present, must be a string";
+      }
+      if (parsedData.shopName !== undefined && typeof parsedData.shopName !== 'string') {
+        isValid = false;
+        reason = "shopName, if present, must be a string";
+      }
+       if (parsedData.shopAddress !== undefined && typeof parsedData.shopAddress !== 'string') {
+        isValid = false;
+        reason = "shopAddress, if present, must be a string";
+      }
+       if (parsedData.shopContact !== undefined && typeof parsedData.shopContact !== 'string') {
+        isValid = false;
+        reason = "shopContact, if present, must be a string";
+      }
+
+
       if (isValid) {
         return parsedData as SessionData;
       } else {
         console.warn(`[getSession] Session cookie parsed, but data is invalid or incomplete. Reason: ${reason}. Deleting cookie. Parsed data keys:`, Object.keys(parsedData || {}));
         cookies().delete(SESSION_COOKIE_NAME);
+        // No redirect from here; middleware should handle it or page logic should.
         return null;
       }
     } catch (error) {
@@ -271,8 +292,7 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
     if (userDocSnap.exists()) {
       await updateDoc(userDocRef, updatePayload);
     } else {
-      // Also ensure email is part of the document if creating it
-      await setDoc(userDocRef, { email: userEmailLower, ...updatePayload });
+      await setDoc(userDocRef, { email: userEmailLower, ...updatePayload }, { merge: true });
       console.warn(`User document for ${userEmailLower} was created during display name update.`);
     }
   } catch (dbError) {
@@ -317,15 +337,16 @@ export async function updateUserInvoiceColorAction(color: string): Promise<{ suc
   const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
 
   try {
-    await updateDoc(userDocRef, { invoicePrimaryColor: color });
-  } catch (dbError) {
-    // If document doesn't exist, create it with the color
-    if ((dbError as any)?.code === 'not-found' || (dbError as any)?.message?.includes('No document to update')) {
-        await setDoc(userDocRef, { email: userEmailLower, invoicePrimaryColor: color }, { merge: true });
+    const dataToSet: Partial<UserDocumentData> = { invoicePrimaryColor: color };
+    const userDocSnap = await getDoc(userDocRef);
+    if (userDocSnap.exists()) {
+        await updateDoc(userDocRef, dataToSet);
     } else {
-        console.error("Error updating user invoicePrimaryColor in Firestore:", dbError);
-        return { success: false, message: "Failed to save invoice color to the database. Please try again." };
+        await setDoc(userDocRef, { email: userEmailLower, ...dataToSet }, { merge: true });
     }
+  } catch (dbError) {
+    console.error("Error updating user invoicePrimaryColor in Firestore:", dbError);
+    return { success: false, message: "Failed to save invoice color to the database. Please try again." };
   }
 
   const updatedSessionData: SessionData = {
@@ -366,21 +387,22 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
   const userEmailLower = session.email.toLowerCase();
   const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
 
-  const dataToUpdate: Partial<ShopDetailsPayload> = {};
+  const dataToUpdate: Partial<UserDocumentData> = {};
   if (details.shopName !== undefined) dataToUpdate.shopName = details.shopName.trim();
   if (details.shopAddress !== undefined) dataToUpdate.shopAddress = details.shopAddress.trim();
   if (details.shopContact !== undefined) dataToUpdate.shopContact = details.shopContact.trim();
 
-  if (Object.keys(dataToUpdate).length === 0) {
+  if (Object.keys(dataToUpdate).length === 0 && !Object.values(details).some(val => val === "")) { // Check if trying to clear fields
     return { success: true, message: "No shop details to update." };
   }
+
 
   try {
     const userDocSnap = await getDoc(userDocRef);
     if (userDocSnap.exists()) {
         await updateDoc(userDocRef, dataToUpdate);
     } else {
-        await setDoc(userDocRef, { email: userEmailLower, ...dataToUpdate });
+        await setDoc(userDocRef, { email: userEmailLower, ...dataToUpdate }, {merge: true});
          console.warn(`User document for ${userEmailLower} was created during shop details update.`);
     }
   } catch (dbError) {
@@ -390,8 +412,11 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
 
   const updatedSessionData: SessionData = {
     ...session,
-    ...dataToUpdate,
+    shopName: dataToUpdate.shopName !== undefined ? dataToUpdate.shopName : session.shopName,
+    shopAddress: dataToUpdate.shopAddress !== undefined ? dataToUpdate.shopAddress : session.shopAddress,
+    shopContact: dataToUpdate.shopContact !== undefined ? dataToUpdate.shopContact : session.shopContact,
   };
+  
 
   const cookieSecure = process.env.NODE_ENV === 'production';
   const cookieSameSite = cookieSecure ? "none" as "none" | "lax" | "strict" | undefined : "lax" as "none" | "lax" | "strict" | undefined;
@@ -410,6 +435,4 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
     return { success: false, message: "Shop details were saved, but failed to update your current session. Changes will reflect on next login." };
   }
 }
-    
-
     
