@@ -11,10 +11,10 @@ import { useToast } from "@/hooks/use-toast";
 import { getSession, type SessionData } from "@/app/login/actions";
 import { 
   getOwnerEmailsAction, addOwnerEmailAction, removeOwnerEmailAction,
-  getStaffEmailsAction, addStaffEmailAction, removeStaffEmailAction,
-  getLoginTimeSettingsAction, updateLoginTimeSettingsAction
+  getStaffEmailsAction, addStaffEmailAction, removeStaffEmailAction
+  // getLoginTimeSettingsAction, updateLoginTimeSettingsAction // Removed
 } from "@/app/(app)/admin/actions";
-import { Loader2, PlusCircle, Trash2, ShieldAlert, UserCog, Users, Clock } from "lucide-react"; 
+import { Loader2, PlusCircle, Trash2, ShieldAlert, UserCog, Users } from "lucide-react"; // Removed Clock icon
 
 
 export default function AdminSettingsPage() {
@@ -33,10 +33,11 @@ export default function AdminSettingsPage() {
   const [newStaffEmail, setNewStaffEmail] = useState("");
   const [isSubmittingStaff, setIsSubmittingStaff] = useState(false);
 
-  const [staffLoginStartTime, setStaffLoginStartTime] = useState("09:00");
-  const [staffLoginEndTime, setStaffLoginEndTime] = useState("23:00");
-  const [isLoadingTimeSettings, setIsLoadingTimeSettings] = useState(false);
-  const [isSubmittingTimeSettings, setIsSubmittingTimeSettings] = useState(false);
+  // Removed state for login time settings
+  // const [staffLoginStartTime, setStaffLoginStartTime] = useState("09:00");
+  // const [staffLoginEndTime, setStaffLoginEndTime] = useState("23:00");
+  // const [isLoadingTimeSettings, setIsLoadingTimeSettings] = useState(false);
+  // const [isSubmittingTimeSettings, setIsSubmittingTimeSettings] = useState(false);
 
 
   useEffect(() => {
@@ -55,7 +56,7 @@ export default function AdminSettingsPage() {
         return;
       }
       
-      await Promise.all([fetchOwnerEmails(), fetchStaffEmails(), fetchLoginTimeSettings()]);
+      await Promise.all([fetchOwnerEmails(), fetchStaffEmails()]); // Removed fetchLoginTimeSettings
       setIsLoadingPage(false);
     }
     fetchSessionAndData();
@@ -85,18 +86,8 @@ export default function AdminSettingsPage() {
     }
   }
   
-  async function fetchLoginTimeSettings() {
-    setIsLoadingTimeSettings(true);
-    try {
-      const settings = await getLoginTimeSettingsAction();
-      setStaffLoginStartTime(settings.startTime);
-      setStaffLoginEndTime(settings.endTime);
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to load login time settings.", variant: "destructive" });
-    } finally {
-      setIsLoadingTimeSettings(false);
-    }
-  }
+  // Removed fetchLoginTimeSettings function
+  // async function fetchLoginTimeSettings() { ... }
 
 
   const handleAddOwnerEmail = async (event: FormEvent<HTMLFormElement>) => {
@@ -154,18 +145,8 @@ export default function AdminSettingsPage() {
     setIsSubmittingStaff(false);
   };
 
-  const handleUpdateTimeSettings = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsSubmittingTimeSettings(true);
-    const result = await updateLoginTimeSettingsAction(staffLoginStartTime, staffLoginEndTime);
-    if (result.success) {
-      toast({ title: "Success", description: result.message });
-      await fetchLoginTimeSettings(); // Re-fetch to confirm
-    } else {
-      toast({ title: "Error", description: result.message, variant: "destructive" });
-    }
-    setIsSubmittingTimeSettings(false);
-  };
+  // Removed handleUpdateTimeSettings function
+  // const handleUpdateTimeSettings = async (event: FormEvent<HTMLFormElement>) => { ... };
 
 
   if (isLoadingPage) {
@@ -192,7 +173,7 @@ export default function AdminSettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><UserCog className="h-6 w-6" />Manage Owner Access</CardTitle>
           <CardDescription>
-            Add or remove emails for 'owner' privileges. Owners have full access to the application, including managing staff access.
+            Add or remove emails for 'owner' privileges. Owners have full access to the application.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -258,7 +239,7 @@ export default function AdminSettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Users className="h-6 w-6" />Manage Staff List</CardTitle>
           <CardDescription>
-            Add or remove staff emails from the system. Login access for these staff members (enabled/disabled and time-based) is managed on the separate "Staff Access" page.
+            Add or remove staff emails. Staff can log in between 9 AM and 11 PM (exclusive) if their email is in this list.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -314,71 +295,11 @@ export default function AdminSettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Clock className="h-6 w-6" />Staff Login Time Window</CardTitle>
-          <CardDescription>
-            Define the hours during which staff members are allowed to log in. Times are in 24-hour format (HH:MM).
-            This applies only if their individual login access is enabled on the "Staff Access" page.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoadingTimeSettings ? (
-            <div className="flex items-center text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading time settings...
-            </div>
-          ) : (
-            <form onSubmit={handleUpdateTimeSettings} className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="staffLoginStartTime">Login Start Time</Label>
-                  <Input
-                    id="staffLoginStartTime"
-                    type="time"
-                    value={staffLoginStartTime}
-                    onChange={(e) => setStaffLoginStartTime(e.target.value)}
-                    disabled={isSubmittingTimeSettings}
-                    className="w-full"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="staffLoginEndTime">Login End Time (Exclusive)</Label>
-                  <Input
-                    id="staffLoginEndTime"
-                    type="time"
-                    value={staffLoginEndTime}
-                    onChange={(e) => setStaffLoginEndTime(e.target.value)}
-                    disabled={isSubmittingTimeSettings}
-                    className="w-full"
-                  />
-                   <p className="text-xs text-muted-foreground mt-1">
-                    E.g., if set to 23:00, staff can login up to 22:59.
-                  </p>
-                </div>
-              </div>
-              <Button type="submit" disabled={isSubmittingTimeSettings || isLoadingTimeSettings}>
-                {isSubmittingTimeSettings ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Save Time Settings
-              </Button>
-            </form>
-          )}
-        </CardContent>
-      </Card>
+      {/* Removed Staff Login Time Window Card */}
+      {/* <Card> ... </Card> */}
 
-
-      <Card>
-        <CardHeader>
-             <CardTitle className="text-base text-muted-foreground">Initial Setup Note</CardTitle>
-        </CardHeader>
-        <CardContent>
-            <p className="text-sm text-muted-foreground">
-                If you are setting up the application for the first time, ensure you have manually added your email to the `ownerEmails` array 
-                (and optionally, an empty `staffEmails` array, `staffLoginStartTime: "09:00"`, `staffLoginEndTime: "23:00"`) 
-                in the `app_settings/role_management` document in your Firestore database.
-                Your user document in the `users` collection (e.g., `users/youremail@example.com`) should also ideally exist with `loginManuallyDisabled: false`.
-            </p>
-        </CardContent>
-      </Card>
+      {/* Removed Initial Setup Note Card */}
+      {/* <Card> ... </Card> */}
     </div>
   );
 }
