@@ -4,19 +4,29 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, Printer, Eye, Loader2, Edit } from 'lucide-react';
-import { getSaleByIdAction, updateSalePaymentStatusAction, type UpdateSaleStatusPayload } from '../actions';
-import type { Sale, PaymentTransaction } from '@/lib/types';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogTrigger, 
+  DialogFooter,
+  DialogDescription
+} from "@/components/ui/dialog";
+import { ArrowLeft, Printer, Eye, Loader2, Edit, PlusCircle } from 'lucide-react';
+import { getSaleByIdAction, updateSalePaymentStatusAction, recordAdditionalPaymentAction, type UpdateSaleStatusPayload } from '../actions';
+import type { Sale, PaymentTransaction, RecordAdditionalPaymentPayload } from '@/lib/types';
 import { APP_NAME } from '@/lib/constants';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { useEffect, useState, useMemo } from 'react';
-import { useParams } from 'next/navigation';
+import { useEffect, useState, useMemo, type FormEvent } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { getSession, type SessionData } from '@/app/login/actions';
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
 
@@ -26,6 +36,8 @@ interface jsPDFWithAutoTable extends jsPDF {
 
 const DEFAULT_INVOICE_COLOR_HEX = "#73A7B3"; 
 const DEFAULT_INVOICE_COLOR_RGB_ARRAY = [115, 167, 179];
+const EPSILON = 0.001; // For floating point comparisons
+
 
 interface ShopDetails {
   shopName?: string;
@@ -49,8 +61,9 @@ function hexToRgb(hex: string): [number, number, number] | null {
 
 export default function SaleDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const saleId = params.id as string;
-  const [sale, setSale] = useState<Sale | null | undefined>(null); // null for initial, undefined for not found
+  const [sale, setSale] = useState<Sale | null | undefined>(null); 
   const [isLoading, setIsLoading] = useState(true);
   const [session, setSession] = useState<SessionData | null>(null);
   const { toast } = useToast();
@@ -65,6 +78,26 @@ export default function SaleDetailPage() {
   
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  // State for Record Additional Payment Dialog
+  const [isRecordPaymentDialogOpen, setIsRecordPaymentDialogOpen] = useState(false);
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [paymentMethod, setPaymentMethod] = useState<Sale['paymentMethod']>('cash');
+  const [paymentNotes, setPaymentNotes] = useState<string>("");
+
+
+  const displayPaymentMethod = useMemo(() => {
+    if (!sale) return 'N/A';
+    if (sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment') {
+      return sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
+    }
+    // Find the last non-manual payment in history if the primary method is manual or not set
+    const lastNonManualPayment = [...(sale.paymentHistory || [])].reverse().find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
+    return lastNonManualPayment?.paymentMethod 
+      ? lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1) 
+      : (sale.paymentMethod ? sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1) : 'N/A');
+  }, [sale]);
+
 
   useEffect(() => {
     async function fetchData() {
@@ -78,6 +111,11 @@ export default function SaleDetailPage() {
           ]);
           setSale(fetchedSale); 
           setSession(currentSession);
+          if (fetchedSale && fetchedSale.totalAmountDue > EPSILON) {
+            setPaymentAmount(fetchedSale.totalAmountDue.toFixed(2));
+          } else {
+            setPaymentAmount("");
+          }
         } catch (err) {
           console.error("Failed to fetch sale details or session:", err);
           setSale(undefined); 
@@ -97,17 +135,6 @@ export default function SaleDetailPage() {
       shopContact: session?.shopContact,
     };
   }, [session]);
-
-  const displayPaymentMethod = useMemo(() => {
-    if (!sale) return 'N/A';
-    if (sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment') {
-      return sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
-    }
-    const lastNonManualPayment = [...(sale.paymentHistory || [])].reverse().find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
-    return lastNonManualPayment?.paymentMethod 
-      ? lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1) 
-      : (sale.paymentMethod ? sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1) : 'N/A');
-  }, [sale]);
 
 
   if (isLoading) {
@@ -262,7 +289,7 @@ export default function SaleDetailPage() {
           const lastNonManualPayment = [...(sale.paymentHistory || [])].reverse().find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
           if (lastNonManualPayment?.paymentMethod) {
             primaryPaymentMethodDisplay = lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1);
-          } else if (sale.paymentMethod) { // fallback to sale.paymentMethod if it exists, even if manual_adjustment
+          } else if (sale.paymentMethod) { 
              primaryPaymentMethodDisplay = sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
           }
       }
@@ -539,12 +566,61 @@ export default function SaleDetailPage() {
     const result = await updateSalePaymentStatusAction(payload);
     if (result.success) {
       toast({ title: "Success", description: result.message });
-      const updatedSale = await getSaleByIdAction(sale.id); // Re-fetch to get latest data
+      const updatedSale = await getSaleByIdAction(sale.id); 
       setSale(updatedSale);
+      if (updatedSale && updatedSale.totalAmountDue > EPSILON) {
+        setPaymentAmount(updatedSale.totalAmountDue.toFixed(2));
+      } else {
+        setPaymentAmount("");
+      }
     } else {
       toast({ title: "Error", description: result.message, variant: "destructive" });
     }
     setIsUpdatingStatus(false);
+  };
+
+  const handleRecordAdditionalPaymentSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!sale || !paymentAmount) return;
+
+    const amountPaidNum = parseFloat(paymentAmount);
+    if (isNaN(amountPaidNum) || amountPaidNum <= 0) {
+      toast({ title: "Invalid Amount", description: "Please enter a valid positive amount.", variant: "destructive" });
+      return;
+    }
+    if (amountPaidNum > sale.totalAmountDue + EPSILON) {
+      toast({ title: "Overpayment", description: `Payment (Rs. ${amountPaidNum.toFixed(2)}) exceeds amount due (Rs. ${sale.totalAmountDue.toFixed(2)}).`, variant: "destructive" });
+      return;
+    }
+
+    setIsSubmittingPayment(true);
+    const payload: RecordAdditionalPaymentPayload = {
+      saleId: sale.id,
+      amountPaidNow: amountPaidNum,
+      paymentMethod: paymentMethod as Sale['paymentMethod'], // Type assertion as select is controlled
+      paymentNotes: paymentNotes.trim() === "" ? undefined : paymentNotes.trim(),
+    };
+
+    const result = await recordAdditionalPaymentAction(payload);
+    if (result.success) {
+      toast({ title: "Payment Recorded", description: result.message });
+      setIsRecordPaymentDialogOpen(false);
+      // Reset form fields
+      setPaymentAmount("");
+      setPaymentMethod('cash');
+      setPaymentNotes("");
+      // Re-fetch sale data
+      const updatedSale = await getSaleByIdAction(sale.id);
+      setSale(updatedSale);
+      if (updatedSale && updatedSale.totalAmountDue > EPSILON) {
+          setPaymentAmount(updatedSale.totalAmountDue.toFixed(2));
+      } else {
+          setPaymentAmount("");
+      }
+    } else {
+      toast({ title: "Error", description: result.message, variant: "destructive" });
+    }
+    setIsSubmittingPayment(false);
   };
 
 
@@ -583,11 +659,88 @@ export default function SaleDetailPage() {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Transaction Information</CardTitle>
-          <CardDescription>
-            Details for sale transaction ID: {sale.id}
-          </CardDescription>
+        <CardHeader className="flex flex-row justify-between items-start">
+            <div>
+                <CardTitle>Transaction Information</CardTitle>
+                <CardDescription>
+                    Details for sale transaction ID: {sale.id}
+                </CardDescription>
+            </div>
+            {sale.totalAmountDue > EPSILON && (
+                <Dialog open={isRecordPaymentDialogOpen} onOpenChange={setIsRecordPaymentDialogOpen}>
+                    <DialogTrigger asChild>
+                        <Button variant="default" size="sm" onClick={() => {
+                            // Prefill payment amount with current due when opening dialog
+                            setPaymentAmount(sale.totalAmountDue.toFixed(2));
+                            setPaymentMethod('cash');
+                            setPaymentNotes("");
+                            setIsRecordPaymentDialogOpen(true);
+                        }}>
+                            <PlusCircle className="mr-2 h-4 w-4" /> Record Payment
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                        <DialogTitle>Record Payment for Sale: {sale.id}</DialogTitle>
+                        <DialogDescription>
+                            Current Amount Due: Rs. {sale.totalAmountDue.toFixed(2)}
+                        </DialogDescription>
+                        </DialogHeader>
+                        <form onSubmit={handleRecordAdditionalPaymentSubmit} className="space-y-4">
+                            <div>
+                                <Label htmlFor="paymentAmount">Amount Paid (Rs.)</Label>
+                                <Input
+                                id="paymentAmount"
+                                type="number"
+                                value={paymentAmount}
+                                onChange={(e) => setPaymentAmount(e.target.value)}
+                                step="0.01"
+                                min="0.01"
+                                max={sale.totalAmountDue.toFixed(2)} 
+                                required
+                                disabled={isSubmittingPayment}
+                                />
+                            </div>
+                            <div>
+                                <Label htmlFor="paymentMethodDialog">Payment Method</Label>
+                                <Select 
+                                    value={paymentMethod} 
+                                    onValueChange={(value) => setPaymentMethod(value as Sale['paymentMethod'])}
+                                    disabled={isSubmittingPayment}
+                                >
+                                <SelectTrigger id="paymentMethodDialog">
+                                    <SelectValue placeholder="Select method" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="cash">Cash</SelectItem>
+                                    <SelectItem value="card">Card</SelectItem>
+                                    <SelectItem value="online">Online</SelectItem>
+                                </SelectContent>
+                                </Select>
+                            </div>
+                            <div>
+                                <Label htmlFor="paymentNotes">Notes (Optional)</Label>
+                                <Input
+                                id="paymentNotes"
+                                value={paymentNotes}
+                                onChange={(e) => setPaymentNotes(e.target.value)}
+                                placeholder="e.g., Paid by customer's friend"
+                                disabled={isSubmittingPayment}
+                                />
+                            </div>
+                            <DialogFooter>
+                                <Button type="button" variant="outline" onClick={() => setIsRecordPaymentDialogOpen(false)} disabled={isSubmittingPayment}>
+                                Cancel
+                                </Button>
+                                <Button type="submit" disabled={isSubmittingPayment || !paymentAmount || parseFloat(paymentAmount) <= 0}>
+                                {isSubmittingPayment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                Submit Payment
+                                </Button>
+                            </DialogFooter>
+                        </form>
+                    </DialogContent>
+                </Dialog>
+            )}
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3 text-sm">
@@ -626,7 +779,7 @@ export default function SaleDetailPage() {
           <div className="mt-4 pt-4 border-t grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
             <div className="font-medium">Total Bill: <span className="font-semibold">Rs. {sale.totalAmount.toFixed(2)}</span></div>
             <div className="font-medium">Total Paid: <span className="font-semibold text-green-600">Rs. {sale.totalPaidAmount.toFixed(2)}</span></div>
-            <div className="font-medium">Amount Due: <span className={cn("font-semibold", sale.totalAmountDue > 0.001 ? "text-destructive" : "text-green-600")}>Rs. {sale.totalAmountDue.toFixed(2)}</span></div>
+            <div className="font-medium">Amount Due: <span className={cn("font-semibold", sale.totalAmountDue > EPSILON ? "text-destructive" : "text-green-600")}>Rs. {sale.totalAmountDue.toFixed(2)}</span></div>
           </div>
         </CardContent>
       </Card>
@@ -677,6 +830,7 @@ export default function SaleDetailPage() {
                     <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Amount Paid (Rs.)</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Method</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Notes</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Recorded By</th>
                   </tr>
                 </thead>
                 <tbody className="bg-card divide-y divide-border">
@@ -686,6 +840,7 @@ export default function SaleDetailPage() {
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">{payment.amount.toFixed(2)}</td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground capitalize">{payment.paymentMethod?.replace('_', ' ') || 'N/A'}</td>
                       <td className="px-4 py-2 whitespace-normal text-sm text-muted-foreground max-w-xs" title={payment.notes}>{payment.notes || '-'}</td>
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{payment.recordedByEmail || 'N/A'}</td>
                     </tr>
                   ))}
                 </tbody>

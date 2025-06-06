@@ -46,6 +46,7 @@ export interface PaymentTransaction {
   amount: number;
   paymentMethod?: Sale['paymentMethod'] | 'manual_adjustment'; // Allow 'manual_adjustment'
   notes?: string;
+  recordedByEmail?: string; // Optional: Who recorded this specific payment
 }
 
 export interface Sale {
@@ -63,6 +64,7 @@ export interface Sale {
   notes?: string;
   createdAt: string;
   updatedAt: string;
+  recordedByEmail?: string; // Who created the sale
 }
 
 export interface SaleItem {
@@ -109,5 +111,12 @@ export interface PurchaseTrend {
   date: string;
   totalPurchases: number;
   fullDate?: string;
+}
+
+export interface RecordAdditionalPaymentPayload {
+  saleId: string;
+  amountPaidNow: number;
+  paymentMethod: Sale['paymentMethod'];
+  paymentNotes?: string;
 }
 
