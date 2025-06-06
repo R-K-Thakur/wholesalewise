@@ -142,7 +142,7 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
 
     console.log('[signInWithEmailAction] EXACT Session data being set in cookie:', JSON.stringify(sessionData, null, 2));
 
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const cookieSecure = process.env.NODE_ENV === 'production';
     console.log(`[signInWithEmailAction] Cookie settings: cookieSecure = ${cookieSecure}, effective SameSite will be 'Lax' (forced for this test)`);
     
@@ -352,6 +352,8 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
   }
 }
     
+    
+
     
 
     
