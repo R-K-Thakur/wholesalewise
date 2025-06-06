@@ -39,6 +39,7 @@ export interface Purchase {
   createdAt: string;
   updatedAt: string;
   recordedByEmail?: string;
+  recordedByName?: string;
 }
 
 export interface PaymentTransaction {
@@ -46,25 +47,27 @@ export interface PaymentTransaction {
   amount: number;
   paymentMethod: 'cash' | 'card' | 'online' | 'manual_adjustment'; // Non-optional
   notes?: string;
-  recordedByEmail?: string; 
+  recordedByEmail?: string;
+  recordedByName?: string;
 }
 
 export interface Sale {
   id: string;
   items: SaleItem[];
-  totalAmount: number; 
-  totalPaidAmount: number; 
-  totalAmountDue: number; 
+  totalAmount: number;
+  totalPaidAmount: number;
+  totalAmountDue: number;
   paymentStatus: 'paid' | 'partially_paid' | 'unpaid';
   paymentHistory: PaymentTransaction[];
   saleType: 'wholesale' | 'retail';
   saleDate: string;
   customerName?: string;
-  paymentMethod?: 'cash' | 'card' | 'online'; 
+  paymentMethod?: 'cash' | 'card' | 'online';
   notes?: string;
   createdAt: string;
   updatedAt: string;
-  recordedByEmail?: string; 
+  recordedByEmail?: string;
+  recordedByName?: string;
 }
 
 export interface SaleItem {
@@ -78,18 +81,18 @@ export interface SaleItem {
 }
 
 export type ProductFormData = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'quantityInStock' | 'createdByEmail' | 'lastStockUpdateByEmail'> & { initialStockInPurchaseUnits: number };
-export type PurchaseFormData = Omit<Purchase, 'id' | 'productNameSnapshot' | 'totalCost' | 'purchaseDate' | 'purchaseUnitSnapshot' | 'createdAt' | 'updatedAt' | 'recordedByEmail'> & { purchaseDate?: Date };
+export type PurchaseFormData = Omit<Purchase, 'id' | 'productNameSnapshot' | 'totalCost' | 'purchaseDate' | 'purchaseUnitSnapshot' | 'createdAt' | 'updatedAt' | 'recordedByEmail' | 'recordedByName'> & { purchaseDate?: Date };
 
 
 export type SaleItemFormData = Omit<SaleItem, 'productNameSnapshot' | 'total' | 'pricePerUnitSold'> & { pricePerUnitSold?: number };
 export type SaleFormData = {
   items: SaleItemFormData[];
   saleType: 'wholesale' | 'retail';
-  saleDate?: Date; 
+  saleDate?: Date;
   customerName?: string;
   paymentMethod?: 'cash' | 'card' | 'online';
   notes?: string;
-  amountPaid: number; 
+  amountPaid: number;
 };
 
 export interface ActivityItem {
@@ -99,7 +102,8 @@ export interface ActivityItem {
   description: string;
   amount?: number;
   link?: string;
-  recordedByEmail?: string; 
+  recordedByEmail?: string;
+  recordedByName?: string;
 }
 
 export interface SalesTrend {
@@ -126,10 +130,10 @@ export interface RecordAdditionalPaymentPayload {
 //   displayName: string;
 //   loginManuallyDisabled: boolean;
 // }
-
     
     
 
     
 
     
+

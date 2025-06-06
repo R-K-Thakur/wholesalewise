@@ -18,7 +18,7 @@ export default async function DashboardPage() {
   console.time("DashboardPage_GetSession");
   const userSession: SessionData | null = await getSession();
   console.timeEnd("DashboardPage_GetSession");
-  const userRole = userSession?.role || 'staff'; 
+  const userRole = userSession?.role || 'staff';
 
   console.time("DashboardPage_GetProductsAction");
   const products: Product[] = await getProductsAction();
@@ -29,7 +29,7 @@ export default async function DashboardPage() {
   console.timeEnd("DashboardPage_GetSalesAction");
 
   console.time("DashboardPage_GetPurchasesAction");
-  const purchases: Purchase[] = await getPurchasesAction(); 
+  const purchases: Purchase[] = await getPurchasesAction();
   console.timeEnd("DashboardPage_GetPurchasesAction");
 
   console.time("DashboardPage_DataProcessing");
@@ -60,30 +60,32 @@ export default async function DashboardPage() {
     activityItems.push({
       id: sale.id,
       type: 'sale',
-      date: sale.createdAt, 
+      date: sale.createdAt,
       description: `Sale of Rs. ${sale.totalAmount.toFixed(2)} to ${sale.customerName || 'N/A'}.`,
       amount: sale.totalAmount,
       link: `/sales/${sale.id}`,
-      recordedByEmail: sale.recordedByEmail, // Add recordedByEmail for sales
+      recordedByEmail: sale.recordedByEmail,
+      recordedByName: sale.recordedByName,
     });
   });
 
   purchases.forEach(purchase => {
     const product = products.find(p => p.id === purchase.productId);
     let desc = `Stock added for ${purchase.productNameSnapshot}: ${purchase.quantityPurchased} ${purchase.purchaseUnitSnapshot}.`;
-    
+
     if (product && product.createdAt === purchase.createdAt && product.createdByEmail === purchase.recordedByEmail) {
        desc = `Initial stock for ${purchase.productNameSnapshot}: ${purchase.quantityPurchased} ${purchase.purchaseUnitSnapshot}.`;
     }
-  
+
     activityItems.push({
-      id: purchase.id, 
+      id: purchase.id,
       type: 'purchase',
-      date: purchase.createdAt, 
+      date: purchase.createdAt,
       description: desc,
       amount: purchase.totalCost,
       link: product ? `/products/${product.id}/edit` : undefined,
       recordedByEmail: purchase.recordedByEmail,
+      recordedByName: purchase.recordedByName,
     });
   });
 
@@ -95,7 +97,7 @@ export default async function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl sm:text-3xl font-bold tracking-tight font-headline">Dashboard Overview</h1>
-      
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {userRole !== 'staff' && (
           <Card>
@@ -174,12 +176,12 @@ export default async function DashboardPage() {
       {userRole !== 'staff' && (
         <div className="grid gap-4 md:grid-cols-2">
           <SalesTrendChart sales={sales} />
-          <PurchaseHistoryChart purchases={purchases} /> 
+          <PurchaseHistoryChart purchases={purchases} />
         </div>
       )}
-      
+
       <RecentActivityWidget activities={recentActivities} />
-       
+
     </div>
   );
 }

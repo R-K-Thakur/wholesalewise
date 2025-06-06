@@ -25,20 +25,20 @@ const mapDocToProduct = (document: import('firebase/firestore').DocumentSnapshot
     id: document.id,
     name: typeof data.name === 'string' ? data.name : '',
     category: PRODUCT_CATEGORIES.includes(data.category) ? data.category : PRODUCT_CATEGORIES[0],
-    
+
     baseUnit: PRODUCT_UNITS.includes(data.baseUnit) ? data.baseUnit : PRODUCT_UNITS[0],
     purchaseUnit: PRODUCT_UNITS.includes(data.purchaseUnit) ? data.purchaseUnit : PRODUCT_UNITS[0],
     purchaseUnitConversionFactor: typeof data.purchaseUnitConversionFactor === 'number' ? data.purchaseUnitConversionFactor : 1,
-    
-    purchasePrice: typeof data.purchasePrice === 'number' ? data.purchasePrice : 0, 
+
+    purchasePrice: typeof data.purchasePrice === 'number' ? data.purchasePrice : 0,
     retailPricePerBaseUnit: typeof data.retailPricePerBaseUnit === 'number' ? data.retailPricePerBaseUnit : 0,
     wholesalePricePerBaseUnit: typeof data.wholesalePricePerBaseUnit === 'number' ? data.wholesalePricePerBaseUnit : 0,
-    
-    quantityInStock: typeof data.quantityInStock === 'number' ? data.quantityInStock : 0, 
-    
+
+    quantityInStock: typeof data.quantityInStock === 'number' ? data.quantityInStock : 0,
+
     sku: typeof data.sku === 'string' ? data.sku : '',
     barcode: typeof data.barcode === 'string' ? data.barcode : '',
-    reorderThreshold: typeof data.reorderThreshold === 'number' ? data.reorderThreshold : 0, 
+    reorderThreshold: typeof data.reorderThreshold === 'number' ? data.reorderThreshold : 0,
     vendor: typeof data.vendor === 'string' ? data.vendor : '',
     createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (data.createdAt || nowAsISO),
     updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : (data.updatedAt || nowAsISO),
@@ -56,11 +56,12 @@ export async function addProduct(data: ValidatedProductFormData) {
   }
 
   const session = await getSession();
-  const userEmail = session?.email || 'system'; 
+  const userEmail = session?.email || 'system';
+  const userName = session?.name || userEmail;
 
   try {
     const now = Timestamp.now().toDate().toISOString();
-    
+
     let conversionFactor = data.purchaseUnitConversionFactor;
     if (data.baseUnit === data.purchaseUnit) {
       conversionFactor = 1;
@@ -78,22 +79,22 @@ export async function addProduct(data: ValidatedProductFormData) {
       baseUnit: data.baseUnit,
       purchaseUnit: data.purchaseUnit,
       purchaseUnitConversionFactor: conversionFactor,
-      purchasePrice: data.purchasePrice, 
+      purchasePrice: data.purchasePrice,
       retailPricePerBaseUnit: data.retailPricePerBaseUnit,
       wholesalePricePerBaseUnit: data.wholesalePricePerBaseUnit,
-      quantityInStock: quantityInBaseUnits, 
+      quantityInStock: quantityInBaseUnits,
       reorderThreshold: data.reorderThreshold ?? 0,
-      sku: '', 
+      sku: '',
       barcode: '',
       vendor: '',
       createdAt: now,
       updatedAt: now,
       createdByEmail: userEmail,
-      lastStockUpdateByEmail: userEmail, 
+      lastStockUpdateByEmail: userEmail,
     };
-    
+
     const productDocRef = await runTransaction(db, async (transaction) => {
-      const newProductRef = doc(collection(db, PRODUCTS_COLLECTION)); 
+      const newProductRef = doc(collection(db, PRODUCTS_COLLECTION));
       transaction.set(newProductRef, newProductData);
 
       // The initialStock from the form is in purchaseUnits.
@@ -105,25 +106,26 @@ export async function addProduct(data: ValidatedProductFormData) {
         purchaseUnitSnapshot: data.purchaseUnit,
         purchasePricePerUnitSnapshot: data.purchasePrice,
         totalCost: data.initialStock * data.purchasePrice, // Cost based on purchase units
-        purchaseDate: now, 
+        purchaseDate: now,
         createdAt: now,
         updatedAt: now,
         recordedByEmail: userEmail,
+        recordedByName: userName,
       };
       const purchaseDocRef = doc(collection(db, PURCHASES_COLLECTION));
       transaction.set(purchaseDocRef, initialPurchaseRecord);
-      
-      return newProductRef; 
+
+      return newProductRef;
     });
 
     revalidateTag('products');
     revalidateTag('purchases');
     revalidatePath('/products');
-    revalidatePath('/dashboard'); 
+    revalidatePath('/dashboard');
 
     const productToReturn: Product = {
-      id: productDocRef.id, 
-      ...newProductData, 
+      id: productDocRef.id,
+      ...newProductData,
     };
 
     return { success: true, message: 'Product added successfully and initial stock recorded as purchase!', product: productToReturn };
@@ -178,7 +180,7 @@ export async function getProductByIdAction(id: string): Promise<Product | undefi
 }
 
 export async function updateProductAction(id: string, data: Partial<ValidatedProductFormData>) {
-  const session = await getSession(); 
+  const session = await getSession();
   if (!session) {
     return { success: false, message: "User session not found. Please log in." };
   }
@@ -187,19 +189,19 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
 
   try {
     const productRef = doc(db, PRODUCTS_COLLECTION, id);
-    
+
     const currentDocSnap = await getDoc(productRef);
     if (!currentDocSnap.exists()) {
         return { success: false, message: 'Product not found.' };
     }
     const currentProductData = currentDocSnap.data() as Product; // Assuming Product type after .data()
 
-    const updateData: { [key: string]: any } = {}; 
+    const updateData: { [key: string]: any } = {};
     if (data.productName !== undefined) updateData.name = data.productName;
     if (data.category !== undefined) updateData.category = data.category;
     if (data.baseUnit !== undefined) updateData.baseUnit = data.baseUnit;
     if (data.purchaseUnit !== undefined) updateData.purchaseUnit = data.purchaseUnit;
-    
+
     const finalBaseUnit = data.baseUnit || currentProductData?.baseUnit;
     const finalPurchaseUnit = data.purchaseUnit || currentProductData?.purchaseUnit;
 
@@ -211,9 +213,9 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
         updateData.purchaseUnitConversionFactor = data.purchaseUnitConversionFactor;
     } else if (finalBaseUnit !== finalPurchaseUnit) {
         if (currentProductData.purchaseUnitConversionFactor && currentProductData.purchaseUnitConversionFactor >=1){
-             if (data.purchaseUnitConversionFactor === undefined) { 
+             if (data.purchaseUnitConversionFactor === undefined) {
                 updateData.purchaseUnitConversionFactor = currentProductData.purchaseUnitConversionFactor;
-             } else { 
+             } else {
                  return { success: false, message: 'Conversion factor is required and must be >= 1 if base and purchase units differ (and not dozen/piece).' };
              }
         } else {
@@ -225,16 +227,16 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
     if (data.purchasePrice !== undefined) updateData.purchasePrice = data.purchasePrice;
     if (data.retailPricePerBaseUnit !== undefined) updateData.retailPricePerBaseUnit = data.retailPricePerBaseUnit;
     if (data.wholesalePricePerBaseUnit !== undefined) updateData.wholesalePricePerBaseUnit = data.wholesalePricePerBaseUnit;
-    
+
     // 'initialStock' from form is the new desired total stock in base units for edit.
-    if (data.initialStock !== undefined) { 
+    if (data.initialStock !== undefined) {
         if (userRole === 'staff' && data.initialStock < currentProductData.quantityInStock) {
-            return { 
-                success: false, 
-                message: `Staff members cannot decrease stock quantity. Current stock is ${currentProductData.quantityInStock} ${currentProductData.baseUnit}. Please enter a value greater than or equal to this.` 
+            return {
+                success: false,
+                message: `Staff members cannot decrease stock quantity. Current stock is ${currentProductData.quantityInStock} ${currentProductData.baseUnit}. Please enter a value greater than or equal to this.`
             };
         }
-        
+
         if (data.initialStock !== currentProductData.quantityInStock) {
             updateData.quantityInStock = data.initialStock;
             updateData.lastStockUpdateByEmail = userEmail; // Record who made the change
@@ -248,7 +250,7 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
     if (Object.keys(updateData).length === 0) {
       return { success: false, message: 'No changes provided to update.' };
     }
-    
+
     updateData.updatedAt = Timestamp.now().toDate().toISOString();
 
     await updateDoc(productRef, updateData);
@@ -262,7 +264,7 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
     if (!updatedDocSnap.exists()) {
         return { success: false, message: 'Product not found after update.' };
     }
-    
+
     return { success: true, message: 'Product updated successfully!', product: mapDocToProduct(updatedDocSnap) };
   } catch (error) {
     console.error("Error updating product in Firestore:", error);
@@ -286,8 +288,8 @@ export async function deleteProductAction(id: string) {
 }
 
 export async function addStockToProductAction(
-  productId: string, 
-  quantityAddedInPurchaseUnits: number, 
+  productId: string,
+  quantityAddedInPurchaseUnits: number,
   newPurchasePricePerPurchaseUnit?: number
 ): Promise<{ success: boolean; message: string }> {
   if (!productId) {
@@ -302,6 +304,7 @@ export async function addStockToProductAction(
     return { success: false, message: "User session not found. Please log in." };
   }
   const userEmail = session.email || 'system_stock_add';
+  const userName = session.name || userEmail;
 
   try {
     const productRef = doc(db, PRODUCTS_COLLECTION, productId);
@@ -312,7 +315,7 @@ export async function addStockToProductAction(
         throw new Error("Product not found.");
       }
 
-      const productData = productDoc.data(); 
+      const productData = productDoc.data();
       if (!productData) throw new Error("Product data is missing.");
 
       const conversionFactor = productData.purchaseUnitConversionFactor || 1;
@@ -324,7 +327,7 @@ export async function addStockToProductAction(
       const productUpdatePayload: any = {
         quantityInStock: newStockInBaseUnits,
         updatedAt: nowISO,
-        lastStockUpdateByEmail: userEmail, 
+        lastStockUpdateByEmail: userEmail,
       };
 
       let purchasePriceForRecord = productData.purchasePrice;
@@ -332,20 +335,21 @@ export async function addStockToProductAction(
         productUpdatePayload.purchasePrice = newPurchasePricePerPurchaseUnit;
         purchasePriceForRecord = newPurchasePricePerPurchaseUnit;
       }
-      
+
       transaction.update(productRef, productUpdatePayload);
 
       const purchaseRecord: Omit<Purchase, 'id'> = {
         productId: productId,
-        productNameSnapshot: productData.name || 'Unknown Product', 
+        productNameSnapshot: productData.name || 'Unknown Product',
         quantityPurchased: quantityAddedInPurchaseUnits,
-        purchaseUnitSnapshot: productData.purchaseUnit || PRODUCT_UNITS[0], 
+        purchaseUnitSnapshot: productData.purchaseUnit || PRODUCT_UNITS[0],
         purchasePricePerUnitSnapshot: purchasePriceForRecord,
         totalCost: quantityAddedInPurchaseUnits * purchasePriceForRecord,
         purchaseDate: nowISO,
         createdAt: nowISO,
         updatedAt: nowISO,
-        recordedByEmail: userEmail, 
+        recordedByEmail: userEmail,
+        recordedByName: userName,
       };
       const purchaseDocRef = doc(collection(db, PURCHASES_COLLECTION));
       transaction.set(purchaseDocRef, purchaseRecord);
@@ -355,8 +359,8 @@ export async function addStockToProductAction(
     revalidateTag('purchases');
     revalidatePath('/products');
     revalidatePath(`/products/${productId}/edit`);
-    revalidatePath('/dashboard'); 
-    
+    revalidatePath('/dashboard');
+
     return { success: true, message: "Stock added and purchase recorded successfully!" };
   } catch (error) {
     console.error("Error adding stock to product:", error);
@@ -377,7 +381,7 @@ const getPurchasesCached = unstable_cache(
         if (data.purchaseDate) {
           if (typeof data.purchaseDate === 'string') {
             purchaseDateString = data.purchaseDate;
-          } else if (data.purchaseDate.toDate) { 
+          } else if (data.purchaseDate.toDate) {
             purchaseDateString = data.purchaseDate.toDate().toISOString();
           }
         }
@@ -399,7 +403,7 @@ const getPurchasesCached = unstable_cache(
             updatedAtString = data.updatedAt.toDate().toISOString();
           }
         }
-        
+
         return {
           id: docSnap.id,
           productId: data.productId || '',
@@ -412,6 +416,7 @@ const getPurchasesCached = unstable_cache(
           createdAt: createdAtString,
           updatedAt: updatedAtString,
           recordedByEmail: typeof data.recordedByEmail === 'string' ? data.recordedByEmail : undefined,
+          recordedByName: typeof data.recordedByName === 'string' ? data.recordedByName : undefined,
         } as Purchase;
       });
       return purchases;
@@ -430,4 +435,4 @@ const getPurchasesCached = unstable_cache(
 export async function getPurchasesAction(): Promise<Purchase[]> {
   return getPurchasesCached();
 }
-    
+

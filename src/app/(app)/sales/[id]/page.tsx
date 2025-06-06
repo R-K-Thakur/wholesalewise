@@ -4,12 +4,12 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogTrigger, 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
   DialogFooter,
   DialogDescription
 } from "@/components/ui/dialog";
@@ -34,7 +34,7 @@ interface jsPDFWithAutoTable extends jsPDF {
   autoTable: (options: any) => jsPDFWithAutoTable;
 }
 
-const DEFAULT_INVOICE_COLOR_HEX = "#73A7B3"; 
+const DEFAULT_INVOICE_COLOR_HEX = "#73A7B3";
 const DEFAULT_INVOICE_COLOR_RGB_ARRAY = [115, 167, 179];
 const EPSILON = 0.001; // For floating point comparisons
 
@@ -63,7 +63,7 @@ export default function SaleDetailPage() {
   const params = useParams();
   const router = useRouter();
   const saleId = params.id as string;
-  const [sale, setSale] = useState<Sale | null | undefined>(null); 
+  const [sale, setSale] = useState<Sale | null | undefined>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [session, setSession] = useState<SessionData | null>(null);
   const { toast } = useToast();
@@ -75,7 +75,7 @@ export default function SaleDetailPage() {
   const [isProcessingThermalPdf, setIsProcessingThermalPdf] = useState(false);
   const [isThermalPreviewModalOpen, setIsThermalPreviewModalOpen] = useState(false);
   const [thermalPreviewPdfUrl, setThermalPreviewPdfUrl] = useState<string | null>(null);
-  
+
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   // State for Record Additional Payment Dialog
@@ -107,14 +107,14 @@ export default function SaleDetailPage() {
   useEffect(() => {
     async function fetchData() {
       setIsLoading(true);
-      setSale(null); 
+      setSale(null);
       if (saleId) {
         try {
           const [fetchedSale, currentSession] = await Promise.all([
             getSaleByIdAction(saleId),
             getSession()
           ]);
-          setSale(fetchedSale); 
+          setSale(fetchedSale);
           setSession(currentSession);
           if (fetchedSale && fetchedSale.totalAmountDue > EPSILON) {
             setPaymentAmount(fetchedSale.totalAmountDue.toFixed(2));
@@ -123,16 +123,16 @@ export default function SaleDetailPage() {
           }
         } catch (err) {
           console.error("Failed to fetch sale details or session:", err);
-          setSale(undefined); 
+          setSale(undefined);
         }
       } else {
-        setSale(undefined); 
+        setSale(undefined);
       }
       setIsLoading(false);
     }
     fetchData();
   }, [saleId]);
-  
+
   const currentShopDetails = useMemo((): ShopDetails => {
     return {
       shopName: session?.shopName,
@@ -150,7 +150,7 @@ export default function SaleDetailPage() {
     );
   }
 
-  if (sale === undefined) { 
+  if (sale === undefined) {
     return (
       <div className="flex flex-col items-center justify-center h-full">
         <p className="text-xl text-muted-foreground">Sale not found.</p>
@@ -162,8 +162,8 @@ export default function SaleDetailPage() {
       </div>
     );
   }
-  
-  if (sale === null) { 
+
+  if (sale === null) {
      return (
       <div className="flex flex-col items-center justify-center h-full">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -223,14 +223,15 @@ export default function SaleDetailPage() {
       doc.text(`Date: ${new Date(sale.saleDate).toLocaleDateString()}`, rightMargin, startY, { align: 'right' });
       startY += 7;
 
+      const recordedByText = sale.recordedByName || sale.recordedByEmail;
       if (sale.customerName) {
         doc.text(`Customer: ${sale.customerName}`, leftMargin, startY);
-        if (sale.recordedByEmail) {
-            doc.text(`Recorded by: ${sale.recordedByEmail}`, rightMargin, startY, { align: 'right' });
+        if (recordedByText) {
+            doc.text(`Recorded by: ${recordedByText}`, rightMargin, startY, { align: 'right' });
         }
         startY += 7;
-      } else if (sale.recordedByEmail) {
-         doc.text(`Recorded by: ${sale.recordedByEmail}`, rightMargin, startY, { align: 'right' });
+      } else if (recordedByText) {
+         doc.text(`Recorded by: ${recordedByText}`, rightMargin, startY, { align: 'right' });
          startY += 7;
       }
 
@@ -292,7 +293,7 @@ export default function SaleDetailPage() {
 
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
-      
+
       doc.text(`Payment Method: ${displayPaymentMethod}`, rightMargin, startY, { align: 'right' });
       startY += 10;
 
@@ -348,11 +349,11 @@ export default function SaleDetailPage() {
       const thermalWidthPt = thermalWidthMm * (72 / 25.4);
       const marginPt = 8;
       const contentWidthPt = thermalWidthPt - 2 * marginPt;
-      const initialPageHeightPt = 800; 
+      const initialPageHeightPt = 800;
 
       const doc = new jsPDF({
         unit: 'pt',
-        format: [thermalWidthPt, initialPageHeightPt], 
+        format: [thermalWidthPt, initialPageHeightPt],
       }) as jsPDFWithAutoTable;
 
       let currentY = marginPt + 5;
@@ -384,8 +385,8 @@ export default function SaleDetailPage() {
       currentY += 10;
 
       const saleDate = new Date(sale.saleDate);
-      const timePartDate = sale.createdAt && (new Date(sale.createdAt).toDateString() === saleDate.toDateString()) 
-                         ? new Date(sale.createdAt) 
+      const timePartDate = sale.createdAt && (new Date(sale.createdAt).toDateString() === saleDate.toDateString())
+                         ? new Date(sale.createdAt)
                          : saleDate;
       doc.text(`Date: ${saleDate.toLocaleDateString()} ${timePartDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, marginPt, currentY);
       currentY += 10;
@@ -394,10 +395,11 @@ export default function SaleDetailPage() {
         doc.text(`Customer: ${sale.customerName}`, marginPt, currentY, {maxWidth: contentWidthPt - marginPt });
         currentY += doc.getTextDimensions(sale.customerName, {fontSize: 8, maxWidth: contentWidthPt - marginPt}).h + 2;
       }
-      
-      if (sale.recordedByEmail) {
-        doc.text(`Rec by: ${sale.recordedByEmail}`, marginPt, currentY, {maxWidth: contentWidthPt});
-        currentY += doc.getTextDimensions(`Rec by: ${sale.recordedByEmail}`, {fontSize: 8, maxWidth: contentWidthPt}).h + 2;
+
+      const recordedByText = sale.recordedByName || sale.recordedByEmail;
+      if (recordedByText) {
+        doc.text(`Rec by: ${recordedByText}`, marginPt, currentY, {maxWidth: contentWidthPt});
+        currentY += doc.getTextDimensions(`Rec by: ${recordedByText}`, {fontSize: 8, maxWidth: contentWidthPt}).h + 2;
       }
       currentY += 3;
 
@@ -428,19 +430,19 @@ export default function SaleDetailPage() {
         headStyles: {
           fontSize: 7.5,
           fontStyle: 'bold',
-          fillColor: [255,255,255], 
-          textColor: [0,0,0], 
+          fillColor: [255,255,255],
+          textColor: [0,0,0],
           lineWidth: 0.1,
-          lineColor: [180,180,180], 
+          lineColor: [180,180,180],
         },
         columnStyles: {
-          0: { cellWidth: contentWidthPt * 0.48, fontStyle: 'normal' }, 
+          0: { cellWidth: contentWidthPt * 0.48, fontStyle: 'normal' },
           1: { cellWidth: contentWidthPt * 0.12, halign: 'right' },
           2: { cellWidth: contentWidthPt * 0.20, halign: 'right' },
           3: { cellWidth: contentWidthPt * 0.20, halign: 'right' },
         },
         margin: { left: marginPt, right: marginPt },
-        tableWidth: 'auto', 
+        tableWidth: 'auto',
         didDrawPage: (data) => {
           currentY = data.cursor?.y || currentY;
         }
@@ -470,7 +472,7 @@ export default function SaleDetailPage() {
 
       doc.setFontSize(8);
       doc.setFont(undefined, 'normal');
-      
+
       doc.text('Payment:', marginPt, currentY);
       doc.text(displayPaymentMethod, thermalWidthPt - marginPt, currentY, { align: 'right' });
       currentY += 10;
@@ -484,7 +486,7 @@ export default function SaleDetailPage() {
         doc.setFont(undefined, 'normal');
         const splitNotes = doc.splitTextToSize(sale.notes, contentWidthPt);
         doc.text(splitNotes, marginPt, currentY);
-        currentY += (splitNotes.length * 8) + 3; 
+        currentY += (splitNotes.length * 8) + 3;
       }
 
       currentY += 8;
@@ -536,20 +538,20 @@ export default function SaleDetailPage() {
   const getStatusBadgeVariant = (status: Sale['paymentStatus']): "default" | "secondary" | "destructive" | "outline" => {
     switch (status) {
       case 'paid':
-        return 'default'; 
+        return 'default';
       case 'partially_paid':
         return 'secondary';
       case 'unpaid':
         return 'destructive';
       default:
-        return 'outline'; 
+        return 'outline';
     }
   };
-  
+
   const handleStatusChange = async (newStatus: Sale['paymentStatus']) => {
     if (!sale) return;
     setIsUpdatingStatus(true);
-    
+
     const payload: UpdateSaleStatusPayload = {
       saleId: sale.id,
       newStatus: newStatus,
@@ -559,7 +561,7 @@ export default function SaleDetailPage() {
     const result = await updateSalePaymentStatusAction(payload);
     if (result.success) {
       toast({ title: "Success", description: result.message });
-      const updatedSale = await getSaleByIdAction(sale.id); 
+      const updatedSale = await getSaleByIdAction(sale.id);
       setSale(updatedSale);
       if (updatedSale && updatedSale.totalAmountDue > EPSILON) {
         setPaymentAmount(updatedSale.totalAmountDue.toFixed(2));
@@ -590,7 +592,7 @@ export default function SaleDetailPage() {
     const payload: RecordAdditionalPaymentPayload = {
       saleId: sale.id,
       amountPaidNow: amountPaidNum,
-      paymentMethod: paymentMethod as Sale['paymentMethod'], 
+      paymentMethod: paymentMethod as Sale['paymentMethod'],
       paymentNotes: paymentNotes.trim() === "" ? undefined : paymentNotes.trim(),
     };
 
@@ -598,11 +600,11 @@ export default function SaleDetailPage() {
     if (result.success) {
       toast({ title: "Payment Recorded", description: result.message });
       setIsRecordPaymentDialogOpen(false);
-      
+
       setPaymentAmount("");
       setPaymentMethod('cash');
       setPaymentNotes("");
-      
+
       const updatedSale = await getSaleByIdAction(sale.id);
       setSale(updatedSale);
       if (updatedSale && updatedSale.totalAmountDue > EPSILON) {
@@ -688,15 +690,15 @@ export default function SaleDetailPage() {
                                 onChange={(e) => setPaymentAmount(e.target.value)}
                                 step="0.01"
                                 min="0.01"
-                                max={sale.totalAmountDue.toFixed(2)} 
+                                max={sale.totalAmountDue.toFixed(2)}
                                 required
                                 disabled={isSubmittingPayment}
                                 />
                             </div>
                             <div>
                                 <Label htmlFor="paymentMethodDialog">Payment Method</Label>
-                                <Select 
-                                    value={paymentMethod} 
+                                <Select
+                                    value={paymentMethod}
                                     onValueChange={(value) => setPaymentMethod(value as Sale['paymentMethod'])}
                                     disabled={isSubmittingPayment}
                                 >
@@ -740,7 +742,7 @@ export default function SaleDetailPage() {
             <div><strong>Sale Date:</strong> {new Date(sale.saleDate).toLocaleDateString()}</div>
             <div><strong>Sale Type:</strong> <span className="capitalize">{sale.saleType}</span></div>
             <div>
-                <strong>Payment Method:</strong> 
+                <strong>Payment Method:</strong>
                 <span className="capitalize ml-1">{displayPaymentMethod}</span>
             </div>
             <div className="flex items-center gap-2">
@@ -766,10 +768,10 @@ export default function SaleDetailPage() {
                 </Select>
               )}
             </div>
-            {sale.recordedByEmail && (
+            {(sale.recordedByName || sale.recordedByEmail) && (
                  <div className="flex items-center gap-1">
                     <UserCircle className="h-4 w-4 text-muted-foreground" />
-                    <strong>Recorded by:</strong> {sale.recordedByEmail}
+                    <strong>Recorded by:</strong> {sale.recordedByName || sale.recordedByEmail}
                 </div>
             )}
             {sale.notes && <div className="md:col-span-full"><strong>Notes:</strong> {sale.notes}</div>}
@@ -838,7 +840,7 @@ export default function SaleDetailPage() {
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground text-right">{payment.amount.toFixed(2)}</td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground capitalize">{payment.paymentMethod?.replace('_', ' ') || 'N/A'}</td>
                       <td className="px-4 py-2 whitespace-normal text-sm text-muted-foreground max-w-xs" title={payment.notes}>{payment.notes || '-'}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{payment.recordedByEmail || 'N/A'}</td>
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-muted-foreground">{payment.recordedByName || payment.recordedByEmail || 'N/A'}</td>
                     </tr>
                   ))}
                 </tbody>

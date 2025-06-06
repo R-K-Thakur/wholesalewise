@@ -30,6 +30,7 @@ export function RecentActivityWidget({ activities }: RecentActivityWidgetProps) 
     const lowercasedSearchTerm = searchTerm.toLowerCase().trim();
     return activities.filter(activity =>
       activity.description.toLowerCase().includes(lowercasedSearchTerm) ||
+      (activity.recordedByName && activity.recordedByName.toLowerCase().includes(lowercasedSearchTerm)) ||
       (activity.recordedByEmail && activity.recordedByEmail.toLowerCase().includes(lowercasedSearchTerm))
     );
   }, [activities, searchTerm]);
@@ -85,8 +86,9 @@ export function RecentActivityWidget({ activities }: RecentActivityWidgetProps) 
                 }
 
                 let descriptionWithUser = activity.description;
-                if (activity.recordedByEmail) {
-                  descriptionWithUser += ` by ${activity.recordedByEmail}`;
+                const recordedBy = activity.recordedByName || activity.recordedByEmail;
+                if (recordedBy) {
+                  descriptionWithUser += ` by ${recordedBy}`;
                 }
 
                 return (
