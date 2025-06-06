@@ -28,7 +28,7 @@ import type { Product } from "@/lib/types";
 import { getProductsAction } from "../../products/actions";
 import { useToast } from "@/hooks/use-toast";
 import { recordSaleAction } from "../actions";
-import { saleFormSchema, type SaleFormData, type RecordSaleActionPayload, type SaleItemFormStructure } from "../schema";
+import { saleFormSchema, type SaleFormData, type RecordSaleActionPayload } from "../schema";
 import type { ProductUnit } from "@/lib/constants";
 import { PRODUCT_UNITS } from "@/lib/constants";
 
@@ -46,8 +46,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         productId: '',
         quantitySold: 1,
         pricePerUnitSold: 0,
-        soldUnit: PRODUCT_UNITS[0], 
-        // baseUnitSnapshot is not part of the form item directly
+        soldUnit: PRODUCT_UNITS[0],
       }],
       paymentMethod: 'cash',
       customerName: '',
@@ -86,27 +85,44 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   );
 
   React.useEffect(() => {
-    const newSearchTexts = currentWatchedItems.map((formItem, i) => {
-      const existingSearchText = itemSearchTexts[i] || "";
+    // This effect ensures that if a productId is set (e.g., programmatically or by selection),
+    // the itemSearchTexts reflects the product's name.
+    // It primarily reacts to changes in `currentWatchedItems` (specifically `productId`).
+    const newSearchTexts = [...itemSearchTexts]; // Start with a copy of current search texts
+    let changed = false;
+
+    currentWatchedItems.forEach((formItem, i) => {
+      if (newSearchTexts[i] === undefined) newSearchTexts[i] = ""; // Ensure all entries exist
+
       if (formItem.productId) {
         const product = allProducts.find(p => p.id === formItem.productId);
-        return product ? product.name : existingSearchText;
+        if (product && newSearchTexts[i] !== product.name) {
+          newSearchTexts[i] = product.name;
+          changed = true;
+        }
       }
-      return existingSearchText; // Keep manually typed text if no productId
+      // If formItem.productId is empty, we do not automatically clear newSearchTexts[i] here.
+      // The user might be typing an ad-hoc item name.
+      // Clearing of itemSearchTexts for removed items is handled by handleRemoveItem.
     });
-  
-    if (newSearchTexts.length !== itemSearchTexts.length || newSearchTexts.some((text, i) => text !== itemSearchTexts[i])) {
+    
+    if (changed || newSearchTexts.length !== itemSearchTexts.length) {
+       // Only update if there's an actual change in names or length.
+       // The length check handles initialization or if field array changes structure.
       setItemSearchTexts(newSearchTexts);
     }
-  }, [currentWatchedItems, allProducts, itemSearchTexts]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentWatchedItems, allProducts]); // Removed itemSearchTexts from deps
 
 
   React.useEffect(() => {
     const actualFormAmountPaid = Number(form.getValues("amountPaid")) || 0;
-    if (form.formState.dirtyFields.amountPaid !== true && grandTotal > 0) {
-      form.setValue("amountPaid", parseFloat(grandTotal.toFixed(2)), { shouldValidate: true });
-    } else if (actualFormAmountPaid > grandTotal && grandTotal >= 0) {
-      form.setValue("amountPaid", parseFloat(grandTotal.toFixed(2)), { shouldValidate: true });
+    const roundedGrandTotal = parseFloat(grandTotal.toFixed(2));
+    
+    if (form.formState.dirtyFields.amountPaid !== true && roundedGrandTotal > 0) {
+      form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true });
+    } else if (actualFormAmountPaid > roundedGrandTotal && roundedGrandTotal >= 0) {
+      form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true });
     }
   }, [grandTotal, form]);
 
@@ -137,16 +153,15 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         toast({ title: "Out of Stock", description: `${product.name} is out of stock. Cannot select.`, variant: "destructive" });
         return;
       }
-      form.setValue(`items.${itemIndex}.productId`, product.id);
-      // baseUnitSnapshot is derived, not set directly here.
-      form.setValue(`items.${itemIndex}.soldUnit`, product.baseUnit);
+      form.setValue(`items.${itemIndex}.productId`, product.id, { shouldDirty: true });
+      form.setValue(`items.${itemIndex}.soldUnit`, product.baseUnit, { shouldDirty: true });
 
       const currentSaleType = form.getValues("saleType");
       const pricePerBaseUnit = currentSaleType === 'wholesale'
           ? product.wholesalePricePerBaseUnit
           : product.retailPricePerBaseUnit;
-
-      form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerBaseUnit.toFixed(2)));
+      
+      form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerBaseUnit.toFixed(2)), { shouldDirty: true });
 
       setItemSearchTexts(prevTexts => {
         const newTexts = [...prevTexts];
@@ -165,24 +180,26 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       newTexts[index] = value;
       return newTexts;
     });
-    // If user types, clear selected productId to indicate manual/ad-hoc entry
-    // unless they re-select from popover
-    if (form.getValues(`items.${index}.productId`)) {
-        const selectedProduct = allProducts.find(p => p.id === form.getValues(`items.${index}.productId`));
-        if (selectedProduct?.name !== value) {
-            form.setValue(`items.${index}.productId`, '');
-            // For ad-hoc, price and unit are manual, so don't auto-clear them here.
-            // User might be editing name of previously selected product to make it ad-hoc.
+
+    const currentFormProductId = form.getValues(`items.${index}.productId`);
+    if (currentFormProductId) {
+        const selectedProduct = allProducts.find(p => p.id === currentFormProductId);
+        if (selectedProduct && selectedProduct.name.toLowerCase() !== value.toLowerCase().trim()) {
+            form.setValue(`items.${index}.productId`, '', { shouldDirty: true });
+            form.setValue(`items.${index}.pricePerUnitSold`, 0, { shouldDirty: true }); 
+            form.setValue(`items.${index}.soldUnit`, PRODUCT_UNITS[0], { shouldDirty: true });
         }
     }
-    if (!openComboboxIndex) setOpenComboboxIndex(index);
+    if (openComboboxIndex !== index) {
+        setOpenComboboxIndex(index);
+    }
   };
 
 
   React.useEffect(() => {
     currentWatchedItems.forEach((item, index) => {
         const product = allProducts.find(p => p.id === item.productId);
-        if (product) { // Only auto-update price if it's a selected product
+        if (product) {
             const price = watchedSaleType === 'wholesale'
                 ? product.wholesalePricePerBaseUnit
                 : product.retailPricePerBaseUnit;
@@ -193,8 +210,10 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
             }
             
             const currentPriceInForm = form.getValues(`items.${index}.pricePerUnitSold`);
-            if (typeof currentPriceInForm !== 'number' || Math.abs(currentPriceInForm - pricePerSoldUnit) > 0.001) {
-                 form.setValue(`items.${index}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), { shouldValidate: true });
+            const newCalculatedPrice = parseFloat(pricePerSoldUnit.toFixed(2));
+
+            if (typeof currentPriceInForm !== 'number' || Math.abs(currentPriceInForm - newCalculatedPrice) > 0.001) {
+                 form.setValue(`items.${index}.pricePerUnitSold`, newCalculatedPrice, { shouldValidate: true, shouldDirty: true });
             }
         }
     });
@@ -229,21 +248,21 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         const product = allProducts.find(p => p.id === productIdForPayload);
         if (!product) {
           toast({ title: "Error", description: `Invalid product selected for item ${index + 1}. Please re-select.`, variant: "destructive"});
-          form.setError(`items.${index}.productId`, {message: "Invalid product selected."}); // Error on visual input
+          form.setError(`items.${index}.productId`, {message: "Invalid product selected."});
           hasError = true;
           continue;
         }
         productNameForPayload = product.name;
         baseUnitForPayload = product.baseUnit;
-      } else { // Ad-hoc item
+      } else { 
         if (currentItemSearchText === "") {
           toast({ title: "Error", description: `Product name is required for item ${index + 1} as it's not selected from inventory.`, variant: "destructive"});
-          form.setError(`items.${index}.productId`, {message: "Product name is required for unlisted items."}); // Error on visual input
+          form.setError(`items.${index}.productId`, {message: "Product name is required for unlisted items."});
           hasError = true;
           continue;
         }
         productNameForPayload = currentItemSearchText;
-        baseUnitForPayload = formItem.soldUnit; // For ad-hoc, base unit is same as sold unit
+        baseUnitForPayload = formItem.soldUnit; 
         productIdForPayload = undefined; 
       }
 
@@ -300,9 +319,9 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   }
 
   const handleSoldUnitChange = (itemIndex: number, newSoldUnit: ProductUnit) => {
-    form.setValue(`items.${itemIndex}.soldUnit`, newSoldUnit);
+    form.setValue(`items.${itemIndex}.soldUnit`, newSoldUnit, { shouldDirty: true });
     const product = allProducts.find(p => p.id === form.getValues(`items.${itemIndex}.productId`));
-    if (product) { // Only auto-update price if it's a selected (not ad-hoc) product
+    if (product) { 
         const currentSaleType = form.getValues("saleType");
         const pricePerBaseUnit = currentSaleType === 'wholesale'
             ? product.wholesalePricePerBaseUnit
@@ -312,7 +331,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
         if (newSoldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor > 0) {
             pricePerSoldUnit = pricePerBaseUnit * product.purchaseUnitConversionFactor;
         }
-        form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), { shouldValidate: true });
+        form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), { shouldValidate: true, shouldDirty: true });
     }
   };
 
@@ -404,12 +423,17 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
             const currentProductId = currentWatchedItems[index]?.productId;
             const selectedProductForUnits = allProducts.find(p => p.id === currentProductId);
             
-            let availableUnits: ProductUnit[] = [...PRODUCT_UNITS]; // Default for ad-hoc
+            let availableUnits: ProductUnit[] = [...PRODUCT_UNITS]; 
             if (selectedProductForUnits) {
                 availableUnits = (selectedProductForUnits.baseUnit === selectedProductForUnits.purchaseUnit)
                     ? [selectedProductForUnits.baseUnit]
                     : [selectedProductForUnits.baseUnit, selectedProductForUnits.purchaseUnit].filter(Boolean) as ProductUnit[];
+                if (!availableUnits.includes(form.getValues(`items.${index}.soldUnit`))) {
+                    // if current soldUnit is not in available units (e.g. after product change), reset to baseUnit
+                    form.setValue(`items.${index}.soldUnit`, selectedProductForUnits.baseUnit, {shouldDirty: true});
+                }
             }
+
 
             return (
             <Card key={fieldItem.id} className="mb-4 p-4 space-y-3 bg-card/50 dark:bg-card/80">
@@ -446,8 +470,11 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                           {allProducts
                             .filter(p => {
                                 const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                if (!searchText && !currentProductId) return true; // Show all if input empty & no product selected
-                                if (!searchText && currentProductId) return p.name.toLowerCase().includes((allProducts.find(pr => pr.id === currentProductId)?.name || "").toLowerCase()); // If product selected, filter around its name
+                                if (!searchText && !currentProductId) return true; 
+                                if (!searchText && currentProductId) {
+                                    const currentProduct = allProducts.find(pr => pr.id === currentProductId);
+                                    return currentProduct ? p.name.toLowerCase().includes(currentProduct.name.toLowerCase()) : true;
+                                }
                                 return p.name.toLowerCase().includes(searchText) ||
                                     (p.sku && p.sku.toLowerCase().includes(searchText));
                             })
@@ -486,7 +513,10 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                           {allProducts.filter(p => {
                                 const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
                                 if (!searchText && !currentProductId) return true;
-                                if (!searchText && currentProductId) return p.name.toLowerCase().includes((allProducts.find(pr => pr.id === currentProductId)?.name || "").toLowerCase());
+                                if (!searchText && currentProductId) {
+                                     const currentProduct = allProducts.find(pr => pr.id === currentProductId);
+                                     return currentProduct ? p.name.toLowerCase().includes(currentProduct.name.toLowerCase()) : true;
+                                }
                                 return p.name.toLowerCase().includes(searchText) || (p.sku && p.sku.toLowerCase().includes(searchText));
                             }).length === 0 && itemSearchTexts[index]?.trim() !== "" && (
                                <div className="px-3 py-2 text-sm text-muted-foreground">No product found. Type full name for unlisted item.</div>
@@ -522,8 +552,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                       <Select
                         onValueChange={(value) => handleSoldUnitChange(index, value as ProductUnit)}
                         value={field.value}
-                        // For ad-hoc items, user can select any unit. For selected products, list is filtered.
-                        disabled={!currentProductId && availableUnits.length === 0} 
+                        disabled={availableUnits.length === 0 && !currentProductId } // Disable if ad-hoc and no units (should not happen)
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -552,7 +581,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                             placeholder="e.g., 700.00" 
                             step="0.01" {...field} 
                             onChange={e => field.onChange(parseFloat(e.target.value) || 0)} 
-                            disabled={!!currentProductId} // Disabled if a product is selected from inventory
+                            disabled={!!currentProductId} 
                         />
                       </FormControl>
                       <FormMessage />
@@ -639,7 +668,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
           <Button type="button" variant="outline" asChild disabled={form.formState.isSubmitting}>
             <Link href="/sales">Cancel</Link>
           </Button>
-          <Button type="submit" disabled={form.formState.isSubmitting || allProducts.length === 0}>
+          <Button type="submit" disabled={form.formState.isSubmitting || allProducts.length === 0 && currentWatchedItems.some(item => !item.productId && !itemSearchTexts[currentWatchedItems.indexOf(item)]?.trim()) }>
             {form.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Record Sale
           </Button>
@@ -703,7 +732,6 @@ export default function NewSalePage() {
           ) : (
             <SaleForm allProducts={products} />
           )}
-           {/* Message for no products is okay even if ad-hoc is allowed, because ideally one would add products. */}
            { !isLoading && !error && products.length === 0 && (
              <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
                <p>No products found in inventory. You can still sell items by typing their names directly.</p>
@@ -717,3 +745,4 @@ export default function NewSalePage() {
     </div>
   );
 }
+
