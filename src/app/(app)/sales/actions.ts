@@ -23,29 +23,10 @@ const mapDocToSale = (document: import('firebase/firestore').DocumentSnapshot | 
   const paymentHistory: PaymentTransaction[] = [];
   if (Array.isArray(data.paymentHistory)) {
     data.paymentHistory.forEach((ph: any) => {
-      let transactionDate = nowAsISO;
-      if (ph.date) {
-        if (typeof ph.date === 'string') {
-          transactionDate = ph.date;
-        } else if (ph.date?.toDate) {
-          transactionDate = ph.date.toDate().toISOString();
-        }
-      }
-
-      let transactionAmount = 0;
-      if (typeof ph.amount === 'number') {
-        transactionAmount = ph.amount;
-      }
-
-      let transactionMethod: PaymentTransaction['paymentMethod'] = 'manual_adjustment';
-      if (['cash', 'card', 'online', 'manual_adjustment'].includes(ph.paymentMethod)) {
-        transactionMethod = ph.paymentMethod;
-      }
-      
       const mappedTransaction: PaymentTransaction = {
-        date: transactionDate,
-        amount: transactionAmount,
-        paymentMethod: transactionMethod,
+        date: ph.date?.toDate ? ph.date.toDate().toISOString() : (typeof ph.date === 'string' ? ph.date : nowAsISO),
+        amount: typeof ph.amount === 'number' ? ph.amount : 0,
+        paymentMethod: ['cash', 'card', 'online', 'manual_adjustment'].includes(ph.paymentMethod) ? ph.paymentMethod : 'manual_adjustment',
       };
 
       if (ph.notes && typeof ph.notes === 'string' && ph.notes.trim() !== "") {
@@ -78,7 +59,7 @@ const mapDocToSale = (document: import('firebase/firestore').DocumentSnapshot | 
     saleType: ['wholesale', 'retail'].includes(data.saleType) ? data.saleType as Sale['saleType'] : 'retail',
     saleDate: typeof data.saleDate === 'string' ? data.saleDate : (data.saleDate?.toDate ? data.saleDate.toDate().toISOString().split('T')[0] : nowAsISO.split('T')[0]),
     customerName: typeof data.customerName === 'string' ? data.customerName : '',
-    paymentMethod: ['cash', 'card', 'online'].includes(data.paymentMethod) ? data.paymentMethod as Sale['paymentMethod'] : undefined,
+    paymentMethod: ['cash', 'card', 'online', 'manual_adjustment'].includes(data.paymentMethod) ? data.paymentMethod as Sale['paymentMethod'] : undefined,
     notes: typeof data.notes === 'string' ? data.notes : '',
     createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (typeof data.createdAt === 'string' ? data.createdAt : nowAsISO),
     updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : (typeof data.updatedAt === 'string' ? data.updatedAt : nowAsISO),
@@ -149,7 +130,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         paymentStatus = 'paid';
       } else if (totalPaidAmountForSale > EPSILON && totalAmountDueForSale > EPSILON) {
         paymentStatus = 'partially_paid';
-      } else if (totalPaidAmountForSale <= EPSILON && finalBillTotalAmount > EPSILON) { // Explicitly unpaid
+      } else if (totalPaidAmountForSale <= EPSILON && finalBillTotalAmount > EPSILON) { 
         paymentStatus = 'unpaid';
       }
       
@@ -171,11 +152,11 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         customerName: data.customerName || '',
         saleDate: data.saleDate,
         saleType: data.saleType,
-        paymentMethod: data.paymentMethod || 'cash', 
+        paymentMethod: paymentHistory.length > 0 ? (data.paymentMethod || 'cash') : undefined, 
         items: saleItemsForDb,
         totalAmount: finalBillTotalAmount,
         totalPaidAmount: totalPaidAmountForSale,
-        totalAmountDue: totalAmountDueForSale < 0 ? 0 : totalAmountDueForSale, // ensure due is not negative
+        totalAmountDue: totalAmountDueForSale < 0 ? 0 : totalAmountDueForSale, 
         paymentStatus: paymentStatus,
         paymentHistory: paymentHistory,
         notes: data.notes || '',
@@ -263,13 +244,19 @@ export async function updateSalePaymentStatusAction(
         paymentStatus: newStatus,
         updatedAt: now,
       };
-      let paymentHistoryEntry: PaymentTransaction | null = null;
+      
       const currentPaidNum = Number(currentSaleData.totalPaidAmount);
-
       if (isNaN(currentPaidNum)) {
         throw new Error("Invalid current paid amount in existing sale data.");
       }
       
+      const paymentHistoryEntry: PaymentTransaction = {
+        date: now,
+        amount: 0, // Default, will be overridden if needed
+        paymentMethod: 'manual_adjustment',
+        recordedByEmail: userEmail,
+      };
+        
       if (newStatus === 'paid') {
         const amountNeededToMakePaid = parseFloat((saleTotalAmountNum - currentPaidNum).toFixed(2));
         updateData.totalPaidAmount = saleTotalAmountNum;
@@ -277,59 +264,37 @@ export async function updateSalePaymentStatusAction(
         
         let notesForHistory = `Status manually changed to 'Paid' by ${userEmail}.`;
         if (amountNeededToMakePaid > EPSILON) {
+             paymentHistoryEntry.amount = amountNeededToMakePaid;
              notesForHistory += ` Adjustment payment of Rs. ${amountNeededToMakePaid.toFixed(2)} recorded.`;
         } else if (amountNeededToMakePaid < -EPSILON) { // Overpaid, now corrected
              notesForHistory += ` Corrected from overpayment. Original paid Rs. ${currentPaidNum.toFixed(2)}.`;
         }
-        
-        paymentHistoryEntry = {
-            date: now,
-            amount: amountNeededToMakePaid > EPSILON ? amountNeededToMakePaid : 0, // only log actual financial adjustment
-            paymentMethod: 'manual_adjustment',
-            notes: notesForHistory,
-            recordedByEmail: userEmail,
-        };
+        paymentHistoryEntry.notes = notesForHistory;
 
       } else if (newStatus === 'unpaid') {
         updateData.totalPaidAmount = 0;
         updateData.totalAmountDue = saleTotalAmountNum;
-        paymentHistoryEntry = {
-          date: now,
-          amount: 0, 
-          paymentMethod: 'manual_adjustment',
-          notes: `Status manually changed to 'Unpaid' by ${userEmail}. Previous paid amount of Rs. ${currentPaidNum.toFixed(2)} is now disregarded for due calculation.`,
-          recordedByEmail: userEmail,
-        };
+        paymentHistoryEntry.notes = `Status manually changed to 'Unpaid' by ${userEmail}. Previous paid amount of Rs. ${currentPaidNum.toFixed(2)} is now disregarded for due calculation.`;
+
       } else if (newStatus === 'partially_paid') {
-         // When manually changing to 'partially_paid', we don't alter financial figures automatically.
-         // The owner is acknowledging the status, possibly before recording a new payment or correcting a miscategorization.
          updateData.totalPaidAmount = currentSaleData.totalPaidAmount; 
          updateData.totalAmountDue = parseFloat((saleTotalAmountNum - currentSaleData.totalPaidAmount).toFixed(2));
          if (updateData.totalAmountDue < 0) updateData.totalAmountDue = 0;
 
          let notesForPartial = `Status manually changed to 'Partially Paid' by ${userEmail}.`;
-         if (Math.abs(updateData.totalAmountDue) <= EPSILON) { // If it's actually fully paid but set to partial
-            notesForPartial += " Current paid amount covers total bill; status implies ongoing payments or other context."
-            updateData.paymentStatus = 'paid'; // Correct status to 'paid' if fully paid
+         if (Math.abs(updateData.totalAmountDue) <= EPSILON && updateData.totalPaidAmount > EPSILON) { 
+            notesForPartial += " Current paid amount covers total bill; status implies ongoing payments or other context. Auto-corrected to 'paid'."
+            updateData.paymentStatus = 'paid'; 
             updateData.totalAmountDue = 0;
-         } else if (updateData.totalPaidAmount <= EPSILON) { // If it's actually unpaid but set to partial
-            notesForPartial += " No payments recorded; status implies an expected initial partial payment."
-            updateData.paymentStatus = 'unpaid'; // Correct status to 'unpaid' if no payment
+         } else if (updateData.totalPaidAmount <= EPSILON) { 
+            notesForPartial += " No payments recorded; status implies an expected initial partial payment. Auto-corrected to 'unpaid'."
+            updateData.paymentStatus = 'unpaid'; 
             updateData.totalAmountDue = saleTotalAmountNum;
          }
-         
-          paymentHistoryEntry = {
-            date: now,
-            amount: 0, 
-            paymentMethod: 'manual_adjustment',
-            notes: notesForPartial,
-            recordedByEmail: userEmail,
-        };
+         paymentHistoryEntry.notes = notesForPartial;
       }
 
-      if (paymentHistoryEntry) {
-        updateData.paymentHistory = [...(currentSaleData.paymentHistory || []), paymentHistoryEntry];
-      }
+      updateData.paymentHistory = [...(currentSaleData.paymentHistory || []), paymentHistoryEntry];
       
       transaction.update(saleRef, updateData);
     });
@@ -369,7 +334,7 @@ export async function recordAdditionalPaymentAction(
       if (!saleDoc.exists()) {
         throw new Error('Sale not found.');
       }
-      const currentSaleData = mapDocToSale(saleDoc); // Ensures data is clean
+      const currentSaleData = mapDocToSale(saleDoc); 
 
       const currentTotalAmount = Number(currentSaleData.totalAmount);
       const currentTotalPaidAmount = Number(currentSaleData.totalPaidAmount);
@@ -377,8 +342,12 @@ export async function recordAdditionalPaymentAction(
       if (isNaN(currentTotalAmount) || isNaN(currentTotalPaidAmount)) {
           throw new Error("Invalid numeric data encountered for existing sale amounts. Cannot record payment.");
       }
-      
+
       const currentCalculatedDue = parseFloat((currentTotalAmount - currentTotalPaidAmount).toFixed(2));
+      
+      if (currentCalculatedDue <= EPSILON) {
+        throw new Error("This bill is already fully paid. No further payments can be recorded.");
+      }
       
       if (paymentAmountReceived > currentCalculatedDue + EPSILON) {
         throw new Error(`Payment amount (Rs. ${paymentAmountReceived.toFixed(2)}) exceeds amount due (Rs. ${currentCalculatedDue.toFixed(2)}).`);
@@ -387,7 +356,7 @@ export async function recordAdditionalPaymentAction(
       const newPaymentTransaction: PaymentTransaction = {
         date: now,
         amount: paymentAmountReceived,
-        paymentMethod: payload.paymentMethod, // This is already validated by type 'cash' | 'card' | 'online'
+        paymentMethod: payload.paymentMethod,
         recordedByEmail: userEmail,
       };
       
@@ -408,13 +377,11 @@ export async function recordAdditionalPaymentAction(
       if (newTotalAmountDue <= EPSILON) {
         newPaymentStatus = 'paid';
       } else if (newTotalPaidAmount <= EPSILON && currentTotalAmount > EPSILON) {
-        // This case should ideally not be hit if currentTotalPaidAmount was > 0 before this payment
-        // and paymentAmountReceived is positive. If totalPaid is now 0, means it was 0 before.
         newPaymentStatus = 'unpaid'; 
       }
 
 
-      const updateData: Partial<Sale> = {
+      const updateData: Partial<Sale> & {updatedAt: string} = {
         totalPaidAmount: newTotalPaidAmount,
         totalAmountDue: newTotalAmountDue,
         paymentStatus: newPaymentStatus,
@@ -435,3 +402,4 @@ export async function recordAdditionalPaymentAction(
     return { success: false, message: `Failed to record payment: ${error instanceof Error ? error.message : 'Unknown error'}` };
   }
 }
+

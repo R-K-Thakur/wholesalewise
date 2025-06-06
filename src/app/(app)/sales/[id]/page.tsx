@@ -88,14 +88,19 @@ export default function SaleDetailPage() {
 
   const displayPaymentMethod = useMemo(() => {
     if (!sale) return 'N/A';
+    // Prioritize the most recent non-manual_adjustment payment method from history
+    const reversedHistory = [...(sale.paymentHistory || [])].reverse();
+    const lastConcretePayment = reversedHistory.find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
+
+    if (lastConcretePayment?.paymentMethod) {
+      return lastConcretePayment.paymentMethod.charAt(0).toUpperCase() + lastConcretePayment.paymentMethod.slice(1);
+    }
+    // Fallback to the sale's primary paymentMethod if it's not manual_adjustment
     if (sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment') {
       return sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
     }
-    // Find the last non-manual payment in history if the primary method is manual or not set
-    const lastNonManualPayment = [...(sale.paymentHistory || [])].reverse().find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
-    return lastNonManualPayment?.paymentMethod 
-      ? lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1) 
-      : (sale.paymentMethod ? sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1) : 'N/A');
+    // If only manual_adjustment or no method, display accordingly
+    return sale.paymentMethod ? sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1) : 'N/A';
   }, [sale]);
 
 
@@ -135,7 +140,6 @@ export default function SaleDetailPage() {
       shopContact: session?.shopContact,
     };
   }, [session]);
-
 
   if (isLoading) {
     return (
@@ -282,19 +286,7 @@ export default function SaleDetailPage() {
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
       
-      let primaryPaymentMethodDisplay = 'N/A';
-      if (sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment') {
-        primaryPaymentMethodDisplay = sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
-      } else {
-          const lastNonManualPayment = [...(sale.paymentHistory || [])].reverse().find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
-          if (lastNonManualPayment?.paymentMethod) {
-            primaryPaymentMethodDisplay = lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1);
-          } else if (sale.paymentMethod) { 
-             primaryPaymentMethodDisplay = sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
-          }
-      }
-
-      doc.text(`Payment Method: ${primaryPaymentMethodDisplay}`, rightMargin, startY, { align: 'right' });
+      doc.text(`Payment Method: ${displayPaymentMethod}`, rightMargin, startY, { align: 'right' });
       startY += 10;
 
 
@@ -466,20 +458,8 @@ export default function SaleDetailPage() {
       doc.setFontSize(8);
       doc.setFont(undefined, 'normal');
       
-      let primaryPaymentMethodDisplay = 'N/A';
-       if (sale.paymentMethod && sale.paymentMethod !== 'manual_adjustment') {
-        primaryPaymentMethodDisplay = sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
-      } else {
-          const lastNonManualPayment = [...(sale.paymentHistory || [])].reverse().find(p => p.paymentMethod && p.paymentMethod !== 'manual_adjustment');
-           if (lastNonManualPayment?.paymentMethod) {
-            primaryPaymentMethodDisplay = lastNonManualPayment.paymentMethod.charAt(0).toUpperCase() + lastNonManualPayment.paymentMethod.slice(1);
-          } else if (sale.paymentMethod) { 
-             primaryPaymentMethodDisplay = sale.paymentMethod.charAt(0).toUpperCase() + sale.paymentMethod.slice(1);
-          }
-      }
-
       doc.text('Payment:', marginPt, currentY);
-      doc.text(primaryPaymentMethodDisplay, thermalWidthPt - marginPt, currentY, { align: 'right' });
+      doc.text(displayPaymentMethod, thermalWidthPt - marginPt, currentY, { align: 'right' });
       currentY += 10;
 
 
@@ -597,7 +577,7 @@ export default function SaleDetailPage() {
     const payload: RecordAdditionalPaymentPayload = {
       saleId: sale.id,
       amountPaidNow: amountPaidNum,
-      paymentMethod: paymentMethod as Sale['paymentMethod'], // Type assertion as select is controlled
+      paymentMethod: paymentMethod as Sale['paymentMethod'], 
       paymentNotes: paymentNotes.trim() === "" ? undefined : paymentNotes.trim(),
     };
 
@@ -605,11 +585,11 @@ export default function SaleDetailPage() {
     if (result.success) {
       toast({ title: "Payment Recorded", description: result.message });
       setIsRecordPaymentDialogOpen(false);
-      // Reset form fields
+      
       setPaymentAmount("");
       setPaymentMethod('cash');
       setPaymentNotes("");
-      // Re-fetch sale data
+      
       const updatedSale = await getSaleByIdAction(sale.id);
       setSale(updatedSale);
       if (updatedSale && updatedSale.totalAmountDue > EPSILON) {
@@ -670,7 +650,6 @@ export default function SaleDetailPage() {
                 <Dialog open={isRecordPaymentDialogOpen} onOpenChange={setIsRecordPaymentDialogOpen}>
                     <DialogTrigger asChild>
                         <Button variant="default" size="sm" onClick={() => {
-                            // Prefill payment amount with current due when opening dialog
                             setPaymentAmount(sale.totalAmountDue.toFixed(2));
                             setPaymentMethod('cash');
                             setPaymentNotes("");
