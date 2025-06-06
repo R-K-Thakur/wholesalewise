@@ -64,8 +64,8 @@ export default function LoginPage() {
       const errorString = String(e.message || e.name || e.toString()).toUpperCase();
 
       if (errorString.includes("NEXT_REDIRECT")) {
-        console.warn("NEXT_REDIRECT error caught on client. This suggests the server attempted a redirect, but it propagated as an error. The browser might still redirect.");
-        // Suppress generic error toast for NEXT_REDIRECT
+        // This error is expected when a server action redirects.
+        // The browser should handle the redirect. We don't need to show a toast for this.
       } else if (e.message) {
         errorMessage = e.message;
         setError(errorMessage);
