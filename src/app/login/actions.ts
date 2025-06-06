@@ -25,7 +25,8 @@ export interface SessionData {
 interface UserDocumentData {
   email: string;
   displayName: string;
-  loginApprovalStatus?: 'pending' | 'approved' | 'denied';
+  // loginApprovalStatus and lastLoginRequestTimestamp are no longer actively used by the reverted logic
+  loginApprovalStatus?: 'pending' | 'approved' | 'denied'; 
   lastLoginRequestTimestamp?: string;
   invoicePrimaryColor?: string;
   shopName?: string;
@@ -108,66 +109,31 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
   try {
     const userDocSnap = await getDoc(userDocRef);
 
-    if (userRole === 'staff') {
-      const nowISO = new Date().toISOString();
-      if (userDocSnap.exists()) {
-        const userData = userDocSnap.data() as UserDocumentData;
-        userDisplayName = userData.displayName || userEmailLower;
-        userInvoicePrimaryColor = userData.invoicePrimaryColor;
-        userShopName = userData.shopName;
-        userShopAddress = userData.shopAddress;
-        userShopContact = userData.shopContact;
-
-        switch (userData.loginApprovalStatus) {
-          case 'pending':
-            return { error: "Your login request is still awaiting owner approval. Please try again later or contact an owner." };
-          case 'denied':
-            return { error: "Your login request was denied. Please contact an owner." };
-          case 'approved':
-            break;
-          default: 
-            await updateDoc(userDocRef, { 
-              loginApprovalStatus: 'pending', 
-              lastLoginRequestTimestamp: nowISO,
-              displayName: userDisplayName 
-            });
-            return { error: "Your login request has been submitted for owner approval. Please wait and try again later, or contact an owner." };
-        }
-      } else {
-        await setDoc(userDocRef, { 
-          email: userEmailLower, 
-          displayName: userEmailLower, 
-          loginApprovalStatus: 'pending',
-          lastLoginRequestTimestamp: nowISO,
-          invoicePrimaryColor: undefined,
-          shopName: undefined,
-          shopAddress: undefined,
-          shopContact: undefined,
-        });
-        return { error: "Your login request has been submitted for owner approval. Please wait and try again later, or contact an owner." };
+    if (userDocSnap.exists()) {
+      const userData = userDocSnap.data() as UserDocumentData;
+      userDisplayName = userData.displayName || userEmailLower;
+      userInvoicePrimaryColor = userData.invoicePrimaryColor;
+      userShopName = userData.shopName;
+      userShopAddress = userData.shopAddress;
+      userShopContact = userData.shopContact;
+      // No longer checking or updating loginApprovalStatus here for staff. Owners might still update their own user doc.
+      if (userRole === 'owner' && userData.loginApprovalStatus !== 'approved') {
+           await updateDoc(userDocRef, { 
+            displayName: userDisplayName,
+            // loginApprovalStatus: 'approved' // Optionally keep this for owners if field is kept in DB
+          });
       }
-    } else if (userRole === 'owner') {
-      if (userDocSnap.exists()) {
-        const userData = userDocSnap.data() as UserDocumentData;
-        userDisplayName = userData.displayName || userEmailLower;
-        userInvoicePrimaryColor = userData.invoicePrimaryColor;
-        userShopName = userData.shopName;
-        userShopAddress = userData.shopAddress;
-        userShopContact = userData.shopContact;
-        if (userData.loginApprovalStatus !== 'approved') {
-            await updateDoc(userDocRef, { loginApprovalStatus: 'approved', displayName: userDisplayName });
-        }
-      } else {
-        await setDoc(userDocRef, { 
-          email: userEmailLower, 
-          displayName: userEmailLower, 
-          loginApprovalStatus: 'approved',
-          invoicePrimaryColor: undefined,
-          shopName: undefined,
-          shopAddress: undefined,
-          shopContact: undefined,
-        });
-      }
+    } else {
+      // Create user document if it doesn't exist, especially for owners. Staff might or might not need it depending on if profile features are used.
+      await setDoc(userDocRef, { 
+        email: userEmailLower, 
+        displayName: userEmailLower, 
+        // loginApprovalStatus: userRole === 'owner' ? 'approved' : undefined, // No approval status needed for staff now
+        invoicePrimaryColor: undefined,
+        shopName: undefined,
+        shopAddress: undefined,
+        shopContact: undefined,
+      });
     }
   } catch (dbError) {
     console.error("Error accessing/updating user document in Firestore during login:", dbError);
@@ -400,5 +366,3 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
     return { success: false, message: "Shop details were saved, but failed to update your current session. Changes will reflect on next login." };
   }
 }
-
-    
