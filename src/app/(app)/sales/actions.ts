@@ -2,7 +2,7 @@
 'use server';
 
 import { revalidatePath, revalidateTag } from 'next/cache';
-import { collection, addDoc, doc, runTransaction, Timestamp, getDocs, query, orderBy, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, runTransaction, Timestamp, getDocs, query, orderBy, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { unstable_cache } from 'next/cache';
 import { db } from '@/lib/firebase';
 import type { RecordSaleActionPayload } from './schema';
@@ -108,7 +108,12 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         }
 
         const newStock = product.quantityInStock - quantitySoldInBaseUnits;
-        transaction.update(productRef, { quantityInStock: newStock, updatedAt: Timestamp.now().toDate().toISOString(), lastStockUpdateByEmail: userEmail, lastStockUpdateByName: userName }); // Added lastStockUpdateByName
+        transaction.update(productRef, { 
+            quantityInStock: newStock, 
+            updatedAt: Timestamp.now().toDate().toISOString(), 
+            lastStockUpdateByEmail: userEmail, 
+            lastStockUpdateByName: userName 
+        });
 
         saleItemsForDb.push({
           ...item,
@@ -437,4 +442,76 @@ export async function recordAdditionalPaymentAction(
 }
 
 
+export async function deleteSaleAction(saleId: string): Promise<{ success: boolean; message: string }> {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, message: 'Unauthorized: You must be logged in.' };
+  }
+  if (session.role !== 'owner') {
+    return { success: false, message: 'Unauthorized: Only owners can delete sales.' };
+  }
+
+  const userEmail = session.email;
+  const userName = session.name;
+  console.log(`[deleteSaleAction] Deleting sale ID: ${saleId}. User: ${userName} (${userEmail})`);
+
+  const saleRef = doc(db, SALES_COLLECTION, saleId);
+  const nowISO = Timestamp.now().toDate().toISOString();
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const saleDoc = await transaction.get(saleRef);
+      if (!saleDoc.exists()) {
+        throw new Error("Sale not found. It may have already been deleted.");
+      }
+      const saleData = mapDocToSale(saleDoc);
+
+      for (const item of saleData.items) {
+        if (!item.productId) {
+          console.warn(`Sale item in sale ${saleId} is missing a productId. Skipping stock restoration for this item. Item snapshot: ${item.productNameSnapshot}`);
+          continue;
+        }
+        const productRef = doc(db, PRODUCTS_COLLECTION, item.productId);
+        const productDoc = await transaction.get(productRef);
+
+        if (!productDoc.exists()) {
+          console.warn(`Product ID ${item.productId} (Snapshot: ${item.productNameSnapshot}) from deleted sale ${saleId} not found. Stock cannot be restored for this item.`);
+          continue; 
+        }
+
+        const productData = productDoc.data() as Product; 
+        let quantityToRestoreInBaseUnits = item.quantitySold;
+
+        // Convert quantitySold to base units if it was sold in purchase units
+        if (item.soldUnit === productData.purchaseUnit && productData.baseUnit !== productData.purchaseUnit && productData.purchaseUnitConversionFactor > 0) {
+          quantityToRestoreInBaseUnits = item.quantitySold * productData.purchaseUnitConversionFactor;
+        }
+        
+        const newStockInBaseUnits = (productData.quantityInStock || 0) + quantityToRestoreInBaseUnits;
+
+        transaction.update(productRef, {
+          quantityInStock: newStockInBaseUnits,
+          updatedAt: nowISO,
+          lastStockUpdateByEmail: userEmail,
+          lastStockUpdateByName: userName,
+        });
+        console.log(`[deleteSaleAction] Restored ${quantityToRestoreInBaseUnits} (base units) to product ${item.productId}. New stock: ${newStockInBaseUnits}`);
+      }
+
+      transaction.delete(saleRef);
+      console.log(`[deleteSaleAction] Sale ${saleId} deleted successfully.`);
+    });
+
+    revalidateTag('sales');
+    revalidateTag('products');
+    revalidatePath('/sales');
+    revalidatePath('/dashboard');
+    // Consider revalidating individual product pages if many products are affected, but tags should generally cover this.
+
+    return { success: true, message: 'Sale deleted successfully and product stock restored.' };
+  } catch (error) {
+    console.error(`Error deleting sale ${saleId}:`, error);
+    return { success: false, message: `Failed to delete sale: ${error instanceof Error ? error.message : 'Unknown error'}` };
+  }
+}
 

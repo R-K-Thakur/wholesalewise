@@ -3,12 +3,26 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation"; // Import useRouter
 import { Button } from "@/components/ui/button";
 import type { Sale } from "@/lib/types";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, Loader2, AlertTriangle } from "lucide-react"; // Added Trash2, Loader2, AlertTriangle
 import { ITEMS_PER_PAGE_STORAGE_KEY } from "@/lib/constants";
-import { Badge } from "@/components/ui/badge"; // Import Badge
+import { Badge } from "@/components/ui/badge"; 
 import { cn } from "@/lib/utils";
+import { getSession, type SessionData } from "@/app/login/actions"; // Import getSession
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"; // Import AlertDialog components
+import { useToast } from "@/hooks/use-toast"; // Import useToast
+import { deleteSaleAction } from "./actions"; // Import deleteSaleAction
 
 const DEFAULT_ITEMS_PER_PAGE = 10;
 
@@ -17,13 +31,27 @@ interface SalesListClientContentProps {
 }
 
 export function SalesListClientContent({ sales: initialSales }: SalesListClientContentProps) {
+  const router = useRouter();
+  const { toast } = useToast();
   const [sales, setSales] = React.useState<Sale[]>(initialSales);
   const [currentPage, setCurrentPage] = React.useState(1);
   const [itemsPerPage, setItemsPerPage] = React.useState(DEFAULT_ITEMS_PER_PAGE);
   const [isMounted, setIsMounted] = React.useState(false);
+  const [session, setSession] = React.useState<SessionData | null>(null);
+
+  // State for delete confirmation
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  const [saleToDelete, setSaleToDelete] = React.useState<Sale | null>(null);
+  const [isDeleting, setIsDeleting] = React.useState(false);
+
 
   React.useEffect(() => {
     setIsMounted(true);
+    async function fetchSessionData() {
+      const currentSession = await getSession();
+      setSession(currentSession);
+    }
+    fetchSessionData();
     const storedItemsPerPage = localStorage.getItem(ITEMS_PER_PAGE_STORAGE_KEY);
     if (storedItemsPerPage) {
       setItemsPerPage(parseInt(storedItemsPerPage, 10) || DEFAULT_ITEMS_PER_PAGE);
@@ -32,7 +60,7 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
 
   React.useEffect(() => {
     setSales(initialSales);
-    setCurrentPage(1); // Reset to first page if sales data changes
+    setCurrentPage(1); 
   }, [initialSales]);
 
 
@@ -53,14 +81,41 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
   const getStatusBadgeVariant = (status: Sale['paymentStatus']): "default" | "secondary" | "destructive" => {
     switch (status) {
       case 'paid':
-        return 'default'; // Default is often green or primary
+        return 'default'; 
       case 'partially_paid':
-        return 'secondary'; // Secondary for neutral/warning
+        return 'secondary'; 
       case 'unpaid':
-        return 'destructive'; // Destructive for unpaid
+        return 'destructive'; 
       default:
         return 'secondary';
     }
+  };
+
+  const handleDeleteClick = (sale: Sale) => {
+    setSaleToDelete(sale);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!saleToDelete) return;
+    setIsDeleting(true);
+    const result = await deleteSaleAction(saleToDelete.id);
+    if (result.success) {
+      toast({
+        title: "Success!",
+        description: result.message,
+      });
+      router.refresh(); // Refresh data on the page
+    } else {
+      toast({
+        title: "Error",
+        description: result.message || "Failed to delete sale.",
+        variant: "destructive",
+      });
+    }
+    setIsDeleting(false);
+    setIsDeleteDialogOpen(false);
+    setSaleToDelete(null);
   };
 
 
@@ -126,10 +181,21 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
                     {sale.paymentStatus.replace('_', ' ')}
                   </Badge>
                 </td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-center">
+                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-center space-x-1">
                   <Button variant="outline" size="sm" asChild>
                     <Link href={`/sales/${sale.id}`}>View Details</Link>
                   </Button>
+                  {session?.role === 'owner' && (
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      onClick={() => handleDeleteClick(sale)}
+                      disabled={isDeleting}
+                      title="Delete Sale"
+                    >
+                      {isDeleting && saleToDelete?.id === sale.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -164,6 +230,37 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
           </div>
         </div>
       )}
+
+      {saleToDelete && (
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-6 w-6 text-destructive" />
+                <AlertDialogTitle>Delete Sale Record?</AlertDialogTitle>
+              </div>
+              <AlertDialogDescription>
+                Are you sure you want to delete the sale record for "{saleToDelete.customerName || `ID: ${saleToDelete.id.substring(0,8)}...`}" on {new Date(saleToDelete.saleDate).toLocaleDateString()}?
+                This action cannot be undone and will restore the stock for the items sold in this transaction.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => {setIsDeleteDialogOpen(false); setSaleToDelete(null);}} disabled={isDeleting}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={confirmDelete} 
+                disabled={isDeleting}
+                className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              >
+                {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Delete Sale
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </>
   );
 }
+
