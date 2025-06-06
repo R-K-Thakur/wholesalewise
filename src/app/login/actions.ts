@@ -67,123 +67,122 @@ async function getRoleEmailsFromFirestore(): Promise<RoleEmails> {
 }
 
 export async function signInWithEmailAction(email: string): Promise<{ error: string } | void> {
+  if (!db) {
+    console.error("[signInWithEmailAction] Firestore (db) instance is not initialized!");
+    return { error: "Authentication service is critically misconfigured. Database unavailable." };
+  }
+
   if (!email || !email.includes('@')) {
     return { error: "Invalid email format provided." };
   }
 
-  if (!db) {
-    return { error: "Authentication service is temporarily unavailable due to a database configuration issue." };
-  }
-
-  const roleEmailsResult = await getRoleEmailsFromFirestore();
-  
-  const { ownerEmails, staffEmails } = roleEmailsResult;
-  const userEmailLower = email.toLowerCase();
-  let userRole: SessionData['role'] | null = null;
-  let isOwner = false;
-  let isStaff = false;
-
-  if (ownerEmails.includes(userEmailLower)) {
-    userRole = "owner";
-    isOwner = true;
-  } else if (staffEmails.includes(userEmailLower)) {
-    userRole = "staff";
-    isStaff = true;
-  }
-
-  if (!userRole) {
-    if (ownerEmails.length === 0 && staffEmails.length === 0) {
-      return { error: "Login failed: No authorized users (owners or staff) are configured in the system. Please contact an administrator." };
-    }
-    return { error: "Login failed: This email address is not authorized to access the application." };
-  }
-
-  const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
-  let userDocSnap;
-  let userDocDataFromDb: UserDocumentData | null = null;
-
   try {
-    userDocSnap = await getDoc(userDocRef);
-    if (userDocSnap.exists()) {
-      userDocDataFromDb = userDocSnap.data() as UserDocumentData;
-    }
-  } catch (dbError) {
-    console.error("Error fetching user document during login:", dbError);
-    return { error: "A database error occurred while processing your login. Please try again." };
-  }
-
-  let userDisplayName: string;
-  if (!userDocDataFromDb?.displayName || userDocDataFromDb.displayName.trim() === "") {
-    userDisplayName = userEmailLower;
-  } else {
-    userDisplayName = userDocDataFromDb.displayName.trim();
-  }
-  
-  let userInvoicePrimaryColor = userDocDataFromDb?.invoicePrimaryColor;
-  let userShopName = userDocDataFromDb?.shopName;
-  let userShopAddress = userDocDataFromDb?.shopAddress;
-  let userShopContact = userDocDataFromDb?.shopContact;
-
-  if (isOwner) {
-    const ownerDataToSet: Partial<UserDocumentData> & Pick<UserDocumentData, 'email' | 'displayName' | 'loginApprovalStatus'> = {
-      email: userEmailLower,
-      displayName: userDisplayName,
-      loginApprovalStatus: 'approved',
-    };
-    if (userInvoicePrimaryColor) ownerDataToSet.invoicePrimaryColor = userInvoicePrimaryColor;
-    if (userShopName) ownerDataToSet.shopName = userShopName;
-    if (userShopAddress) ownerDataToSet.shopAddress = userShopAddress;
-    if (userShopContact) ownerDataToSet.shopContact = userShopContact;
+    const roleEmailsResult = await getRoleEmailsFromFirestore();
     
-    await setDoc(userDocRef, ownerDataToSet, { merge: true });
+    const { ownerEmails, staffEmails } = roleEmailsResult;
+    const userEmailLower = email.toLowerCase();
+    let userRole: SessionData['role'] | null = null;
+    let isOwner = false;
+    let isStaff = false;
 
-  } else if (isStaff) {
-    const currentApprovalStatus = userDocDataFromDb?.loginApprovalStatus;
-    const nowISO = new Date().toISOString();
+    if (ownerEmails.includes(userEmailLower)) {
+      userRole = "owner";
+      isOwner = true;
+    } else if (staffEmails.includes(userEmailLower)) {
+      userRole = "staff";
+      isStaff = true;
+    }
 
-    if (currentApprovalStatus === 'approved') {
-      // Staff is approved, proceed to login
-    } else if (currentApprovalStatus === 'denied') {
-      return { error: "Your login request was denied. Please contact an owner." };
-    } else { 
-      const staffDataToSet: Partial<UserDocumentData> & Pick<UserDocumentData, 'email' | 'displayName' | 'loginApprovalStatus' | 'lastLoginRequestTimestamp'> = {
+    if (!userRole) {
+      if (ownerEmails.length === 0 && staffEmails.length === 0) {
+        return { error: "Login failed: No authorized users (owners or staff) are configured in the system. Please contact an administrator." };
+      }
+      return { error: "Login failed: This email address is not authorized to access the application." };
+    }
+
+    const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
+    let userDocSnap;
+    let userDocDataFromDb: UserDocumentData | null = null;
+
+    try {
+      userDocSnap = await getDoc(userDocRef);
+      if (userDocSnap.exists()) {
+        userDocDataFromDb = userDocSnap.data() as UserDocumentData;
+      }
+    } catch (dbError) {
+      console.error("Error fetching user document during login:", dbError);
+      return { error: "A database error occurred while processing your login. Please try again." };
+    }
+    
+    let userDisplayName: string = userDocDataFromDb?.displayName?.trim() || userEmailLower;
+    if (!userDisplayName) { // Fallback just in case userEmailLower was also empty (though validated earlier)
+        userDisplayName = userEmailLower;
+    }
+
+    let userInvoicePrimaryColor = userDocDataFromDb?.invoicePrimaryColor;
+    let userShopName = userDocDataFromDb?.shopName;
+    let userShopAddress = userDocDataFromDb?.shopAddress;
+    let userShopContact = userDocDataFromDb?.shopContact;
+
+    if (isOwner) {
+      const ownerDataToSet: Partial<UserDocumentData> = {
         email: userEmailLower,
         displayName: userDisplayName,
-        loginApprovalStatus: 'pending',
-        lastLoginRequestTimestamp: nowISO,
+        loginApprovalStatus: 'approved',
       };
-      if (userInvoicePrimaryColor) staffDataToSet.invoicePrimaryColor = userInvoicePrimaryColor;
-      if (userShopName) staffDataToSet.shopName = userShopName;
-      if (userShopAddress) staffDataToSet.shopAddress = userShopAddress;
-      if (userShopContact) staffDataToSet.shopContact = userShopContact;
-
-      await setDoc(userDocRef, staffDataToSet, { merge: true });
+      if (userInvoicePrimaryColor) ownerDataToSet.invoicePrimaryColor = userInvoicePrimaryColor;
+      if (userShopName) ownerDataToSet.shopName = userShopName;
+      if (userShopAddress) ownerDataToSet.shopAddress = userShopAddress;
+      if (userShopContact) ownerDataToSet.shopContact = userShopContact;
       
-      if (currentApprovalStatus === 'pending') {
-        return { error: "Your login request is still awaiting owner approval." };
+      await setDoc(userDocRef, ownerDataToSet, { merge: true });
+
+    } else if (isStaff) {
+      const currentApprovalStatus = userDocDataFromDb?.loginApprovalStatus;
+      const nowISO = new Date().toISOString();
+
+      if (currentApprovalStatus === 'approved') {
+        // Staff is approved, proceed to login
+      } else if (currentApprovalStatus === 'denied') {
+        return { error: "Your login request was previously denied. Please contact an owner." };
+      } else { 
+        const staffDataToSet: Partial<UserDocumentData> = {
+          email: userEmailLower,
+          displayName: userDisplayName,
+          loginApprovalStatus: 'pending',
+          lastLoginRequestTimestamp: nowISO,
+        };
+        if (userInvoicePrimaryColor) staffDataToSet.invoicePrimaryColor = userInvoicePrimaryColor;
+        if (userShopName) staffDataToSet.shopName = userShopName;
+        if (userShopAddress) staffDataToSet.shopAddress = userShopAddress;
+        if (userShopContact) staffDataToSet.shopContact = userShopContact;
+
+        await setDoc(userDocRef, staffDataToSet, { merge: true });
+        
+        if (currentApprovalStatus === 'pending') {
+          return { error: "Your login request is still awaiting owner approval." };
+        }
+        return { error: "Your login request has been submitted for owner approval. Please wait or contact an owner." };
       }
-      return { error: "Your login request has been submitted for owner approval. Please wait or contact an owner." };
     }
-  }
 
-  const sessionData: SessionData = {
-    username: userEmailLower,
-    email: userEmailLower,
-    role: userRole!,
-    name: userDisplayName,
-  };
+    const sessionData: SessionData = {
+      username: userEmailLower, // Ensure username is always set
+      email: userEmailLower,
+      role: userRole!,
+      name: userDisplayName, // Ensure name is always set
+    };
 
-  if (userInvoicePrimaryColor) sessionData.invoicePrimaryColor = userInvoicePrimaryColor;
-  if (userShopName) sessionData.shopName = userShopName;
-  if (userShopAddress) sessionData.shopAddress = userShopAddress;
-  if (userShopContact) sessionData.shopContact = userShopContact;
-  
-  console.log('[signInWithEmailAction] Creating session with data:', sessionData);
+    if (userInvoicePrimaryColor) sessionData.invoicePrimaryColor = userInvoicePrimaryColor;
+    if (userShopName) sessionData.shopName = userShopName;
+    if (userShopAddress) sessionData.shopAddress = userShopAddress;
+    if (userShopContact) sessionData.shopContact = userShopContact;
+    
+    console.log('[signInWithEmailAction] Creating session with data:', sessionData);
 
-  const cookieSecure = process.env.NODE_ENV === 'production';
-  const cookieSameSite = cookieSecure ? "none" as "none" | "lax" | "strict" | undefined : "lax" as "none" | "lax" | "strict" | undefined;
-
-  try {
+    const cookieSecure = process.env.NODE_ENV === 'production';
+    const cookieSameSite = cookieSecure ? "none" as "none" | "lax" | "strict" | undefined : "lax" as "none" | "lax" | "strict" | undefined;
+    
     cookies().set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
       httpOnly: true,
       secure: cookieSecure,
@@ -193,12 +192,24 @@ export async function signInWithEmailAction(email: string): Promise<{ error: str
     });
 
     redirect('/dashboard');
+
   } catch (e: any) {
     if (typeof e.message === 'string' && e.message.includes('NEXT_REDIRECT')) {
-      throw e;
+      throw e; // Re-throw NEXT_REDIRECT, Next.js will handle it.
     }
-    console.error("[signInWithEmailAction] Failed to set session cookie or redirect:", e);
-    return { error: "Failed to create your session or redirect. Please try again." };
+    // Log the raw error object for more details on the server
+    console.error("[signInWithEmailAction] Caught an unhandled server error during login:", e);
+    
+    // Construct a simple, safe error message to return to the client
+    let safeErrorMessage = "An unexpected server error occurred. Please check server logs for details.";
+    if (e instanceof Error && typeof e.message === 'string' && e.message.trim() !== "") {
+        safeErrorMessage = `Login failed: ${e.message}`;
+    } else if (typeof e === 'string' && e.trim() !== "") {
+        safeErrorMessage = `Login failed: ${e}`;
+    }
+    // DO NOT include the raw error 'e' or complex parts of it in the object returned to the client,
+    // as it might not be serializable and could cause the "Server Error" on the client.
+    return { error: safeErrorMessage };
   }
 }
 
@@ -238,7 +249,6 @@ export async function getSession(): Promise<SessionData | null> {
         reason = "Username field missing, not a string, or empty";
       }
       
-      // Optional fields validation: if they exist, they must be strings.
       const optionalStringFields: (keyof SessionData)[] = ['invoicePrimaryColor', 'shopName', 'shopAddress', 'shopContact'];
       for (const field of optionalStringFields) {
           if (parsedData[field] !== undefined && typeof parsedData[field] !== 'string') {
@@ -253,6 +263,7 @@ export async function getSession(): Promise<SessionData | null> {
       } else {
         console.warn(`[getSession] Session cookie parsed, but data is invalid or incomplete. Reason: ${reason}. Deleting cookie. Parsed data keys:`, Object.keys(parsedData || {}));
         cookies().delete(SESSION_COOKIE_NAME);
+        // No redirect here; middleware or page logic should handle missing session.
         return null;
       }
     } catch (error) {
@@ -339,7 +350,7 @@ export async function updateUserInvoiceColorAction(color: string): Promise<{ suc
     if (userDocSnap.exists()) {
         await updateDoc(userDocRef, dataToSet);
     } else {
-        await setDoc(userDocRef, { email: userEmailLower, invoicePrimaryColor: color }, { merge: true });
+        await setDoc(userDocRef, { email: userEmailLower, displayName: session.name, invoicePrimaryColor: color }, { merge: true });
     }
   } catch (dbError) {
     console.error("Error updating user invoicePrimaryColor in Firestore:", dbError);
@@ -399,7 +410,7 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
     if (userDocSnap.exists()) {
         await updateDoc(userDocRef, dataToUpdate);
     } else {
-        await setDoc(userDocRef, { email: userEmailLower, ...dataToUpdate }, {merge: true});
+        await setDoc(userDocRef, { email: userEmailLower, displayName: session.name, ...dataToUpdate }, {merge: true});
          console.warn(`User document for ${userEmailLower} was created during shop details update.`);
     }
   } catch (dbError) {
@@ -432,7 +443,4 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
     return { success: false, message: "Shop details were saved, but failed to update your current session. Changes will reflect on next login." };
   }
 }
-    
-
-
     
