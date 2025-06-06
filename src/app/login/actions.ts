@@ -1,4 +1,3 @@
-
 "use server";
 
 import { cookies } from "next/headers";
@@ -179,8 +178,27 @@ export async function getSession(): Promise<SessionData | null> {
 
   if (sessionCookie?.value) {
     try {
-      const sessionData = JSON.parse(sessionCookie.value) as SessionData;
-      return sessionData;
+      const parsedData = JSON.parse(sessionCookie.value);
+
+      // Validate the structure of parsedData before casting and returning
+      if (
+        parsedData &&
+        typeof parsedData === 'object' &&
+        parsedData !== null && // Ensure it's not null itself
+        typeof parsedData.email === 'string' &&
+        typeof parsedData.role === 'string' &&
+        (parsedData.role === 'owner' || parsedData.role === 'staff') &&
+        typeof parsedData.name === 'string' && // Check other core fields
+        typeof parsedData.username === 'string'
+      ) {
+        // It looks like a valid SessionData object
+        return parsedData as SessionData;
+      } else {
+        // If data is not as expected (e.g., not an object, missing core fields), treat it as an invalid session
+        console.warn("Session cookie parsed, but data is invalid, incomplete, or not an object. Deleting cookie. Parsed data:", parsedData);
+        cookies().delete(SESSION_COOKIE_NAME);
+        return null;
+      }
     } catch (error) {
       console.error("Failed to parse session cookie:", error);
       cookies().delete(SESSION_COOKIE_NAME); 
@@ -339,3 +357,4 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
     return { success: false, message: "Shop details were saved, but failed to update your current session. Changes will reflect on next login." };
   }
 }
+
