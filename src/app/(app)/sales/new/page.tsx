@@ -73,6 +73,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   const amountPaidDisplay = Number(currentWatchedAmountPaid) || 0;
   const amountDue = parseFloat((grandTotal - amountPaidDisplay).toFixed(2));
 
+
   const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
   const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>(() =>
     (form.getValues("items") || []).map(item => {
@@ -84,44 +85,63 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
     })
   );
 
+  // Effect to synchronize itemSearchTexts when a product ID is set (e.g., from selection)
   React.useEffect(() => {
-    // This effect ensures that if a productId is set (e.g., programmatically or by selection),
-    // the itemSearchTexts reflects the product's name.
-    // It primarily reacts to changes in `currentWatchedItems` (specifically `productId`).
-    const newSearchTexts = [...itemSearchTexts]; // Start with a copy of current search texts
+    const newSearchTexts = [...itemSearchTexts];
     let changed = false;
-
     currentWatchedItems.forEach((formItem, i) => {
-      if (newSearchTexts[i] === undefined) newSearchTexts[i] = ""; // Ensure all entries exist
+      if (newSearchTexts[i] === undefined) newSearchTexts[i] = "";
 
-      if (formItem.productId) {
+      if (formItem.productId) { // Product is selected
         const product = allProducts.find(p => p.id === formItem.productId);
+        // If product is found and search text doesn't match product name, update search text
         if (product && newSearchTexts[i] !== product.name) {
           newSearchTexts[i] = product.name;
           changed = true;
         }
       }
-      // If formItem.productId is empty, we do not automatically clear newSearchTexts[i] here.
-      // The user might be typing an ad-hoc item name.
-      // Clearing of itemSearchTexts for removed items is handled by handleRemoveItem.
+      // If formItem.productId is empty, we don't clear newSearchTexts[i] here.
+      // It means the user is typing an ad-hoc item or has cleared the selection.
+      // The handleProductSearchInputChange and another useEffect handle this logic.
     });
     
-    if (changed || newSearchTexts.length !== itemSearchTexts.length) {
-       // Only update if there's an actual change in names or length.
-       // The length check handles initialization or if field array changes structure.
+    if (changed) {
       setItemSearchTexts(newSearchTexts);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentWatchedItems, allProducts]); // Removed itemSearchTexts from deps
+  }, [currentWatchedItems, allProducts]); // Intentionally not including itemSearchTexts to avoid loops
+
+
+  // Effect to clear product ID if search text diverges from a selected product
+  React.useEffect(() => {
+    currentWatchedItems.forEach((formItem, index) => {
+        const currentSearchText = itemSearchTexts[index];
+        const currentProductId = formItem.productId;
+
+        if (currentProductId && typeof currentSearchText === 'string') {
+            const selectedProduct = allProducts.find(p => p.id === currentProductId);
+            if (selectedProduct && selectedProduct.name.toLowerCase() !== currentSearchText.toLowerCase().trim()) {
+                 // Check if form still thinks this product is selected before clearing
+                if (form.getValues(`items.${index}.productId`) === currentProductId) {
+                    form.setValue(`items.${index}.productId`, '', { shouldDirty: true });
+                    form.setValue(`items.${index}.pricePerUnitSold`, 0, { shouldDirty: true });
+                    form.setValue(`items.${index}.soldUnit`, PRODUCT_UNITS[0], { shouldDirty: true });
+                }
+            }
+        }
+    });
+  }, [itemSearchTexts, currentWatchedItems, allProducts, form]);
 
 
   React.useEffect(() => {
     const actualFormAmountPaid = Number(form.getValues("amountPaid")) || 0;
     const roundedGrandTotal = parseFloat(grandTotal.toFixed(2));
     
-    if (form.formState.dirtyFields.amountPaid !== true && roundedGrandTotal > 0) {
+    // Only auto-fill amountPaid if it hasn't been manually dirtied OR if grand total is 0
+    if ((form.formState.dirtyFields.amountPaid !== true || roundedGrandTotal === 0) && roundedGrandTotal >= 0) {
       form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true });
     } else if (actualFormAmountPaid > roundedGrandTotal && roundedGrandTotal >= 0) {
+      // If paid amount exceeds new grand total, cap it at grand total
       form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true });
     }
   }, [grandTotal, form]);
@@ -163,11 +183,12 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       
       form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerBaseUnit.toFixed(2)), { shouldDirty: true });
 
-      setItemSearchTexts(prevTexts => {
-        const newTexts = [...prevTexts];
-        newTexts[itemIndex] = product.name;
-        return newTexts;
-      });
+      // This state update will trigger the useEffect to sync itemSearchTexts
+      // setItemSearchTexts(prevTexts => {
+      //   const newTexts = [...prevTexts];
+      //   newTexts[itemIndex] = product.name;
+      //   return newTexts;
+      // });
 
       form.trigger(`items.${itemIndex}`);
       setOpenComboboxIndex(null);
@@ -180,18 +201,9 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
       newTexts[index] = value;
       return newTexts;
     });
-
-    const currentFormProductId = form.getValues(`items.${index}.productId`);
-    if (currentFormProductId) {
-        const selectedProduct = allProducts.find(p => p.id === currentFormProductId);
-        if (selectedProduct && selectedProduct.name.toLowerCase() !== value.toLowerCase().trim()) {
-            form.setValue(`items.${index}.productId`, '', { shouldDirty: true });
-            form.setValue(`items.${index}.pricePerUnitSold`, 0, { shouldDirty: true }); 
-            form.setValue(`items.${index}.soldUnit`, PRODUCT_UNITS[0], { shouldDirty: true });
-        }
-    }
+    // The useEffect watching itemSearchTexts will handle clearing productId if necessary
     if (openComboboxIndex !== index) {
-        setOpenComboboxIndex(index);
+      setOpenComboboxIndex(index);
     }
   };
 
@@ -199,7 +211,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
   React.useEffect(() => {
     currentWatchedItems.forEach((item, index) => {
         const product = allProducts.find(p => p.id === item.productId);
-        if (product) {
+        if (product) { // Only proceed if a product is actually selected for this item
             const price = watchedSaleType === 'wholesale'
                 ? product.wholesalePricePerBaseUnit
                 : product.retailPricePerBaseUnit;
@@ -429,7 +441,6 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                     ? [selectedProductForUnits.baseUnit]
                     : [selectedProductForUnits.baseUnit, selectedProductForUnits.purchaseUnit].filter(Boolean) as ProductUnit[];
                 if (!availableUnits.includes(form.getValues(`items.${index}.soldUnit`))) {
-                    // if current soldUnit is not in available units (e.g. after product change), reset to baseUnit
                     form.setValue(`items.${index}.soldUnit`, selectedProductForUnits.baseUnit, {shouldDirty: true});
                 }
             }
@@ -452,6 +463,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                           <div className="relative">
                             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                             <Input
+                                key={`product-search-${fieldItem.id}`} 
                                 placeholder="Type to search or enter product name..."
                                 value={itemSearchTexts[index] || ""}
                                 onChange={(e) => handleProductSearchInputChange(index, e.target.value)}
@@ -552,7 +564,7 @@ function SaleForm({ allProducts }: { allProducts: Product[] }) {
                       <Select
                         onValueChange={(value) => handleSoldUnitChange(index, value as ProductUnit)}
                         value={field.value}
-                        disabled={availableUnits.length === 0 && !currentProductId } // Disable if ad-hoc and no units (should not happen)
+                        disabled={availableUnits.length === 0 && !currentProductId } 
                       >
                         <FormControl>
                           <SelectTrigger>
