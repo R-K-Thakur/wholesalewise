@@ -200,10 +200,10 @@ export default function SaleDetailPage() {
 
 
       // Invoice Title - Centered below shop details
-      doc.setFontSize(14); // Slightly larger for better visibility
+      doc.setFontSize(14); 
       doc.setFont(undefined, 'bold');
       doc.text("INVOICE", pageWidth / 2, currentY, { align: 'center' });
-      currentY += 28; // More space after INVOICE title
+      currentY += 28; 
 
       // Customer and Invoice Details Section
       doc.setFontSize(10);
@@ -221,13 +221,13 @@ export default function SaleDetailPage() {
       doc.text(sale.customerName || "N/A", margin, currentY, { maxWidth: halfContentWidth - 15 });
       // Reset Y for the right column (Invoice Details)
       currentY = detailsStartY; 
-      const invoiceDetailsX = margin + halfContentWidth + 20; // Start right column a bit further
+      const invoiceDetailsX = margin + halfContentWidth + 20; 
 
       const addDetailRow = (label: string, value: string) => {
         doc.setFont(undefined, 'bold');
         doc.text(label, invoiceDetailsX, currentY);
         doc.setFont(undefined, 'normal');
-        doc.text(value, invoiceDetailsX + labelWidth, currentY, {maxWidth: halfContentWidth - labelWidth - 25}); // Adjust max width
+        doc.text(value, invoiceDetailsX + labelWidth, currentY, {maxWidth: halfContentWidth - labelWidth - 25}); 
         currentY += detailRowHeight;
       }
 
@@ -238,7 +238,6 @@ export default function SaleDetailPage() {
       addDetailRow("Salesman:", sale.recordedByName || sale.recordedByEmail || "N/A");
 
 
-      // Ensure currentY is below both columns before drawing the line
       currentY = Math.max(currentY, detailsStartY + (detailRowHeight * 4) + 5) ;
       doc.setDrawColor(180, 180, 180);
       doc.line(margin, currentY, pageWidth - margin, currentY);
@@ -290,7 +289,10 @@ export default function SaleDetailPage() {
         margin: { left: margin, right: margin }, 
         tableLineColor: [180, 180, 180], 
         tableLineWidth: 0.5,
-        didDrawPage: (data) => { currentY = data.cursor?.y || currentY; } 
+        didDrawPage: (data) => {
+          // This callback is executed after a page (or part of a page) for this table is drawn.
+          // No need to update the top-level currentY here if lastAutoTable.finalY is used correctly after the table.
+        } 
       });
 
       currentY = (doc as any).lastAutoTable.finalY + 25; 
@@ -324,7 +326,7 @@ export default function SaleDetailPage() {
       currentY += 2; 
       doc.setDrawColor(150, 150, 150); 
       doc.line(totalsX, currentY, valueColX, currentY); 
-      currentY += 8; 
+      currentY += 8; // Increased space here
       drawTotalRowInner("GRAND TOTAL:", sale.totalAmount, true, true);
       currentY += 5;
       drawTotalRowInner("Amount Paid:", sale.totalPaidAmount);
@@ -358,7 +360,7 @@ export default function SaleDetailPage() {
       
 
       // Authorized Signatory
-      const sigY = Math.max(termsCurrentY + 20, doc.internal.pageSize.getHeight() - margin - 50); // Ensure enough space from bottom or after terms
+      const sigY = Math.max(termsCurrentY + 20, doc.internal.pageSize.getHeight() - margin - 50); 
       const sigX = pageWidth - margin - 180; 
       doc.setDrawColor(100,100,100); 
       doc.line(sigX, sigY, pageWidth - margin, sigY); 
