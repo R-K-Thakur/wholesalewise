@@ -167,13 +167,16 @@ export default function SaleDetailPage() {
     const shopName = options?.shopDetails?.shopName || APP_NAME;
     const shopAddress = options?.shopDetails?.shopAddress;
     const shopContact = options?.shopDetails?.shopContact;
-    const accentColor = options?.shopDetails?.invoicePrimaryColor || "#73A7B3"; // Default to Muted Teal
+    const accentColor = options?.shopDetails?.invoicePrimaryColor || "#73A7B3"; // Default Muted Teal
 
     try {
       const doc = new jsPDF({ unit: "pt", format: "a4" }) as jsPDFWithAutoTable;
       const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 40;
       const contentWidth = pageWidth - 2 * margin;
+      const contentBottomLimit = pageHeight - margin; // Max Y for content before footer margin
+
       let currentY = margin;
 
       // Shop Details - Left Aligned
@@ -185,9 +188,9 @@ export default function SaleDetailPage() {
       if (shopAddress) {
         doc.setFontSize(9);
         doc.setFont(undefined, 'normal');
-        const addressLines = doc.splitTextToSize(shopAddress, contentWidth * 0.7); // Max width for address
+        const addressLines = doc.splitTextToSize(shopAddress, contentWidth * 0.7);
         doc.text(addressLines, margin, currentY);
-        currentY += (addressLines.length * 10) + 4; 
+        currentY += (addressLines.length * 10) + 4;
       }
 
       if (shopContact) {
@@ -196,53 +199,48 @@ export default function SaleDetailPage() {
         doc.text(shopContact, margin, currentY);
         currentY += 14;
       }
-      currentY += 5; // Extra space before invoice title
-
+      currentY += 5; // Extra space
 
       // Invoice Title - Centered below shop details
-      doc.setFontSize(14); 
+      doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
       doc.text("INVOICE", pageWidth / 2, currentY, { align: 'center' });
-      currentY += 28; 
+      currentY += 28;
 
       // Customer and Invoice Details Section
-      doc.setFontSize(10);
-      doc.setFont(undefined, 'normal');
       const detailsStartY = currentY;
       const halfContentWidth = contentWidth / 2;
       const detailRowHeight = 14;
       const labelWidth = 70;
 
-      // Bill To Section (Left)
+      doc.setFontSize(10);
       doc.setFont(undefined, 'bold');
       doc.text("BILL TO:", margin, currentY);
       currentY += detailRowHeight;
       doc.setFont(undefined, 'normal');
       doc.text(sale.customerName || "N/A", margin, currentY, { maxWidth: halfContentWidth - 15 });
-      // Reset Y for the right column (Invoice Details)
-      currentY = detailsStartY; 
-      const invoiceDetailsX = margin + halfContentWidth + 20; 
+      
+      let tempY = detailsStartY;
+      const invoiceDetailsX = margin + halfContentWidth + 20;
 
-      const addDetailRow = (label: string, value: string) => {
+      const addDetailRow = (label: string, value: string, yPos: number) => {
         doc.setFont(undefined, 'bold');
-        doc.text(label, invoiceDetailsX, currentY);
+        doc.text(label, invoiceDetailsX, yPos);
         doc.setFont(undefined, 'normal');
-        doc.text(value, invoiceDetailsX + labelWidth, currentY, {maxWidth: halfContentWidth - labelWidth - 25}); 
-        currentY += detailRowHeight;
-      }
-
-      addDetailRow("Invoice No:", sale.id.substring(0,12).toUpperCase());
+        doc.text(value, invoiceDetailsX + labelWidth, yPos, { maxWidth: halfContentWidth - labelWidth - 25 });
+        return yPos + detailRowHeight;
+      };
+      
+      tempY = addDetailRow("Invoice No:", sale.id.substring(0, 12).toUpperCase(), tempY);
       const invoiceDateTime = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.saleDate);
-      addDetailRow("Invoice Date:", format(invoiceDateTime, "dd/MM/yyyy"));
-      addDetailRow("Time:", format(invoiceDateTime, "HH:mm:ss"));
-      addDetailRow("Salesman:", sale.recordedByName || sale.recordedByEmail || "N/A");
-
-
-      currentY = Math.max(currentY, detailsStartY + (detailRowHeight * 4) + 5) ;
+      tempY = addDetailRow("Invoice Date:", format(invoiceDateTime, "dd/MM/yyyy"), tempY);
+      tempY = addDetailRow("Time:", format(invoiceDateTime, "HH:mm:ss"), tempY);
+      tempY = addDetailRow("Salesman:", sale.recordedByName || sale.recordedByEmail || "N/A", tempY);
+      
+      currentY = Math.max(currentY + detailRowHeight, tempY) + 5; // Ensure currentY is below the longer column
       doc.setDrawColor(180, 180, 180);
       doc.line(margin, currentY, pageWidth - margin, currentY);
       currentY += 20;
-
 
       // Items Table
       const tableColumns = ["#", "Item Description", "Qty", "Unit", "Rate (Rs.)", "Amount (Rs.)"];
@@ -251,7 +249,7 @@ export default function SaleDetailPage() {
         tableRows.push([
           index + 1,
           item.productNameSnapshot,
-          item.quantitySold.toFixed(2), 
+          item.quantitySold.toFixed(2),
           item.soldUnit.toUpperCase(),
           item.pricePerUnitSold.toFixed(2),
           item.total.toFixed(2)
@@ -262,123 +260,136 @@ export default function SaleDetailPage() {
         head: [tableColumns],
         body: tableRows,
         startY: currentY,
-        theme: 'striped', 
-        styles: {
-          fontSize: 9,
-          cellPadding: {top: 5, right: 6, bottom: 5, left: 6},
-          valign: 'middle',
-          overflow: 'linebreak', 
-          lineWidth: 0.2, 
-          lineColor: [200,200,200], 
-        },
-        headStyles: {
-          fillColor: accentColor, 
-          textColor: [255, 255, 255],
-          fontStyle: 'bold',
-          halign: 'center',
-        },
-        columnStyles: {
-          0: { halign: 'center', cellWidth: 30 }, 
-          1: { halign: 'left', cellWidth: 'auto' }, 
-          2: { halign: 'right', cellWidth: 45 }, 
-          3: { halign: 'center', cellWidth: 45 }, 
-          4: { halign: 'right', cellWidth: 70 }, 
-          5: { halign: 'right', cellWidth: 80 }  
-        },
-        alternateRowStyles: { fillColor: [245, 245, 245] }, 
-        margin: { left: margin, right: margin }, 
-        tableLineColor: [180, 180, 180], 
+        theme: 'striped',
+        styles: { fontSize: 9, cellPadding: { top: 5, right: 6, bottom: 5, left: 6 }, valign: 'middle', overflow: 'linebreak', lineWidth: 0.2, lineColor: [200, 200, 200] },
+        headStyles: { fillColor: accentColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
+        columnStyles: { 0: { halign: 'center', cellWidth: 30 }, 1: { halign: 'left', cellWidth: 'auto' }, 2: { halign: 'right', cellWidth: 45 }, 3: { halign: 'center', cellWidth: 45 }, 4: { halign: 'right', cellWidth: 70 }, 5: { halign: 'right', cellWidth: 80 } },
+        alternateRowStyles: { fillColor: [245, 245, 245] },
+        margin: { left: margin, right: margin },
+        tableLineColor: [180, 180, 180],
         tableLineWidth: 0.5,
-        didDrawPage: (data) => {
-          // This callback is executed after a page (or part of a page) for this table is drawn.
-          // No need to update the top-level currentY here if lastAutoTable.finalY is used correctly after the table.
-        } 
+        autoPaging: true, // Explicitly ensure autoPaging
       });
 
-      currentY = (doc as any).lastAutoTable.finalY + 25; 
+      currentY = (doc as any).lastAutoTable.finalY + 20; // Start a bit below where the table ended
 
+      // Helper function to add a new page if needed
+      const addNewPageIfNeeded = (estimatedHeightOfNextBlock: number) => {
+        if (currentY + estimatedHeightOfNextBlock > contentBottomLimit) {
+          doc.addPage();
+          currentY = margin; // Reset Y to top margin for the new page
+        }
+      };
+      
+      const totalRowHeightInner = 15; // Used for estimating heights
 
       // Totals Section
-      doc.setFontSize(10);
-      doc.setFont(undefined, 'normal');
       const totalsBlockWidth = 220;
-      const totalsX = pageWidth - margin - totalsBlockWidth; 
-      const valueColX = pageWidth - margin; 
-      const totalRowHeightInner = 15; 
-
+      const totalsX = pageWidth - margin - totalsBlockWidth;
+      const valueColX = pageWidth - margin;
+      const numTotalLines = 6; // Subtotal, Pack, Trans, GT, Paid, Due
+      const estTotalsHeight = (numTotalLines * totalRowHeightInner) + 30; // Padding, bold line space
+      addNewPageIfNeeded(estTotalsHeight);
+      
       const drawTotalRowInner = (label: string, value: string | number, isBold: boolean = false, isEmphasized: boolean = false) => {
         doc.setFont(undefined, isBold ? 'bold' : 'normal');
-        doc.setFontSize(isEmphasized ? 11 : 10); 
+        doc.setFontSize(isEmphasized ? 11 : 10);
         doc.text(label, totalsX, currentY);
         doc.text(typeof value === 'number' ? `Rs. ${value.toFixed(2)}` : value, valueColX, currentY, { align: 'right' });
         currentY += totalRowHeightInner;
       };
 
-      let itemsSubtotal = sale.items.reduce((sum, item) => sum + item.total, 0);
+      const itemsSubtotal = sale.items.reduce((sum, item) => sum + item.total, 0);
       drawTotalRowInner("Subtotal:", itemsSubtotal);
-
-      if (sale.packagingCharges && sale.packagingCharges > 0) {
-        drawTotalRowInner("Packaging Chrgs:", sale.packagingCharges);
-      }
-      if (sale.transportCharges && sale.transportCharges > 0) {
-        drawTotalRowInner("Transport Chrgs:", sale.transportCharges);
-      }
-      currentY += 2; 
-      doc.setDrawColor(150, 150, 150); 
-      doc.line(totalsX, currentY, valueColX, currentY); 
+      if (sale.packagingCharges && sale.packagingCharges > 0) drawTotalRowInner("Packaging Chrgs:", sale.packagingCharges);
+      if (sale.transportCharges && sale.transportCharges > 0) drawTotalRowInner("Transport Chrgs:", sale.transportCharges);
+      currentY += 2;
+      doc.setDrawColor(150, 150, 150);
+      doc.line(totalsX, currentY, valueColX, currentY);
       currentY += 8; // Increased space here
       drawTotalRowInner("GRAND TOTAL:", sale.totalAmount, true, true);
       currentY += 5;
       drawTotalRowInner("Amount Paid:", sale.totalPaidAmount);
-      drawTotalRowInner("Amount Due:", sale.totalAmountDue, sale.totalAmountDue > EPSILON, sale.totalAmountDue > EPSILON); 
-      currentY += 20; 
+      drawTotalRowInner("Amount Due:", sale.totalAmountDue, sale.totalAmountDue > EPSILON, sale.totalAmountDue > EPSILON);
+      let totalsEndY = currentY;
+      currentY += 5; // Space after totals block
+
+      // Amount in Words (on left, potentially next to totals)
+      const amountInWordsText = `Rupee ${sale.totalAmount.toFixed(2)} only`;
+      const amountInWordsLines = doc.splitTextToSize(amountInWordsText, contentWidth - totalsBlockWidth - 30); // Max width for amount in words
+      const estAmountInWordsHeight = (amountInWordsLines.length * 10) + 20;
+
+      // If totals were drawn, and amount in words needs to be drawn, ensure Y alignment or new page
+      let amountInWordsY = (doc as any).lastAutoTable.finalY + 20 + estTotalsHeight - estAmountInWordsHeight; // Try to align bottom of amountInWords with bottom of totals
+      if (doc.internal.getCurrentPageInfo().pageNumber > (doc as any).lastAutoTable.pageCount) { // if totals are on a new page
+          amountInWordsY = margin + estTotalsHeight - estAmountInWordsHeight; // align with totals on that new page
+      }
+      
+      addNewPageIfNeeded(estAmountInWordsHeight); // This uses the global currentY, might need adjustment if placing next to totals
+                                              // For now, let's place it below totals if it overflows.
+      // Reset Y for amount in words if it's going below totals on the same page
+      if (currentY + estAmountInWordsHeight > contentBottomLimit && currentY > totalsEndY) {
+         // This condition might be too simple. Let's ensure it's drawn after totals, potentially on a new page.
+      } else if (currentY < totalsEndY) { // If currentY is still up where totals started (it shouldn't be)
+         currentY = totalsEndY + 5; // Ensure it's below totals
+      }
 
 
-      // Amount in Words
       doc.setFontSize(9);
-      doc.setFont(undefined,'bold');
+      doc.setFont(undefined, 'bold');
       doc.text("Amount:", margin, currentY);
       currentY += 12;
-      doc.setFont(undefined,'normal');
-      const amountInFiguresText = `Rupee ${sale.totalAmount.toFixed(2)} only`;
-      const amountInWordsLines = doc.splitTextToSize(amountInFiguresText, contentWidth - totalsBlockWidth - 20); 
+      doc.setFont(undefined, 'normal');
       doc.text(amountInWordsLines, margin, currentY);
       currentY += (amountInWordsLines.length * 10) + 10;
 
-      // Terms & Conditions
-      const termsYStart = currentY;
+
+      // Terms & Conditions and Signature Block
+      const terms = ["- Goods once sold will not be taken back or exchanged.", "- All disputes subject to local jurisdiction only."];
+      const estTermsHeight = (terms.length * 10) + 10;
+      const estSigHeight = 50; // For signature line and text
+      const finalBlockHeight = estTermsHeight + estSigHeight + 30; // Combined height + spacing
+      
+      addNewPageIfNeeded(finalBlockHeight);
+
       doc.setFontSize(8);
       doc.setFont(undefined, 'bold');
-      doc.text("Terms & Conditions:", margin, termsYStart);
-      let termsCurrentY = termsYStart + 10;
+      doc.text("Terms & Conditions:", margin, currentY);
+      currentY += 10;
       doc.setFont(undefined, 'normal');
-      const terms = [
-        "- Goods once sold will not be taken back or exchanged.",
-        "- All disputes subject to local jurisdiction only."
-      ];
-      terms.forEach(term => { doc.text(term, margin, termsCurrentY); termsCurrentY += 10; });
-      
+      terms.forEach(term => {
+        doc.text(term, margin, currentY);
+        currentY += 10;
+      });
+      currentY += 10; // Space after terms
 
       // Authorized Signatory
-      const sigY = Math.max(termsCurrentY + 20, doc.internal.pageSize.getHeight() - margin - 50); 
-      const sigX = pageWidth - margin - 180; 
-      doc.setDrawColor(100,100,100); 
-      doc.line(sigX, sigY, pageWidth - margin, sigY); 
-      let sigTextY = sigY + 12;
+      const sigLineY = currentY + 20; // Y for the signature line
+      if (sigLineY + estSigHeight - 20 > contentBottomLimit) { // Check if sig block itself overflows
+          doc.addPage();
+          currentY = margin;
+          // sigLineY will be margin + 20 on the new page
+      }
+      const finalSigLineY = currentY + 20;
+
+      doc.setDrawColor(100, 100, 100);
+      doc.line(totalsX, finalSigLineY, pageWidth - margin, finalSigLineY); // Use totalsX for alignment
+      let sigTextY = finalSigLineY + 12;
       doc.setFontSize(9);
-      doc.text("For " + shopName.toUpperCase(), sigX + ((pageWidth - margin - sigX)/2) , sigTextY, {align: 'center'});
+      doc.text("For " + shopName.toUpperCase(), totalsX + ((pageWidth - margin - totalsX) / 2), sigTextY, { align: 'center' });
       sigTextY += 12;
-      doc.text("Authorized Signatory", sigX + ((pageWidth - margin - sigX)/2), sigTextY, {align: 'center'});
+      doc.text("Authorized Signatory", totalsX + ((pageWidth - margin - totalsX) / 2), sigTextY, { align: 'center' });
 
-
-      // Page Numbering
+      // Page Numbering & Tally By
       const pageCount = (doc as any).internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
         doc.setFontSize(8);
-        doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, doc.internal.pageSize.getHeight() - (margin / 2), { align: 'center' });
+        doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, pageHeight - (margin / 2) - 5, { align: 'center' });
+        if (i === pageCount) {
+          doc.text(`Tally by: ${sale.recordedByName || sale.recordedByEmail || "N/A"}`, margin, pageHeight - (margin / 2) - 5);
+        }
       }
-
 
       if (outputType === 'datauristring') {
         const dataUri = doc.output('datauristring');
