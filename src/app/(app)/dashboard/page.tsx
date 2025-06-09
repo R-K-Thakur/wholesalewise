@@ -2,7 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Package, PlusCircle, Search, TrendingUp, History, PackagePlus, IndianRupee, ClipboardList } from "lucide-react"; // Removed ShoppingCart
+import { Package, PlusCircle, Search, TrendingUp, History, PackagePlus, IndianRupee, ClipboardList, AlertCircle } from "lucide-react";
 import { getProductsAction, getPurchasesAction } from "../products/actions";
 import { getSalesAction } from "../sales/actions";
 import type { Product, Purchase, Sale, ActivityItem } from "@/lib/types";
@@ -12,6 +12,7 @@ import { DashboardProductSearchWidget } from "./dashboard-product-search-widget"
 import { SalesTrendChart } from "./sales-trend-chart";
 import { PurchaseHistoryChart } from "./purchase-history-chart";
 import { RecentActivityWidget } from "./recent-activity-widget";
+import { PendingPurchasePriceWidget } from "./pending-purchase-price-widget"; // New Import
 
 
 export default async function DashboardPage() {
@@ -34,13 +35,9 @@ export default async function DashboardPage() {
 
   console.time("DashboardPage_DataProcessing");
   let totalRevenue = 0;
-  // let totalSalesUnits = 0; // Removed as the card is being removed
 
   sales.forEach(sale => {
     totalRevenue += sale.totalAmount;
-    // sale.items.forEach(item => { // Calculation for totalSalesUnits removed
-    //   totalSalesUnits += item.quantitySold;
-    // });
   });
 
   const totalProducts = products.length;
@@ -48,7 +45,6 @@ export default async function DashboardPage() {
 
   const summaryData = {
     totalRevenue: totalRevenue,
-    // totalSalesUnits: totalSalesUnits, // Removed
     totalProducts: totalProducts,
     numberOfSaleTransactions: numberOfSaleTransactions,
   };
@@ -98,6 +94,10 @@ export default async function DashboardPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl sm:text-3xl font-bold tracking-tight font-headline">Dashboard Overview</h1>
 
+      {userRole === 'owner' && (
+         <PendingPurchasePriceWidget products={products} />
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {userRole !== 'staff' && (
           <Card>
@@ -123,19 +123,6 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
         </Link>
-        {/* Card for Total Sales (Units) removed
-        <Link href="/sales" className="hover:shadow-md transition-shadow duration-200 rounded-lg block hover:cursor-pointer">
-          <Card className="h-full">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Sales (Units)</CardTitle>
-              <ShoppingCart className="h-5 w-5 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{summaryData.totalSalesUnits.toLocaleString('en-IN')}</div>
-            </CardContent>
-          </Card>
-        </Link>
-        */}
         <Link href="/products" className="hover:shadow-md transition-shadow duration-200 rounded-lg block hover:cursor-pointer">
           <Card className="h-full">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -185,5 +172,3 @@ export default async function DashboardPage() {
     </div>
   );
 }
-
-

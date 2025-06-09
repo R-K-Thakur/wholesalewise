@@ -6,13 +6,13 @@ import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, ChevronsUpDown, PackagePlus, Truck, Save } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, ChevronsUpDown, PackagePlus, Truck, Save, AlertCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Checkbox } from "@/components/ui/checkbox";
+// import { Checkbox } from "@/components/ui/checkbox"; // Removed
 import {
   Command,
   CommandEmpty,
@@ -28,12 +28,11 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Form,
   FormControl,
-  FormDescription as ShadFormDescription,
+  // FormDescription as ShadFormDescription, // Removed if not used
   FormField,
   FormItem,
   FormLabel,
@@ -49,21 +48,23 @@ import { recordSaleAction } from "../actions";
 import { saleFormSchema, type SaleFormData, type RecordSaleActionPayload } from "../schema";
 import type { ProductUnit } from "@/lib/constants";
 import { PRODUCT_UNITS, PRODUCT_CATEGORIES } from "@/lib/constants";
+import { getSession, type SessionData } from "@/app/login/actions";
 
 
 interface SaleFormProps {
   allProducts: Product[];
-  onProductAdded: () => Promise<void>; // Callback to refresh products in parent
+  onProductAdded: () => Promise<void>;
+  currentUserRole: SessionData['role'] | undefined;
 }
 
-function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
+function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProps) {
   const router = useRouter();
   const { toast } = useToast();
 
   const form = useForm<SaleFormData>({
     resolver: zodResolver(saleFormSchema),
     defaultValues: {
-      saleType: 'retail',
+      saleType: 'wholesale', // Default to wholesale
       saleDate: new Date().toISOString().split('T')[0],
       items: [{
         productId: '',
@@ -86,7 +87,7 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
   });
 
   const currentWatchedItems = form.watch("items");
-  const watchedSaleType = form.watch("saleType");
+  // const watchedSaleType = form.watch("saleType"); // No longer needed as it's fixed to wholesale
   const watchedPackagingCharges = form.watch("packagingCharges");
   const watchedTransportCharges = form.watch("transportCharges");
   const watchedAmountPaid = form.watch("amountPaid");
@@ -113,7 +114,6 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
     (form.getValues("items") || []).map(() => "")
   );
 
-  // State for Quick Add Product Modal
   const [isQuickAddModalOpen, setIsQuickAddModalOpen] = React.useState(false);
   const [quickAddItemIndex, setQuickAddItemIndex] = React.useState<number | null>(null);
   const [quickAddProductName, setQuickAddProductName] = React.useState("");
@@ -129,10 +129,10 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
       baseUnit: PRODUCT_UNITS[0],
       purchaseUnit: PRODUCT_UNITS[0],
       purchaseUnitConversionFactor: 1,
-      purchasePrice: '' as unknown as number,
+      purchasePrice: 0, // Default to 0, will be disabled for staff
       retailPricePerBaseUnit: '' as unknown as number,
       wholesalePricePerBaseUnit: '' as unknown as number,
-      initialStock: 0, // Default initial stock to 0 for quick add
+      initialStock: 0,
       reorderThreshold: 0,
     },
   });
@@ -172,7 +172,7 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
     if (changed) {
       setItemSearchTexts(newSearchTexts);
     }
-  }, [currentWatchedItems, allProducts]); // Removed itemSearchTexts from dep array
+  }, [currentWatchedItems, allProducts]);
 
 
   React.useEffect(() => {
@@ -216,11 +216,8 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
       form.setValue(`items.${itemIndex}.productId`, product.id, { shouldDirty: true });
       form.setValue(`items.${itemIndex}.soldUnit`, product.baseUnit, { shouldDirty: true });
 
-      const currentSaleType = form.getValues("saleType");
-      const pricePerBaseUnit = currentSaleType === 'wholesale'
-          ? product.wholesalePricePerBaseUnit
-          : product.retailPricePerBaseUnit;
-
+      // Always use wholesale price
+      const pricePerBaseUnit = product.wholesalePricePerBaseUnit;
       form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerBaseUnit.toFixed(2)), { shouldDirty: true, shouldValidate: true });
 
       const newSearchTexts = [...itemSearchTexts];
@@ -253,9 +250,8 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
     currentWatchedItems.forEach((item, index) => {
         const product = allProducts.find(p => p.id === item.productId);
         if (product) {
-            const price = watchedSaleType === 'wholesale'
-                ? product.wholesalePricePerBaseUnit
-                : product.retailPricePerBaseUnit;
+            // Always use wholesale price
+            const price = product.wholesalePricePerBaseUnit;
 
             let pricePerSoldUnit = price;
             if (item.soldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor > 0) {
@@ -265,22 +261,28 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
             const currentPriceInForm = form.getValues(`items.${index}.pricePerUnitSold`);
             const newCalculatedPrice = parseFloat(pricePerSoldUnit.toFixed(2));
 
-            if (typeof currentPriceInForm !== 'number' || Math.abs(currentPriceInForm - newCalculatedPrice) > 0.001) {
-                 form.setValue(`items.${index}.pricePerUnitSold`, newCalculatedPrice, { shouldValidate: true, shouldDirty: true });
+            // Only update if product is selected and price is not manually dirty
+            // or if it's the initial set. The field is now always editable.
+            // The 'isDirty' check here might be tricky, user might want to select then edit.
+            // Let's allow price to be auto-filled on product select, but then user can override.
+            // The main check is that pricePerUnitSold is editable.
+            if (!form.formState.dirtyFields.items?.[index]?.pricePerUnitSold) {
+              if (typeof currentPriceInForm !== 'number' || Math.abs(currentPriceInForm - newCalculatedPrice) > 0.001) {
+                   form.setValue(`items.${index}.pricePerUnitSold`, newCalculatedPrice, { shouldValidate: true, shouldDirty: true });
+              }
             }
         }
     });
-  }, [watchedSaleType, currentWatchedItems, allProducts, form]);
+  }, [currentWatchedItems, allProducts, form]); // Removed watchedSaleType
 
-  // Effect to auto-select the newly added product after `allProducts` is refreshed
+
   React.useEffect(() => {
     if (productJustAddedId && quickAddItemIndex !== null) {
       const newlyAddedProduct = allProducts.find(p => p.id === productJustAddedId);
       if (newlyAddedProduct) {
         handleProductSelectInternal(quickAddItemIndex, newlyAddedProduct.id);
       }
-      setProductJustAddedId(null); // Reset flag
-      // quickAddItemIndex is reset when modal closes
+      setProductJustAddedId(null);
     }
   }, [allProducts, productJustAddedId, quickAddItemIndex]);
 
@@ -313,7 +315,7 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
           continue;
         }
         productNameForPayload = currentItemSearchText;
-        baseUnitForPayload = formItem.soldUnit;
+        baseUnitForPayload = formItem.soldUnit; // For unlisted, base unit is the sold unit.
         productIdForPayload = undefined;
       }
 
@@ -346,7 +348,7 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
     }
 
     const payload: RecordSaleActionPayload = {
-      saleType: data.saleType,
+      saleType: 'wholesale', // Hardcoded to wholesale
       saleDate: data.saleDate,
       customerName: data.customerName || undefined,
       notes: data.notes || undefined,
@@ -389,15 +391,15 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
     form.setValue(`items.${itemIndex}.soldUnit`, newSoldUnit, { shouldDirty: true });
     const product = allProducts.find(p => p.id === form.getValues(`items.${itemIndex}.productId`));
     if (product) {
-        const currentSaleType = form.getValues("saleType");
-        const pricePerBaseUnit = currentSaleType === 'wholesale'
-            ? product.wholesalePricePerBaseUnit
-            : product.retailPricePerBaseUnit;
+        const pricePerBaseUnit = product.wholesalePricePerBaseUnit; // Always wholesale
 
         let pricePerSoldUnit = pricePerBaseUnit;
         if (newSoldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor > 0) {
             pricePerSoldUnit = pricePerBaseUnit * product.purchaseUnitConversionFactor;
         }
+        // Do not auto-update price if user has manually edited it already.
+        // This part is tricky; for now, let's always auto-update on unit change.
+        // The field remains editable.
         form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), { shouldValidate: true, shouldDirty: true });
     }
   };
@@ -410,32 +412,48 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
     }
     setQuickAddItemIndex(index);
     setQuickAddProductName(productName);
-    quickAddForm.reset({ // Reset form with default values and pre-fill name
+
+    quickAddForm.reset({
       productName: productName,
       category: PRODUCT_CATEGORIES[0],
       baseUnit: PRODUCT_UNITS[0],
       purchaseUnit: PRODUCT_UNITS[0],
       purchaseUnitConversionFactor: 1,
-      purchasePrice: '' as unknown as number,
+      purchasePrice: 0, // Default purchase price to 0
       retailPricePerBaseUnit: '' as unknown as number,
       wholesalePricePerBaseUnit: '' as unknown as number,
-      initialStock: 0, // Crucial for quick add
+      initialStock: 0,
       reorderThreshold: 0,
     });
+    // If current user is staff, purchasePrice is handled by being disabled or set to 0 in submission
+    if (currentUserRole === 'staff') {
+        quickAddForm.setValue("purchasePrice", 0);
+    }
+
     setIsQuickAddModalOpen(true);
   };
 
   const handleQuickAddSubmit = async (data: AddProductFormData) => {
     setIsSubmittingQuickAdd(true);
-    // Ensure initialStock is 0 for the action payload if it's part of the form
-    const payload = { ...data, initialStock: 0 };
+    
+    const payloadForAddProduct: AddProductFormData = {
+      ...data,
+      initialStock: 0, // Always 0 for quick add
+      purchasePrice: currentUserRole === 'staff' ? 0 : (Number(data.purchasePrice) || 0), // Staff submits 0
+    };
+    if (currentUserRole !== 'staff' && payloadForAddProduct.purchasePrice <=0 ) {
+        quickAddForm.setError("purchasePrice", {type: "manual", message: "Owner must set a positive purchase price."});
+        setIsSubmittingQuickAdd(false);
+        return;
+    }
+
 
     try {
-      const result = await addProductAction(payload);
+      const result = await addProductAction(payloadForAddProduct);
       if (result.success && result.product) {
-        toast({ title: "Product Added", description: `${result.product.name} added to inventory.` });
-        await onProductAdded(); // Refresh products in parent
-        setProductJustAddedId(result.product.id); // Set flag to select this product
+        toast({ title: "Product Added", description: `${result.product.name} added to inventory (Purchase Price: Rs. ${result.product.purchasePrice.toFixed(2)}).` });
+        await onProductAdded();
+        setProductJustAddedId(result.product.id);
         setIsQuickAddModalOpen(false);
         setQuickAddItemIndex(null);
       } else {
@@ -452,33 +470,8 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
     <>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-            <FormField
-              control={form.control}
-              name="saleType"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 h-full">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value === 'wholesale'}
-                      onCheckedChange={(checked) => {
-                        const newSaleType = checked ? 'wholesale' : 'retail';
-                        field.onChange(newSaleType);
-                      }}
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>
-                      Wholesale Sale
-                    </FormLabel>
-                    <ShadFormDescription>
-                      Mark if this is a wholesale transaction. Prices adjust automatically for listed products.
-                    </ShadFormDescription>
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+          {/* SaleType Checkbox removed */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             <FormField
               control={form.control}
               name="saleDate"
@@ -552,7 +545,7 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
                     <Popover open={openComboboxIndex === index} onOpenChange={(isOpen) => setOpenComboboxIndex(isOpen ? index : null)}>
                       <PopoverTrigger asChild>
                         <Button
-                            key={`product-search-${fieldItem.id}`}
+                            key={`product-search-trigger-${fieldItem.id}`}
                             variant="outline"
                             role="combobox"
                             className={cn(
@@ -568,6 +561,7 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
                       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
                         <Command shouldFilter={false}>
                           <CommandInput
+                            key={`product-search-input-${fieldItem.id}`}
                             placeholder="Search or type product name..."
                             value={itemSearchTexts[index]}
                             onValueChange={(searchValue) => handleProductSearchInputChange(index, searchValue)}
@@ -580,11 +574,11 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
                               {allProducts
                                 .filter(p => {
                                   const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                  if (!searchText) return true;
+                                  if (!searchText) return true; // Show all if search is empty for better discovery
                                   return p.name.toLowerCase().includes(searchText) ||
                                     (p.sku && p.sku.toLowerCase().includes(searchText));
                                 })
-                                .slice(0, 10)
+                                .slice(0, 10) // Limit initial display for performance
                                 .map((product) => (
                                   <CommandItem
                                     key={product.id}
@@ -651,6 +645,10 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
                             {availableUnits.map(unit => (
                               <SelectItem key={unit} value={unit}>{unit}</SelectItem>
                             ))}
+                             {/* Allow any unit if it's an ad-hoc item */}
+                            {isAdHocItem && !availableUnits.includes(field.value) && PRODUCT_UNITS.filter(u => !availableUnits.includes(u)).map(u => (
+                                <SelectItem key={`adhoc-${u}`} value={u}>{u}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -664,12 +662,11 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
                       <FormItem>
                         <FormLabel>Rate/Unit (Rs.)</FormLabel>
                         <FormControl>
-                          <Input
+                          <Input // Field is now always enabled
                               type="number"
                               placeholder="e.g., 700.00"
                               step="0.01" {...field}
                               onChange={e => field.onChange(parseFloat(e.target.value) || 0)}
-                              disabled={!!currentProductId}
                           />
                         </FormControl>
                         <FormMessage />
@@ -805,7 +802,6 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
         </form>
       </Form>
 
-      {/* Quick Add Product Modal */}
       <Dialog open={isQuickAddModalOpen} onOpenChange={(isOpen) => {
         setIsQuickAddModalOpen(isOpen);
         if (!isOpen) setQuickAddItemIndex(null);
@@ -815,6 +811,7 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
             <DialogTitle>Add New Product to Inventory</DialogTitle>
             <DialogDescription>
               Quickly add "{quickAddProductName}" to your inventory. Initial stock will be set to 0.
+              {currentUserRole === 'staff' && " Purchase price will be set by owner later."}
             </DialogDescription>
           </DialogHeader>
           <Form {...quickAddForm}>
@@ -902,7 +899,8 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Purchase Price (Rs. per {quickAddForm.getValues("purchaseUnit") || 'Purchase Unit'})</FormLabel>
-                      <FormControl><Input type="number" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} /></FormControl>
+                      <FormControl><Input type="number" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} disabled={currentUserRole === 'staff'} /></FormControl>
+                      {currentUserRole === 'staff' && <p className="text-xs text-muted-foreground">Staff cannot set purchase price. Owner will set this later.</p>}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -942,7 +940,6 @@ function SaleForm({ allProducts, onProductAdded }: SaleFormProps) {
                     </FormItem>
                   )}
                 />
-                {/* Initial Stock is intentionally omitted from UI, will be set to 0 */}
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsQuickAddModalOpen(false)} disabled={isSubmittingQuickAdd}>Cancel</Button>
                 <Button type="submit" disabled={isSubmittingQuickAdd}>
@@ -962,25 +959,30 @@ export default function NewSalePage() {
   const [products, setProducts] = React.useState<Product[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = React.useState<SessionData['role'] | undefined>(undefined);
 
-  const fetchProductsData = React.useCallback(async () => {
-    // Set loading true only if not already loading to prevent UI flicker during quick add
-    // setIsLoading(true); 
+
+  const fetchProductsAndSession = React.useCallback(async () => {
+    setIsLoading(true);
     setError(null);
     try {
-      const fetchedProducts = await getProductsAction();
+      const [fetchedProducts, session] = await Promise.all([
+        getProductsAction(),
+        getSession()
+      ]);
       setProducts(fetchedProducts);
+      setCurrentUserRole(session?.role);
     } catch (e) {
-      console.error("Failed to fetch products for new sale page:", e);
-      setError(e instanceof Error ? e.message : "Failed to load products.");
+      console.error("Failed to fetch products or session for new sale page:", e);
+      setError(e instanceof Error ? e.message : "Failed to load initial data.");
     } finally {
-      setIsLoading(false); // Ensure loading is set to false after fetch
+      setIsLoading(false);
     }
   }, []);
 
   React.useEffect(() => {
-    fetchProductsData();
-  }, [fetchProductsData]);
+    fetchProductsAndSession();
+  }, [fetchProductsAndSession]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -991,27 +993,27 @@ export default function NewSalePage() {
             <span className="sr-only">Back to Sales</span>
           </Link>
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight font-headline">Record New Sale</h1>
+        <h1 className="text-3xl font-bold tracking-tight font-headline">Record New Sale (Wholesale)</h1>
       </div>
 
       <Card className="max-w-3xl mx-auto w-full">
         <CardHeader>
           <CardTitle>Sale Transaction Details</CardTitle>
-          <CardDescription>Enter the details for the new sale. Select products from inventory or enter new product names directly. Unlisted items can be quickly added to inventory.</CardDescription>
+          <CardDescription>Enter the details for the new wholesale sale. Unlisted items can be quickly added to inventory.</CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading && products.length === 0 ? ( // Show loader only on initial load
+          {isLoading && products.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="ml-2 text-muted-foreground mt-2">Loading products...</p>
+              <p className="ml-2 text-muted-foreground mt-2">Loading products and session...</p>
             </div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center py-10 text-destructive">
                <p>{error}</p>
-               <Button variant="outline" onClick={fetchProductsData} className="mt-4">Try Again</Button>
+               <Button variant="outline" onClick={fetchProductsAndSession} className="mt-4">Try Again</Button>
             </div>
           ) : (
-            <SaleForm allProducts={products} onProductAdded={fetchProductsData} />
+            <SaleForm allProducts={products} onProductAdded={fetchProductsAndSession} currentUserRole={currentUserRole} />
           )}
            { !isLoading && !error && products.length === 0 && (
              <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
@@ -1026,5 +1028,3 @@ export default function NewSalePage() {
     </div>
   );
 }
-
-    

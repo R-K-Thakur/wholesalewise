@@ -58,7 +58,7 @@ const mapDocToSale = (document: import('firebase/firestore').DocumentSnapshot | 
     totalAmountDue: typeof data.totalAmountDue === 'number' ? data.totalAmountDue : 0,
     paymentStatus: ['paid', 'partially_paid', 'unpaid'].includes(data.paymentStatus) ? data.paymentStatus as Sale['paymentStatus'] : 'unpaid',
     paymentHistory: paymentHistory,
-    saleType: ['wholesale', 'retail'].includes(data.saleType) ? data.saleType as Sale['saleType'] : 'retail',
+    saleType: 'wholesale', // Always wholesale
     saleDate: typeof data.saleDate === 'string' ? data.saleDate : (data.saleDate?.toDate ? data.saleDate.toDate().toISOString().split('T')[0] : nowAsISO.split('T')[0]),
     customerName: typeof data.customerName === 'string' ? data.customerName : '',
     paymentMethod: ['cash', 'card', 'online', 'manual_adjustment'].includes(data.paymentMethod) ? data.paymentMethod as Sale['paymentMethod'] : undefined,
@@ -76,7 +76,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
     return { success: false, message: "User session not found or invalid. Cannot record sale." };
   }
   const userEmail = session.email;
-  const userName = session.name; // Use display name
+  const userName = session.name;
   console.log(`[recordSaleAction] Recording sale. User Name: '${userName}', User Email: '${userEmail}'`);
 
 
@@ -112,7 +112,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
               quantityInStock: newStock,
               updatedAt: Timestamp.now().toDate().toISOString(),
               lastStockUpdateByEmail: userEmail,
-              lastStockUpdateByName: userName, // Store display name
+              lastStockUpdateByName: userName,
           });
 
           saleItemsForDb.push({
@@ -120,16 +120,17 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
             productNameSnapshot: product.name,
             baseUnitSnapshot: product.baseUnit,
             quantitySold: item.quantitySold,
-            pricePerUnitSold: item.pricePerUnitSold,
+            pricePerUnitSold: item.pricePerUnitSold, // This is the user-editable price
             soldUnit: item.soldUnit,
             total: item.quantitySold * item.pricePerUnitSold,
           });
         } else {
+          // Ad-hoc item
           saleItemsForDb.push({
             productNameSnapshot: item.productNameSnapshot,
             baseUnitSnapshot: item.baseUnitSnapshot,
             quantitySold: item.quantitySold,
-            pricePerUnitSold: item.pricePerUnitSold,
+            pricePerUnitSold: item.pricePerUnitSold, // User-editable price
             soldUnit: item.soldUnit,
             total: item.quantitySold * item.pricePerUnitSold,
           });
@@ -169,7 +170,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
           amount: totalPaidAmountForSale,
           paymentMethod: data.paymentMethod || 'cash',
           recordedByEmail: userEmail,
-          recordedByName: userName, // Store display name
+          recordedByName: userName,
         };
         if (data.notes && data.notes.trim() !== "") {
           initialPayment.notes = data.notes.trim();
@@ -180,7 +181,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
       const newSaleData: Omit<Sale, 'id'> = {
         customerName: data.customerName || '',
         saleDate: data.saleDate,
-        saleType: data.saleType,
+        saleType: 'wholesale', // Hardcoded to wholesale
         paymentMethod: paymentHistory.length > 0 ? (data.paymentMethod || 'cash') : undefined,
         items: saleItemsForDb,
         packagingCharges: packagingCharges > 0 ? packagingCharges : undefined,
@@ -194,7 +195,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         createdAt: now,
         updatedAt: now,
         recordedByEmail: userEmail,
-        recordedByName: userName, // Store display name
+        recordedByName: userName,
       };
 
       transaction.set(doc(collection(db, SALES_COLLECTION)), newSaleData);
@@ -268,7 +269,7 @@ export async function updateSalePaymentStatusAction(
     return { success: false, message: 'Unauthorized: Only owners can change sale status.' };
   }
   const userEmail = session.email;
-  const userName = session.name; // Use display name
+  const userName = session.name;
   console.log(`[updateSalePaymentStatusAction] Updating status. User Name: '${userName}', User Email: '${userEmail}'`);
 
 
@@ -304,7 +305,7 @@ export async function updateSalePaymentStatusAction(
         amount: 0,
         paymentMethod: 'manual_adjustment',
         recordedByEmail: userEmail,
-        recordedByName: userName, // Store display name
+        recordedByName: userName,
       };
 
       if (newStatus === 'paid') {
@@ -369,7 +370,7 @@ export async function recordAdditionalPaymentAction(
     return { success: false, message: 'Unauthorized: You must be logged in to record a payment.' };
   }
   const userEmail = session.email;
-  const userName = session.name; // Use display name
+  const userName = session.name;
   console.log(`[recordAdditionalPaymentAction] Recording payment. User Name: '${userName}', User Email: '${userEmail}'`);
 
   const { saleId, amountPaidNow, paymentMethod, paymentNotes } = payload;
@@ -412,7 +413,7 @@ export async function recordAdditionalPaymentAction(
         amount: paymentAmountReceived,
         paymentMethod: payload.paymentMethod,
         recordedByEmail: userEmail,
-        recordedByName: userName, // Store display name
+        recordedByName: userName,
       };
 
       if (paymentNotes && typeof paymentNotes === 'string' && paymentNotes.trim() !== "") {
@@ -470,7 +471,7 @@ export async function deleteSaleAction(saleId: string): Promise<{ success: boole
   }
 
   const userEmail = session.email;
-  const userName = session.name; // Use display name
+  const userName = session.name;
   console.log(`[deleteSaleAction] Deleting sale ID: ${saleId}. User: ${userName} (${userEmail})`);
 
   const saleRef = doc(db, SALES_COLLECTION, saleId);
@@ -510,7 +511,7 @@ export async function deleteSaleAction(saleId: string): Promise<{ success: boole
           quantityInStock: newStockInBaseUnits,
           updatedAt: nowISO,
           lastStockUpdateByEmail: userEmail,
-          lastStockUpdateByName: userName, // Store display name
+          lastStockUpdateByName: userName,
         });
         console.log(`[deleteSaleAction] Restored ${quantityToRestoreInBaseUnits} (base units) to product ${item.productId}. New stock: ${newStockInBaseUnits}`);
       }

@@ -10,7 +10,7 @@ export interface Product {
   purchaseUnit: ProductUnit;
   purchaseUnitConversionFactor: number;
 
-  purchasePrice: number;
+  purchasePrice: number; // Can be 0 if set by staff initially
 
   retailPricePerBaseUnit: number;
   wholesalePricePerBaseUnit: number;
@@ -63,7 +63,7 @@ export interface Sale {
   totalAmountDue: number;
   paymentStatus: 'paid' | 'partially_paid' | 'unpaid';
   paymentHistory: PaymentTransaction[];
-  saleType: 'wholesale' | 'retail';
+  saleType: 'wholesale'; // Changed to wholesale only
   saleDate: string;
   customerName?: string;
   paymentMethod?: 'cash' | 'card' | 'online';
@@ -75,7 +75,7 @@ export interface Sale {
 }
 
 export interface SaleItem {
-  productId?: string; // Made optional
+  productId?: string;
   productNameSnapshot: string;
   quantitySold: number;
   pricePerUnitSold: number;
@@ -88,10 +88,10 @@ export type ProductFormData = Omit<Product, 'id' | 'createdAt' | 'updatedAt' | '
 export type PurchaseFormData = Omit<Purchase, 'id' | 'productNameSnapshot' | 'totalCost' | 'purchaseDate' | 'purchaseUnitSnapshot' | 'createdAt' | 'updatedAt' | 'recordedByEmail' | 'recordedByName'> & { purchaseDate?: Date };
 
 
-export type SaleItemFormData = Omit<SaleItem, 'productNameSnapshot' | 'total' | 'pricePerUnitSold' | 'baseUnitSnapshot'> & { pricePerUnitSold?: number }; // baseUnitSnapshot removed from direct form item data
+export type SaleItemFormData = Omit<SaleItem, 'productNameSnapshot' | 'total' | 'pricePerUnitSold' | 'baseUnitSnapshot'> & { pricePerUnitSold?: number };
 export type SaleFormData = {
   items: SaleItemFormData[];
-  saleType: 'wholesale' | 'retail';
+  saleType: 'wholesale'; // Changed to wholesale only
   saleDate?: Date;
   customerName?: string;
   paymentMethod?: 'cash' | 'card' | 'online';
@@ -137,5 +137,6 @@ export interface RecordAdditionalPaymentPayload {
     
 
     
+
 
 

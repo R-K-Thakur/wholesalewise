@@ -8,15 +8,13 @@ import type { ProductUnit } from "@/lib/constants";
 
 export const saleItemSchema = z.object({
   productId: z.string().optional(),
-  // productNameSnapshot is not part of the direct form item schema, it's derived or from itemSearchTexts
   quantitySold: z.coerce.number().min(1, "Quantity must be at least 1."),
-  pricePerUnitSold: z.coerce.number().min(0.01, "Price must be positive."),
+  pricePerUnitSold: z.coerce.number().min(0.01, "Price must be positive."), // User can edit this
   soldUnit: z.enum(PRODUCT_UNITS, { errorMap: () => ({ message: 'Invalid sold unit.'}) }),
-  // baseUnitSnapshot is not part of the direct form item schema, it's derived or defaulted
 });
 
 export const saleFormSchema = z.object({
-  saleType: z.enum(['retail', 'wholesale'], { required_error: "Sale type is required."}),
+  saleType: z.literal('wholesale'), // Hardcoded to wholesale
   customerName: z.string().max(100, "Customer name too long").optional().nullable(),
   saleDate: z.string().refine((date) => !isNaN(Date.parse(date)), { message: "Invalid date" }),
   items: z.array(saleItemSchema).min(1, "At least one item is required in the sale."),
@@ -49,11 +47,11 @@ export const saleFormSchema = z.object({
   }
 });
 
-export type SaleItemFormStructure = z.infer<typeof saleItemSchema>; // Represents one item in the form's items array
+export type SaleItemFormStructure = z.infer<typeof saleItemSchema>;
 export type SaleFormData = z.infer<typeof saleFormSchema>;
 
-// This type will be used for the data sent to the server action
-export type RecordSaleActionPayload = Omit<SaleFormData, 'customerName' | 'notes' | 'items' | 'packagingCharges' | 'transportCharges' | 'amountPaid'> & {
+export type RecordSaleActionPayload = Omit<SaleFormData, 'customerName' | 'notes' | 'items' | 'packagingCharges' | 'transportCharges' | 'amountPaid' | 'saleType'> & {
+  saleType: 'wholesale'; // Ensure this is fixed
   customerName?: string;
   notes?: string;
   items: Array<{
