@@ -73,8 +73,8 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       paymentMethod: 'cash',
       customerName: '',
       notes: '',
-      packagingCharges: undefined, // Use undefined for optional numbers that Zod coerces
-      transportCharges: undefined, // Use undefined
+      packagingCharges: undefined, 
+      transportCharges: undefined, 
       amountPaid: 0, 
     },
   });
@@ -95,7 +95,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       const price = Number(item?.pricePerUnitSold) || 0;
       return sum + (quantity * price);
     }, 0);
-  }, [currentWatchedItems]);
+  }, [JSON.stringify(currentWatchedItems)]); // Key change here
 
   const grandTotal = React.useMemo(() => {
     const packaging = Number(watchedPackagingCharges) || 0; 
@@ -174,9 +174,8 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
 
   React.useEffect(() => {
     const amountPaidFieldState = form.getFieldState("amountPaid");
-    const rawAmountPaid = form.getValues("amountPaid");
-    const numericAmountPaid = Number(rawAmountPaid); 
-
+    const rawAmountPaid = form.getValues("amountPaid"); // Get raw value
+    const numericAmountPaid = Number(rawAmountPaid);
     const roundedGrandTotal = parseFloat(grandTotal.toFixed(2));
 
     if (isNaN(roundedGrandTotal) || roundedGrandTotal < 0) {
@@ -271,7 +270,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
             }
         }
     });
-  }, [currentWatchedItems, allProducts, form]); 
+  }, [JSON.stringify(currentWatchedItems), allProducts, form]); // Key change here to track deep changes in items
 
 
   React.useEffect(() => {
@@ -339,13 +338,10 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     const finalTransportCharges = Number(data.transportCharges) || 0;
     const finalGrandTotalForSubmission = parseFloat((finalItemsTotal + finalPackagingCharges + finalTransportCharges).toFixed(2));
     
-    // Zod schema now handles amountPaid validation against calculated total
-    // So this manual check might be redundant if Zod is configured correctly
-    // For safety, let's keep a check here, ensuring data.amountPaid is a number.
     const finalAmountPaid = Number(data.amountPaid) || 0;
 
 
-    if (finalAmountPaid > finalGrandTotalForSubmission + 0.001) { // Add epsilon for float comparisons
+    if (finalAmountPaid > finalGrandTotalForSubmission + 0.001) { 
         form.setError("amountPaid", {message: "Amount paid cannot exceed the grand total."});
         toast({title: "Validation Error", description: `Amount paid (Rs. ${finalAmountPaid.toFixed(2)}) cannot exceed the grand total (Rs. ${finalGrandTotalForSubmission.toFixed(2)}).`, variant: "destructive"});
         return;
@@ -361,7 +357,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       packagingCharges: finalPackagingCharges > 0 ? finalPackagingCharges : undefined,
       transportCharges: finalTransportCharges > 0 ? finalTransportCharges : undefined,
       totalAmount: finalGrandTotalForSubmission,
-      amountPaid: finalAmountPaid, // Use the coerced number
+      amountPaid: finalAmountPaid,
     };
 
     try {
@@ -437,7 +433,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     
     const payloadForAddProduct: AddProductFormData = {
       ...data,
-      productName: data.productName.trim(), // Ensure trimmed
+      productName: data.productName.trim(), 
       initialStock: 0, 
       purchasePrice: currentUserRole === 'staff' ? 0 : (Number(data.purchasePrice) || 0), 
     };
@@ -717,7 +713,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   <FormLabel className="flex items-center gap-1"><PackagePlus className="h-4 w-4 text-muted-foreground" />Packaging Charges (Rs.)</FormLabel>
                   <FormControl>
                     <Input type="number" placeholder="e.g., 50.00" step="0.01" {...field}
-                          onChange={e => field.onChange(e.target.value)} // Pass raw value
+                          onChange={e => field.onChange(e.target.value)} 
                           min="0" />
                   </FormControl>
                   <FormMessage />
@@ -732,7 +728,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   <FormLabel className="flex items-center gap-1"><Truck className="h-4 w-4 text-muted-foreground" />Transport Charges (Rs.)</FormLabel>
                   <FormControl>
                     <Input type="number" placeholder="e.g., 100.00" step="0.01" {...field}
-                          onChange={e => field.onChange(e.target.value)} // Pass raw value
+                          onChange={e => field.onChange(e.target.value)} 
                           min="0" />
                   </FormControl>
                   <FormMessage />
@@ -751,7 +747,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                     <FormLabel>Amount Paid (Rs.)</FormLabel>
                     <FormControl>
                       <Input type="number" placeholder="e.g., 500.00" step="0.01" {...field}
-                            onChange={e => field.onChange(e.target.value)} // Pass raw value
+                            onChange={e => field.onChange(e.target.value)} 
                              />
                     </FormControl>
                     <FormMessage />
@@ -1027,6 +1023,5 @@ export default function NewSalePage() {
     </div>
   );
 }
-
 
     
