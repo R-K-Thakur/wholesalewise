@@ -76,6 +76,14 @@ export default function SaleDetailPage() {
   const [paymentMethod, setPaymentMethod] = useState<Sale['paymentMethod']>('cash');
   const [paymentNotes, setPaymentNotes] = useState<string>("");
 
+  const [pageUrlForQr, setPageUrlForQr] = useState<string>("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setPageUrlForQr(window.location.href);
+    }
+  }, [saleId]);
+
 
   const displayPaymentMethod = useMemo(() => {
     if (!sale) return 'N/A';
@@ -273,6 +281,14 @@ export default function SaleDetailPage() {
         tableLineColor: [180, 180, 180],
         tableLineWidth: 0.5,
         autoPaging: true, 
+        didDrawPage: (data) => {
+            // This callback is for each page autoTable creates for the items list.
+            // We reset currentY to margin for content after the table, if the table itself adds pages.
+            // The final position after the whole table is handled by lastAutoTable.finalY.
+            if (data.pageNumber > 1) { // If autoTable added pages for items
+                currentY = margin;
+            }
+        },
       });
 
       currentY = (doc as any).lastAutoTable.finalY + 20; 
@@ -476,9 +492,6 @@ export default function SaleDetailPage() {
         },
         margin: { left: marginPt, right: marginPt },
         tableWidth: 'auto', 
-        didDrawPage: (data) => {
-          // currentY = data.cursor?.y || currentY; // Removed for thermal
-        }
       });
       currentY = (doc as any).lastAutoTable.finalY + 5; 
 
@@ -697,9 +710,9 @@ export default function SaleDetailPage() {
             {(isProcessingThermalPdf && thermalPreviewPdfUrl !== null) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
             Download Thermal
           </Button>
-          {sale && (
+          {pageUrlForQr && (
             <div className="p-1 bg-white rounded-sm shadow">
-              <QRCodeSVG value={sale.id} size={40} level="M" />
+              <QRCodeSVG value={pageUrlForQr} size={40} level="M" />
             </div>
           )}
         </div>
