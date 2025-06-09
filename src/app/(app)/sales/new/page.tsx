@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-// import { Checkbox } from "@/components/ui/checkbox"; // Removed
 import {
   Command,
   CommandEmpty,
@@ -32,7 +31,6 @@ import {
 import {
   Form,
   FormControl,
-  // FormDescription as ShadFormDescription, // Removed if not used
   FormField,
   FormItem,
   FormLabel,
@@ -64,7 +62,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
   const form = useForm<SaleFormData>({
     resolver: zodResolver(saleFormSchema),
     defaultValues: {
-      saleType: 'wholesale', // Default to wholesale
+      saleType: 'wholesale', 
       saleDate: new Date().toISOString().split('T')[0],
       items: [{
         productId: '',
@@ -75,9 +73,9 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       paymentMethod: 'cash',
       customerName: '',
       notes: '',
-      packagingCharges: 0,
-      transportCharges: 0,
-      amountPaid: 0,
+      packagingCharges: undefined, // Use undefined for optional numbers that Zod coerces
+      transportCharges: undefined, // Use undefined
+      amountPaid: 0, 
     },
   });
 
@@ -87,7 +85,6 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
   });
 
   const currentWatchedItems = form.watch("items");
-  // const watchedSaleType = form.watch("saleType"); // No longer needed as it's fixed to wholesale
   const watchedPackagingCharges = form.watch("packagingCharges");
   const watchedTransportCharges = form.watch("transportCharges");
   const watchedAmountPaid = form.watch("amountPaid");
@@ -101,8 +98,8 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
   }, [currentWatchedItems]);
 
   const grandTotal = React.useMemo(() => {
-    const packaging = Number(watchedPackagingCharges) || 0;
-    const transport = Number(watchedTransportCharges) || 0;
+    const packaging = Number(watchedPackagingCharges) || 0; 
+    const transport = Number(watchedTransportCharges) || 0; 
     return parseFloat((itemsTotal + packaging + transport).toFixed(2));
   }, [itemsTotal, watchedPackagingCharges, watchedTransportCharges]);
 
@@ -129,7 +126,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       baseUnit: PRODUCT_UNITS[0],
       purchaseUnit: PRODUCT_UNITS[0],
       purchaseUnitConversionFactor: 1,
-      purchasePrice: 0, // Default to 0, will be disabled for staff
+      purchasePrice: 0, 
       retailPricePerBaseUnit: '' as unknown as number,
       wholesalePricePerBaseUnit: '' as unknown as number,
       initialStock: 0,
@@ -176,13 +173,27 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
 
 
   React.useEffect(() => {
-    const actualFormAmountPaid = Number(form.getValues("amountPaid")) || 0;
+    const amountPaidFieldState = form.getFieldState("amountPaid");
+    const rawAmountPaid = form.getValues("amountPaid");
+    const numericAmountPaid = Number(rawAmountPaid); 
+
     const roundedGrandTotal = parseFloat(grandTotal.toFixed(2));
 
-    if ((form.formState.dirtyFields.amountPaid !== true || roundedGrandTotal === 0) && roundedGrandTotal >= 0) {
-      form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true, shouldDirty: true });
-    } else if (actualFormAmountPaid > roundedGrandTotal && roundedGrandTotal >= 0) {
-      form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true, shouldDirty: true });
+    if (isNaN(roundedGrandTotal) || roundedGrandTotal < 0) {
+        if (!amountPaidFieldState.isDirty && (isNaN(numericAmountPaid) || numericAmountPaid !== 0)) {
+            form.setValue("amountPaid", 0, { shouldValidate: true, shouldDirty: false });
+        }
+        return;
+    }
+
+    if (amountPaidFieldState.isDirty) {
+        if (!isNaN(numericAmountPaid) && numericAmountPaid > roundedGrandTotal) {
+            form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true, shouldDirty: true });
+        }
+    } else {
+        if (isNaN(numericAmountPaid) || Math.abs(numericAmountPaid - roundedGrandTotal) > 0.001) {
+            form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true, shouldDirty: false });
+        }
     }
   }, [grandTotal, form]);
 
@@ -215,8 +226,6 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       }
       form.setValue(`items.${itemIndex}.productId`, product.id, { shouldDirty: true });
       form.setValue(`items.${itemIndex}.soldUnit`, product.baseUnit, { shouldDirty: true });
-
-      // Always use wholesale price
       const pricePerBaseUnit = product.wholesalePricePerBaseUnit;
       form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerBaseUnit.toFixed(2)), { shouldDirty: true, shouldValidate: true });
 
@@ -250,30 +259,19 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     currentWatchedItems.forEach((item, index) => {
         const product = allProducts.find(p => p.id === item.productId);
         if (product) {
-            // Always use wholesale price
             const price = product.wholesalePricePerBaseUnit;
-
             let pricePerSoldUnit = price;
             if (item.soldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor > 0) {
                 pricePerSoldUnit = price * product.purchaseUnitConversionFactor;
             }
-
-            const currentPriceInForm = form.getValues(`items.${index}.pricePerUnitSold`);
             const newCalculatedPrice = parseFloat(pricePerSoldUnit.toFixed(2));
-
-            // Only update if product is selected and price is not manually dirty
-            // or if it's the initial set. The field is now always editable.
-            // The 'isDirty' check here might be tricky, user might want to select then edit.
-            // Let's allow price to be auto-filled on product select, but then user can override.
-            // The main check is that pricePerUnitSold is editable.
-            if (!form.formState.dirtyFields.items?.[index]?.pricePerUnitSold) {
-              if (typeof currentPriceInForm !== 'number' || Math.abs(currentPriceInForm - newCalculatedPrice) > 0.001) {
-                   form.setValue(`items.${index}.pricePerUnitSold`, newCalculatedPrice, { shouldValidate: true, shouldDirty: true });
-              }
+             // Only update if pricePerUnitSold is not dirty OR if it's currently 0 (initial state)
+            if (!form.formState.dirtyFields.items?.[index]?.pricePerUnitSold || Number(form.getValues(`items.${index}.pricePerUnitSold`)) === 0) {
+                 form.setValue(`items.${index}.pricePerUnitSold`, newCalculatedPrice, { shouldValidate: true, shouldDirty: !!form.formState.dirtyFields.items?.[index]?.pricePerUnitSold });
             }
         }
     });
-  }, [currentWatchedItems, allProducts, form]); // Removed watchedSaleType
+  }, [currentWatchedItems, allProducts, form]); 
 
 
   React.useEffect(() => {
@@ -284,7 +282,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       }
       setProductJustAddedId(null);
     }
-  }, [allProducts, productJustAddedId, quickAddItemIndex, handleProductSelectInternal]);
+  }, [allProducts, productJustAddedId, quickAddItemIndex]);
 
 
   async function onSubmit(data: SaleFormData) {
@@ -315,7 +313,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
           continue;
         }
         productNameForPayload = currentItemSearchText;
-        baseUnitForPayload = formItem.soldUnit; // For unlisted, base unit is the sold unit.
+        baseUnitForPayload = formItem.soldUnit; 
         productIdForPayload = undefined;
       }
 
@@ -337,14 +335,19 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     }
     
     const finalItemsTotal = itemsForAction.reduce((sum, item) => sum + item.total, 0);
-    // Ensure data.packagingCharges/transportCharges are numbers (0 if undefined/empty)
     const finalPackagingCharges = Number(data.packagingCharges) || 0;
     const finalTransportCharges = Number(data.transportCharges) || 0;
     const finalGrandTotalForSubmission = parseFloat((finalItemsTotal + finalPackagingCharges + finalTransportCharges).toFixed(2));
+    
+    // Zod schema now handles amountPaid validation against calculated total
+    // So this manual check might be redundant if Zod is configured correctly
+    // For safety, let's keep a check here, ensuring data.amountPaid is a number.
+    const finalAmountPaid = Number(data.amountPaid) || 0;
 
-    if (data.amountPaid > finalGrandTotalForSubmission + 0.001) {
+
+    if (finalAmountPaid > finalGrandTotalForSubmission + 0.001) { // Add epsilon for float comparisons
         form.setError("amountPaid", {message: "Amount paid cannot exceed the grand total."});
-        toast({title: "Validation Error", description: "Amount paid cannot exceed the grand total.", variant: "destructive"});
+        toast({title: "Validation Error", description: `Amount paid (Rs. ${finalAmountPaid.toFixed(2)}) cannot exceed the grand total (Rs. ${finalGrandTotalForSubmission.toFixed(2)}).`, variant: "destructive"});
         return;
     }
 
@@ -358,7 +361,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       packagingCharges: finalPackagingCharges > 0 ? finalPackagingCharges : undefined,
       transportCharges: finalTransportCharges > 0 ? finalTransportCharges : undefined,
       totalAmount: finalGrandTotalForSubmission,
-      amountPaid: data.amountPaid,
+      amountPaid: finalAmountPaid, // Use the coerced number
     };
 
     try {
@@ -392,15 +395,11 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     form.setValue(`items.${itemIndex}.soldUnit`, newSoldUnit, { shouldDirty: true });
     const product = allProducts.find(p => p.id === form.getValues(`items.${itemIndex}.productId`));
     if (product) {
-        const pricePerBaseUnit = product.wholesalePricePerBaseUnit; // Always wholesale
-
+        const pricePerBaseUnit = product.wholesalePricePerBaseUnit; 
         let pricePerSoldUnit = pricePerBaseUnit;
         if (newSoldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor > 0) {
             pricePerSoldUnit = pricePerBaseUnit * product.purchaseUnitConversionFactor;
         }
-        // Do not auto-update price if user has manually edited it already.
-        // This part is tricky; for now, let's always auto-update on unit change.
-        // The field remains editable.
         form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), { shouldValidate: true, shouldDirty: true });
     }
   };
@@ -420,13 +419,12 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       baseUnit: PRODUCT_UNITS[0],
       purchaseUnit: PRODUCT_UNITS[0],
       purchaseUnitConversionFactor: 1,
-      purchasePrice: 0, // Default purchase price to 0
+      purchasePrice: 0, 
       retailPricePerBaseUnit: '' as unknown as number,
       wholesalePricePerBaseUnit: '' as unknown as number,
       initialStock: 0,
       reorderThreshold: 0,
     });
-    // If current user is staff, purchasePrice is handled by being disabled or set to 0 in submission
     if (currentUserRole === 'staff') {
         quickAddForm.setValue("purchasePrice", 0);
     }
@@ -439,8 +437,9 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     
     const payloadForAddProduct: AddProductFormData = {
       ...data,
-      initialStock: 0, // Always 0 for quick add
-      purchasePrice: currentUserRole === 'staff' ? 0 : (Number(data.purchasePrice) || 0), // Staff submits 0
+      productName: data.productName.trim(), // Ensure trimmed
+      initialStock: 0, 
+      purchasePrice: currentUserRole === 'staff' ? 0 : (Number(data.purchasePrice) || 0), 
     };
     if (currentUserRole !== 'staff' && payloadForAddProduct.purchasePrice <=0 ) {
         quickAddForm.setError("purchasePrice", {type: "manual", message: "Owner must set a positive purchase price."});
@@ -471,7 +470,6 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     <>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          {/* SaleType Checkbox removed */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             <FormField
               control={form.control}
@@ -575,11 +573,11 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                               {allProducts
                                 .filter(p => {
                                   const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                  if (!searchText) return true; // Show all if search is empty for better discovery
+                                  if (!searchText) return true; 
                                   return p.name.toLowerCase().includes(searchText) ||
                                     (p.sku && p.sku.toLowerCase().includes(searchText));
                                 })
-                                .slice(0, 10) // Limit initial display for performance
+                                .slice(0, 10) 
                                 .map((product) => (
                                   <CommandItem
                                     key={product.id}
@@ -646,7 +644,6 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                             {availableUnits.map(unit => (
                               <SelectItem key={unit} value={unit}>{unit}</SelectItem>
                             ))}
-                             {/* Allow any unit if it's an ad-hoc item */}
                             {isAdHocItem && !availableUnits.includes(field.value) && PRODUCT_UNITS.filter(u => !availableUnits.includes(u)).map(u => (
                                 <SelectItem key={`adhoc-${u}`} value={u}>{u}</SelectItem>
                             ))}
@@ -663,7 +660,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                       <FormItem>
                         <FormLabel>Rate/Unit (Rs.)</FormLabel>
                         <FormControl>
-                          <Input // Field is now always enabled
+                          <Input 
                               type="number"
                               placeholder="e.g., 700.00"
                               step="0.01" {...field}
@@ -720,7 +717,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   <FormLabel className="flex items-center gap-1"><PackagePlus className="h-4 w-4 text-muted-foreground" />Packaging Charges (Rs.)</FormLabel>
                   <FormControl>
                     <Input type="number" placeholder="e.g., 50.00" step="0.01" {...field}
-                          onChange={e => field.onChange(e.target.value)}
+                          onChange={e => field.onChange(e.target.value)} // Pass raw value
                           min="0" />
                   </FormControl>
                   <FormMessage />
@@ -735,7 +732,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   <FormLabel className="flex items-center gap-1"><Truck className="h-4 w-4 text-muted-foreground" />Transport Charges (Rs.)</FormLabel>
                   <FormControl>
                     <Input type="number" placeholder="e.g., 100.00" step="0.01" {...field}
-                          onChange={e => field.onChange(e.target.value)}
+                          onChange={e => field.onChange(e.target.value)} // Pass raw value
                           min="0" />
                   </FormControl>
                   <FormMessage />
@@ -754,7 +751,8 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                     <FormLabel>Amount Paid (Rs.)</FormLabel>
                     <FormControl>
                       <Input type="number" placeholder="e.g., 500.00" step="0.01" {...field}
-                            onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
+                            onChange={e => field.onChange(e.target.value)} // Pass raw value
+                             />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1030,3 +1028,5 @@ export default function NewSalePage() {
   );
 }
 
+
+    
