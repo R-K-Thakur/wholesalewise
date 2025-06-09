@@ -11,8 +11,11 @@ const APP_SETTINGS_COLLECTION = "app_settings";
 const ROLE_MANAGEMENT_DOC = "role_management";
 const USERS_COLLECTION = "users";
 
-const DEFAULT_STAFF_LOGIN_START_TIME = { H: 9, M: 0 };
-const DEFAULT_STAFF_LOGIN_END_TIME = { H: 23, M: 0 }; // Exclusive: up to 22:59
+// Assuming shop operates 9:00 AM to 11:00 PM IST (UTC+5:30)
+// These constants represent the window in UTC.
+const UTC_STAFF_LOGIN_START_TIME = { H: 3, M: 30 }; // Represents 09:00 AM IST
+const UTC_STAFF_LOGIN_END_TIME = { H: 17, M: 30 };  // Represents 11:00 PM (23:00) IST. Login allowed if current UTC is strictly LESS than this.
+                                                  // (i.e., up to 17:29:59 UTC, which is 22:59:59 IST)
 
 export interface SessionData {
   username: string;
@@ -110,15 +113,22 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
     };
     
     if (userRole === "staff") {
-      const now = new Date();
-      const currentHour = now.getHours();
-      const currentMinute = now.getMinutes();
+      const now = new Date(); // Server time (Firebase Functions are typically UTC)
+      const currentUTCHour = now.getUTCHours();
+      const currentUTCMinute = now.getUTCMinutes();
 
-      const isAfterStartTime = currentHour > DEFAULT_STAFF_LOGIN_START_TIME.H || (currentHour === DEFAULT_STAFF_LOGIN_START_TIME.H && currentMinute >= DEFAULT_STAFF_LOGIN_START_TIME.M);
-      const isBeforeEndTime = currentHour < DEFAULT_STAFF_LOGIN_END_TIME.H;
+      const isAfterStartTime = currentUTCHour > UTC_STAFF_LOGIN_START_TIME.H || 
+                              (currentUTCHour === UTC_STAFF_LOGIN_START_TIME.H && currentUTCMinute >= UTC_STAFF_LOGIN_START_TIME.M);
+      
+      // Login is allowed if current time is strictly less than the end time.
+      // e.g., if END_TIME is 17:30 UTC, then 17:29 UTC is allowed, 17:30 UTC is not.
+      const isBeforeEndTime = currentUTCHour < UTC_STAFF_LOGIN_END_TIME.H ||
+                              (currentUTCHour === UTC_STAFF_LOGIN_END_TIME.H && currentUTCMinute < UTC_STAFF_LOGIN_END_TIME.M);
 
       if (!(isAfterStartTime && isBeforeEndTime)) {
-        return { success: false, error: `Access denied. Staff login is only permitted between ${DEFAULT_STAFF_LOGIN_START_TIME.H.toString().padStart(2,'0')}:${DEFAULT_STAFF_LOGIN_START_TIME.M.toString().padStart(2,'0')} and ${DEFAULT_STAFF_LOGIN_END_TIME.H.toString().padStart(2,'0')}:00 (exclusive).` };
+        // The error message still refers to the user-friendly local time window.
+        // No need to change the constants in the string if they are hardcoded for display.
+        return { success: false, error: `Access denied. Staff login is only permitted between 09:00 and 23:00 (exclusive).` };
       }
     }
     
@@ -362,3 +372,6 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
 
     
 
+
+
+    
