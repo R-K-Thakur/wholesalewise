@@ -883,7 +883,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Conversion ({qafWatchedBaseUnit}s per {qafWatchedPurchaseUnit})</FormLabel>
-                      <FormControl><Input type="number" placeholder="e.g., 12" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value,10) || '')} /></FormControl>
+                      <FormControl><Input type="number" placeholder="e.g., 12" step="1" {...field} onChange={e => field.onChange(e.target.value)} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -900,7 +900,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Purchase Price (Rs. per {quickAddForm.getValues("purchaseUnit") || 'Purchase Unit'})</FormLabel>
-                      <FormControl><Input type="number" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} disabled={currentUserRole === 'staff'} /></FormControl>
+                      <FormControl><Input type="number" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} disabled={currentUserRole === 'staff'} /></FormControl>
                       {currentUserRole === 'staff' && <p className="text-xs text-muted-foreground">Staff cannot set purchase price. Owner will set this later.</p>}
                       <FormMessage />
                     </FormItem>
@@ -913,7 +913,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Retail Price (Rs. per {quickAddForm.getValues("baseUnit") || 'Base Unit'})</FormLabel>
-                      <FormControl><Input type="number" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} /></FormControl>
+                      <FormControl><Input type="number" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -924,7 +924,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Wholesale Price (Rs. per {quickAddForm.getValues("baseUnit") || 'Base Unit'})</FormLabel>
-                      <FormControl><Input type="number" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} /></FormControl>
+                      <FormControl><Input type="number" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -936,7 +936,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Reorder Threshold (in {quickAddForm.getValues("baseUnit") || 'Base Units'}) (Optional)</FormLabel>
-                      <FormControl><Input type="number" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value,10) || 0)} /></FormControl>
+                      <FormControl><Input type="number" step="1" {...field} onChange={e => field.onChange(e.target.value)} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
