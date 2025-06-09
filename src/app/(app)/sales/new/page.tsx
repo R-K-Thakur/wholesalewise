@@ -172,7 +172,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     if (changed) {
       setItemSearchTexts(newSearchTexts);
     }
-  }, [currentWatchedItems, allProducts]);
+  }, [currentWatchedItems, allProducts, itemSearchTexts]);
 
 
   React.useEffect(() => {
@@ -284,7 +284,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       }
       setProductJustAddedId(null);
     }
-  }, [allProducts, productJustAddedId, quickAddItemIndex]);
+  }, [allProducts, productJustAddedId, quickAddItemIndex, handleProductSelectInternal]);
 
 
   async function onSubmit(data: SaleFormData) {
@@ -337,6 +337,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     }
     
     const finalItemsTotal = itemsForAction.reduce((sum, item) => sum + item.total, 0);
+    // Ensure data.packagingCharges/transportCharges are numbers (0 if undefined/empty)
     const finalPackagingCharges = Number(data.packagingCharges) || 0;
     const finalTransportCharges = Number(data.transportCharges) || 0;
     const finalGrandTotalForSubmission = parseFloat((finalItemsTotal + finalPackagingCharges + finalTransportCharges).toFixed(2));
@@ -348,7 +349,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     }
 
     const payload: RecordSaleActionPayload = {
-      saleType: 'wholesale', // Hardcoded to wholesale
+      saleType: 'wholesale',
       saleDate: data.saleDate,
       customerName: data.customerName || undefined,
       notes: data.notes || undefined,
@@ -719,7 +720,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   <FormLabel className="flex items-center gap-1"><PackagePlus className="h-4 w-4 text-muted-foreground" />Packaging Charges (Rs.)</FormLabel>
                   <FormControl>
                     <Input type="number" placeholder="e.g., 50.00" step="0.01" {...field}
-                          onChange={e => field.onChange(parseFloat(e.target.value) || 0)}
+                          onChange={e => field.onChange(e.target.value)}
                           min="0" />
                   </FormControl>
                   <FormMessage />
@@ -734,7 +735,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   <FormLabel className="flex items-center gap-1"><Truck className="h-4 w-4 text-muted-foreground" />Transport Charges (Rs.)</FormLabel>
                   <FormControl>
                     <Input type="number" placeholder="e.g., 100.00" step="0.01" {...field}
-                          onChange={e => field.onChange(parseFloat(e.target.value) || 0)}
+                          onChange={e => field.onChange(e.target.value)}
                           min="0" />
                   </FormControl>
                   <FormMessage />
@@ -1028,3 +1029,4 @@ export default function NewSalePage() {
     </div>
   );
 }
+
