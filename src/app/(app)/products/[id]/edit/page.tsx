@@ -6,12 +6,12 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Loader2, UserCircle, CalendarDays } from "lucide-react"; // Added icons
+import { ArrowLeft, Loader2, UserCircle, CalendarDays, ShieldAlert, Edit3 } from "lucide-react";
 import * as React from "react";
 import { format } from "date-fns";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -19,13 +19,19 @@ import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from "@/lib/constants";
 import { useToast } from "@/hooks/use-toast";
 import { getProductByIdAction, updateProductAction } from "../../actions";
 import { productFormSchema, type ValidatedProductFormData } from "../../schema";
-import type { Product } from '@/lib/types'; // Import Product for type hints
+import type { Product } from '@/lib/types';
+import { getSession, type SessionData } from "@/app/login/actions";
 
 export default function EditProductPage() {
   const router = useRouter();
   const params = useParams();
   const productId = params.id as string;
   const { toast } = useToast();
+
+  const [session, setSession] = useState<SessionData | null>(null);
+  const [isLoadingSession, setIsLoadingSession] = useState(true);
+  const [userRole, setUserRole] = useState<SessionData['role'] | undefined>(undefined);
+
   const [isLoadingProduct, setIsLoadingProduct] = React.useState(true);
   const [productNotFound, setProductNotFound] = React.useState(false);
   const [productName, setProductName] = React.useState("Product");
@@ -46,25 +52,21 @@ export default function EditProductPage() {
   }, [watchedBaseUnit, watchedPurchaseUnit]);
 
   React.useEffect(() => {
-    if (watchedPurchaseUnit === "dozen" && watchedBaseUnit === "piece") {
-      form.setValue("purchaseUnitConversionFactor", 12, { shouldValidate: true });
-    } else if (watchedBaseUnit === watchedPurchaseUnit) {
-      const currentFactor = form.getValues("purchaseUnitConversionFactor");
-      if (currentFactor !== 1) {
-        form.setValue("purchaseUnitConversionFactor", 1, { shouldValidate: true });
-      }
-    }
-  }, [watchedBaseUnit, watchedPurchaseUnit, form]);
-
-
-  React.useEffect(() => {
-    if (productId) {
+    async function fetchInitialData() {
+      setIsLoadingSession(true);
       setIsLoadingProduct(true);
-      getProductByIdAction(productId)
-        .then(product => {
+      
+      const currentSession = await getSession();
+      setSession(currentSession);
+      setUserRole(currentSession?.role);
+      setIsLoadingSession(false);
+
+      if (productId) {
+        try {
+          const product = await getProductByIdAction(productId);
           if (product) {
             setProductName(product.name);
-            setProductDetails(product); // Store full product details
+            setProductDetails(product);
             let conversionFactor = product.purchaseUnitConversionFactor;
             if (product.purchaseUnit === "dozen" && product.baseUnit === "piece") {
               conversionFactor = 12;
@@ -81,33 +83,41 @@ export default function EditProductPage() {
               purchasePrice: product.purchasePrice,
               retailPricePerBaseUnit: product.retailPricePerBaseUnit,
               wholesalePricePerBaseUnit: product.wholesalePricePerBaseUnit,
-              initialStock: product.quantityInStock,
+              initialStock: product.quantityInStock, // This is current stock on edit form
               reorderThreshold: product.reorderThreshold ?? 0,
             });
             setProductNotFound(false);
           } else {
             setProductNotFound(true);
-            toast({
-              title: "Error",
-              description: "Product not found.",
-              variant: "destructive",
-            });
+            toast({ title: "Error", description: "Product not found.", variant: "destructive" });
           }
-        })
-        .catch(error => {
+        } catch (error) {
           console.error("Failed to fetch product:", error);
-          toast({
-            title: "Error",
-            description: "Failed to load product details.",
-            variant: "destructive",
-          });
+          toast({ title: "Error", description: "Failed to load product details.", variant: "destructive" });
           setProductNotFound(true);
-        })
-        .finally(() => {
+        } finally {
           setIsLoadingProduct(false);
-        });
+        }
+      } else {
+        setIsLoadingProduct(false);
+        setProductNotFound(true); // No ID, no product
+      }
     }
+    fetchInitialData();
   }, [productId, form, toast]);
+
+
+  React.useEffect(() => {
+    if (watchedPurchaseUnit === "dozen" && watchedBaseUnit === "piece") {
+      form.setValue("purchaseUnitConversionFactor", 12, { shouldValidate: true });
+    } else if (watchedBaseUnit === watchedPurchaseUnit) {
+      const currentFactor = form.getValues("purchaseUnitConversionFactor");
+      if (currentFactor !== 1) {
+        form.setValue("purchaseUnitConversionFactor", 1, { shouldValidate: true });
+      }
+    }
+  }, [watchedBaseUnit, watchedPurchaseUnit, form]);
+
 
   const { isSubmitting } = form.formState;
 
@@ -127,6 +137,13 @@ export default function EditProductPage() {
         form.setError("purchaseUnitConversionFactor", { type: "manual", message: "Conversion factor is required and must be > 0."});
         return;
     }
+    
+    // If staff is editing, and the purchase price field was hidden,
+    // ensure the original purchase price is sent, not a potentially empty/default one from the form state.
+    if (userRole === 'staff' && productDetails) {
+        formData.purchasePrice = productDetails.purchasePrice;
+    }
+
 
     try {
       const result = await updateProductAction(productId, formData);
@@ -153,7 +170,10 @@ export default function EditProductPage() {
     }
   }
 
-  if (isLoadingProduct) {
+  const canEditStock = userRole === 'owner';
+  const canEditPurchasePrice = userRole === 'owner';
+
+  if (isLoadingProduct || isLoadingSession) {
     return (
       <div className="flex flex-col items-center justify-center h-full">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -195,7 +215,6 @@ export default function EditProductPage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* Product Info Fields Here... */}
               <FormField
                 control={form.control}
                 name="productName"
@@ -288,20 +307,36 @@ export default function EditProductPage() {
                   Automatic conversion: 1 dozen = 12 pieces. Factor is set to 12.
                 </div>
               )}
+              
+              {canEditPurchasePrice ? (
+                <FormField
+                  control={form.control}
+                  name="purchasePrice"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Purchase Price (Rs. per {watchedPurchaseUnit || 'Purchase Unit'})</FormLabel>
+                      <FormControl>
+                        <Input type="number" placeholder="e.g., 350.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')}/>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : (
+                productDetails && (productDetails.purchasePrice === undefined || productDetails.purchasePrice <= 0) && (
+                  <div className="space-y-1">
+                    <FormLabel>Purchase Price</FormLabel>
+                    <div className="p-3 border rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-sm">
+                      <div className="flex items-start gap-2">
+                        <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
+                        <span>Purchase price needs to be set by an owner.</span>
+                      </div>
+                    </div>
+                  </div>
+                )
+                // If staff and price > 0, the field is simply not rendered.
+              )}
 
-              <FormField
-                control={form.control}
-                name="purchasePrice"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Purchase Price (Rs. per {watchedPurchaseUnit || 'Purchase Unit'})</FormLabel>
-                    <FormControl>
-                      <Input type="number" placeholder="e.g., 350.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')}/>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
@@ -335,13 +370,23 @@ export default function EditProductPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
-                  name="initialStock"
+                  name="initialStock" // This field on edit form represents CURRENT stock
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Current Stock (in {watchedBaseUnit || 'Base Units'})</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 100" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || '')} />
+                        <Input 
+                          type="number" 
+                          placeholder="e.g., 100" 
+                          step="1" 
+                          {...field} 
+                          onChange={e => field.onChange(parseInt(e.target.value, 10) || '')} 
+                          disabled={!canEditStock && userRole === 'staff'} // Disable for staff if they can't edit stock here
+                        />
                       </FormControl>
+                      {!canEditStock && userRole === 'staff' && (
+                        <p className="text-xs text-muted-foreground">Staff can update stock via "Add Stock" on product list page.</p>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -365,40 +410,49 @@ export default function EditProductPage() {
                 <Button type="button" variant="outline" asChild disabled={isSubmitting}>
                   <Link href="/products">Cancel</Link>
                 </Button>
-                <Button type="submit" disabled={isSubmitting || isLoadingProduct}>
-                  {(isSubmitting || isLoadingProduct) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Button type="submit" disabled={isSubmitting || isLoadingProduct || isLoadingSession}>
+                  {(isSubmitting || isLoadingProduct || isLoadingSession) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Save Changes
                 </Button>
               </div>
             </form>
           </Form>
-
-          {productDetails && (
-            <div className="mt-8 pt-6 border-t">
-              <h3 className="text-base font-medium mb-3 text-foreground">Product History</h3>
-              <div className="space-y-2 text-sm text-muted-foreground">
-                {(productDetails.createdByName || productDetails.createdByEmail) && (
+        </CardContent>
+        {productDetails && (
+          <CardFooter className="pt-6 border-t mt-6">
+            <div className="w-full space-y-2 text-sm text-muted-foreground">
+              <h3 className="text-base font-medium text-foreground mb-2">Product History</h3>
+              {(productDetails.createdByName || productDetails.createdByEmail) && (
+                <div className="flex items-center gap-2 justify-between">
                   <div className="flex items-center gap-2">
                     <UserCircle className="h-4 w-4" />
                     <span>Created by: {productDetails.createdByName || productDetails.createdByEmail}</span>
-                    <CalendarDays className="h-4 w-4 ml-auto" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4" />
                     <span>{format(new Date(productDetails.createdAt), "PPp")}</span>
                   </div>
-                )}
-                {(productDetails.lastStockUpdateByName || productDetails.lastStockUpdateByEmail) &&
-                 (productDetails.lastStockUpdateByEmail !== productDetails.createdByEmail || productDetails.lastStockUpdateByName !== productDetails.createdByName || productDetails.updatedAt !== productDetails.createdAt) && (
-                   <div className="flex items-center gap-2">
+                </div>
+              )}
+              {(productDetails.lastStockUpdateByName || productDetails.lastStockUpdateByEmail) &&
+                (productDetails.lastStockUpdateByEmail !== productDetails.createdByEmail || productDetails.lastStockUpdateByName !== productDetails.createdByName || productDetails.updatedAt !== productDetails.createdAt) && (
+                <div className="flex items-center gap-2 justify-between">
+                  <div className="flex items-center gap-2">
                     <UserCircle className="h-4 w-4" />
                     <span>Last stock updated by: {productDetails.lastStockUpdateByName || productDetails.lastStockUpdateByEmail}</span>
-                    <CalendarDays className="h-4 w-4 ml-auto" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4" />
                     <span>{format(new Date(productDetails.updatedAt), "PPp")}</span>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
-          )}
-        </CardContent>
+          </CardFooter>
+        )}
       </Card>
     </div>
   );
 }
+
+    

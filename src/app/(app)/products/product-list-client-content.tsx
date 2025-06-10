@@ -31,6 +31,8 @@ import { deleteProductAction, addStockToProductAction } from "./actions";
 import { ChevronLeft, ChevronRight, PlusCircle, Edit, Trash2, PackagePlus, Loader2, Search, AlertTriangle } from "lucide-react";
 import { ITEMS_PER_PAGE_STORAGE_KEY } from "@/lib/constants";
 import { getSession, type SessionData } from "@/app/login/actions";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 const DEFAULT_ITEMS_PER_PAGE = 10;
 
@@ -64,15 +66,15 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
 
   // State for column visibility, defaults to hidden (staff view)
   const [showPurchasePriceColumn, setShowPurchasePriceColumn] = React.useState(false);
-  const [tableColSpan, setTableColSpan] = React.useState(7);
+  const [tableColSpan, setTableColSpan] = React.useState(7); // Default for hidden purchase price column
 
 
   React.useEffect(() => {
     setIsMounted(true);
     async function fetchSessionData() {
       const currentSession = await getSession();
-      setSession(currentSession);
-      if (currentSession && currentSession.role !== 'staff') {
+      setSession(currentSession); // Store the full session for other uses (e.g., delete button)
+      if (currentSession && currentSession.role !== 'staff') { // Only show for non-staff (e.g., owner)
         setShowPurchasePriceColumn(true);
         setTableColSpan(8);
       } else {
@@ -134,8 +136,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   const handleAddStockClick = (product: Product) => {
     setProductForStockAdd(product);
     setQuantityToAdd("");
-    // Use the state variable showPurchasePriceColumn to decide
-    if (showPurchasePriceColumn) {
+    if (showPurchasePriceColumn) { // Uses the state variable now
       setNewPurchasePrice(product.purchasePrice !== undefined ? product.purchasePrice.toString() : "");
     } else {
       setNewPurchasePrice(""); 
@@ -153,8 +154,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     const qty = Number(quantityToAdd);
     
     let price: number | undefined = undefined;
-    // Use the state variable showPurchasePriceColumn here as well
-    if (showPurchasePriceColumn && newPurchasePrice !== "") {
+    if (showPurchasePriceColumn && newPurchasePrice !== "") { // Uses the state variable
       price = Number(newPurchasePrice);
       if (price !== undefined && price < 0) {
           toast({ title: "Input Error", description: "Purchase price cannot be negative.", variant: "destructive" });
@@ -162,7 +162,6 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
           return;
       }
     }
-
 
     const result = await addStockToProductAction(productForStockAdd.id, qty, price);
     if (result.success) {
@@ -192,8 +191,6 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   if (!isMounted || !sessionLoaded) {
     return <div className="py-10 text-center text-muted-foreground">Loading products list and user data...</div>;
   }
-
-  // showPurchasePriceColumn and tableColSpan are now reliable state variables
 
   return (
     <>
@@ -248,7 +245,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
                   <Button variant="outline" size="sm" asChild title="Edit Product">
                     <Link href={`/products/${product.id}/edit`}><Edit className="h-4 w-4" /></Link>
                   </Button>
-                  {session?.role === 'owner' && ( // Only owners can delete products from this list
+                  {session?.role === 'owner' && (
                     <Button 
                       variant="destructive" 
                       size="sm" 
@@ -381,3 +378,5 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     </>
   );
 }
+
+    

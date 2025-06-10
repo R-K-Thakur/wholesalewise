@@ -95,7 +95,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       const price = Number(item?.pricePerUnitSold) || 0;
       return sum + (quantity * price);
     }, 0);
-  }, [JSON.stringify(currentWatchedItems)]); // Key change here
+  }, [JSON.stringify(currentWatchedItems)]);
 
   const grandTotal = React.useMemo(() => {
     const packaging = Number(watchedPackagingCharges) || 0; 
@@ -174,25 +174,27 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
 
   React.useEffect(() => {
     const amountPaidFieldState = form.getFieldState("amountPaid");
-    const rawAmountPaid = form.getValues("amountPaid"); // Get raw value
-    const numericAmountPaid = Number(rawAmountPaid);
+    const numericAmountPaid = Number(form.getValues("amountPaid"));
     const roundedGrandTotal = parseFloat(grandTotal.toFixed(2));
-
+  
     if (isNaN(roundedGrandTotal) || roundedGrandTotal < 0) {
-        if (!amountPaidFieldState.isDirty && (isNaN(numericAmountPaid) || numericAmountPaid !== 0)) {
-            form.setValue("amountPaid", 0, { shouldValidate: true, shouldDirty: false });
-        }
-        return;
+      if (!amountPaidFieldState.isDirty && (isNaN(numericAmountPaid) || numericAmountPaid !== 0)) {
+        form.setValue("amountPaid", 0, { shouldValidate: true, shouldDirty: false });
+      }
+      return;
     }
-
-    if (amountPaidFieldState.isDirty) {
-        if (!isNaN(numericAmountPaid) && numericAmountPaid > roundedGrandTotal) {
-            form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true, shouldDirty: true });
-        }
+  
+    if (!amountPaidFieldState.isDirty) {
+      // If not dirty, always set to grandTotal (or 0 if grandTotal is invalid/negative)
+      const newAmountPaid = (isNaN(roundedGrandTotal) || roundedGrandTotal < 0) ? 0 : roundedGrandTotal;
+      if (isNaN(numericAmountPaid) || Math.abs(numericAmountPaid - newAmountPaid) > 0.001) {
+          form.setValue("amountPaid", newAmountPaid, { shouldValidate: true, shouldDirty: false });
+      }
     } else {
-        if (isNaN(numericAmountPaid) || Math.abs(numericAmountPaid - roundedGrandTotal) > 0.001) {
-            form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true, shouldDirty: false });
-        }
+      // If dirty, only cap at grandTotal if it's an overpayment
+      if (!isNaN(numericAmountPaid) && numericAmountPaid > roundedGrandTotal) {
+        form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true, shouldDirty: true });
+      }
     }
   }, [grandTotal, form]);
 
@@ -258,19 +260,18 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     currentWatchedItems.forEach((item, index) => {
         const product = allProducts.find(p => p.id === item.productId);
         if (product) {
-            const price = product.wholesalePricePerBaseUnit;
+            const price = product.wholesalePricePerBaseUnit; 
             let pricePerSoldUnit = price;
             if (item.soldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor > 0) {
                 pricePerSoldUnit = price * product.purchaseUnitConversionFactor;
             }
             const newCalculatedPrice = parseFloat(pricePerSoldUnit.toFixed(2));
-             // Only update if pricePerUnitSold is not dirty OR if it's currently 0 (initial state)
             if (!form.formState.dirtyFields.items?.[index]?.pricePerUnitSold || Number(form.getValues(`items.${index}.pricePerUnitSold`)) === 0) {
                  form.setValue(`items.${index}.pricePerUnitSold`, newCalculatedPrice, { shouldValidate: true, shouldDirty: !!form.formState.dirtyFields.items?.[index]?.pricePerUnitSold });
             }
         }
     });
-  }, [JSON.stringify(currentWatchedItems), allProducts, form]); // Key change here to track deep changes in items
+  }, [JSON.stringify(currentWatchedItems), allProducts, form]);
 
 
   React.useEffect(() => {
@@ -339,7 +340,6 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     const finalGrandTotalForSubmission = parseFloat((finalItemsTotal + finalPackagingCharges + finalTransportCharges).toFixed(2));
     
     const finalAmountPaid = Number(data.amountPaid) || 0;
-
 
     if (finalAmountPaid > finalGrandTotalForSubmission + 0.001) { 
         form.setError("amountPaid", {message: "Amount paid cannot exceed the grand total."});
@@ -421,6 +421,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       initialStock: 0,
       reorderThreshold: 0,
     });
+    // Explicitly set purchasePrice to 0 for staff, ensuring the field takes this default if staff
     if (currentUserRole === 'staff') {
         quickAddForm.setValue("purchasePrice", 0);
     }
@@ -434,9 +435,11 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     const payloadForAddProduct: AddProductFormData = {
       ...data,
       productName: data.productName.trim(), 
-      initialStock: 0, 
+      initialStock: 0, // Initial stock is 0 for quick add, actual stock added via Add Stock flow
+      // If user is staff, purchasePrice is forced to 0. Otherwise, use the form value (or 0 if empty/invalid).
       purchasePrice: currentUserRole === 'staff' ? 0 : (Number(data.purchasePrice) || 0), 
     };
+    // Owner must provide a positive purchase price if they are using this form and purchasePrice field is visible
     if (currentUserRole !== 'staff' && payloadForAddProduct.purchasePrice <=0 ) {
         quickAddForm.setError("purchasePrice", {type: "manual", message: "Owner must set a positive purchase price."});
         setIsSubmittingQuickAdd(false);
@@ -447,11 +450,11 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     try {
       const result = await addProductAction(payloadForAddProduct);
       if (result.success && result.product) {
-        toast({ title: "Product Added", description: `${result.product.name} added to inventory (Purchase Price: Rs. ${result.product.purchasePrice.toFixed(2)}).` });
-        await onProductAdded();
-        setProductJustAddedId(result.product.id);
+        toast({ title: "Product Added", description: `${result.product.name} added to inventory (Purchase Price: Rs. ${result.product.purchasePrice.toFixed(2)}). Stock is 0.` });
+        await onProductAdded(); // This re-fetches all products
+        setProductJustAddedId(result.product.id); // Store ID to auto-select
         setIsQuickAddModalOpen(false);
-        setQuickAddItemIndex(null);
+        // quickAddItemIndex is kept to use in useEffect for auto-selection
       } else {
         toast({ title: "Error Adding Product", description: result.message || "Failed to add product.", variant: "destructive" });
       }
@@ -888,18 +891,31 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                     Auto conversion: 1 dozen = 12 pieces.
                   </div>
               )}
-               <FormField
-                  control={quickAddForm.control}
-                  name="purchasePrice"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Purchase Price (Rs. per {quickAddForm.getValues("purchaseUnit") || 'Purchase Unit'})</FormLabel>
-                      <FormControl><Input type="number" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} disabled={currentUserRole === 'staff'} /></FormControl>
-                      {currentUserRole === 'staff' && <p className="text-xs text-muted-foreground">Staff cannot set purchase price. Owner will set this later.</p>}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              {currentUserRole !== 'staff' && (
+                 <FormField
+                    control={quickAddForm.control}
+                    name="purchasePrice"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Purchase Price (Rs. per {quickAddForm.getValues("purchaseUnit") || 'Purchase Unit'})</FormLabel>
+                        <FormControl><Input type="number" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+              )}
+              {currentUserRole === 'staff' && (
+                  <div className="space-y-1">
+                    <FormLabel>Purchase Price</FormLabel>
+                    <div className="p-3 border rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-sm">
+                        <div className="flex items-start gap-2">
+                            <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
+                            <span>Will be set to Rs. 0. Owner can update later.</span>
+                        </div>
+                    </div>
+                  </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={quickAddForm.control}
