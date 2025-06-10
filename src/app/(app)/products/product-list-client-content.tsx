@@ -30,6 +30,7 @@ import type { Product } from "@/lib/types";
 import { deleteProductAction, addStockToProductAction } from "./actions";
 import { ChevronLeft, ChevronRight, PlusCircle, Edit, Trash2, PackagePlus, Loader2, Search } from "lucide-react";
 import { ITEMS_PER_PAGE_STORAGE_KEY } from "@/lib/constants";
+import { getSession, type SessionData } from "@/app/login/actions";
 
 const DEFAULT_ITEMS_PER_PAGE = 10;
 
@@ -55,10 +56,21 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
 
   const [currentPage, setCurrentPage] = React.useState(1);
   const [itemsPerPage, setItemsPerPage] = React.useState(DEFAULT_ITEMS_PER_PAGE);
-  const [isMounted, setIsMounted] = React.useState(false);
+  
+  const [session, setSession] = React.useState<SessionData | null>(null);
+  const [sessionLoaded, setSessionLoaded] = React.useState(false);
+  const [isMounted, setIsMounted] = React.useState(false); // Still useful for localStorage
+
 
   React.useEffect(() => {
-    setIsMounted(true);
+    setIsMounted(true); // For localStorage access
+    async function fetchSessionData() {
+      const currentSession = await getSession();
+      setSession(currentSession);
+      setSessionLoaded(true); // Mark session as loaded
+    }
+    fetchSessionData();
+
     const storedItemsPerPage = localStorage.getItem(ITEMS_PER_PAGE_STORAGE_KEY);
     if (storedItemsPerPage) {
       setItemsPerPage(parseInt(storedItemsPerPage, 10) || DEFAULT_ITEMS_PER_PAGE);
@@ -75,7 +87,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
         )
       : initialProducts;
     setFilteredProducts(newFilteredProducts);
-    setCurrentPage(1); // Reset to first page on new search or data change
+    setCurrentPage(1); 
   }, [initialProducts, searchTerm]);
 
 
@@ -108,7 +120,12 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   const handleAddStockClick = (product: Product) => {
     setProductForStockAdd(product);
     setQuantityToAdd("");
-    setNewPurchasePrice(product.purchasePrice !== undefined ? product.purchasePrice.toString() : "");
+    // Staff should not see or set purchase price here either
+    if (session && session.role !== 'staff') {
+      setNewPurchasePrice(product.purchasePrice !== undefined ? product.purchasePrice.toString() : "");
+    } else {
+      setNewPurchasePrice(""); // Clear it for staff or if undefined
+    }
     setIsAddStockDialogOpen(true);
   };
 
@@ -120,13 +137,17 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     }
     setIsSubmittingStock(true);
     const qty = Number(quantityToAdd);
-    const price = newPurchasePrice === "" ? undefined : Number(newPurchasePrice);
-
-    if (price !== undefined && price < 0) {
-        toast({ title: "Input Error", description: "Purchase price cannot be negative.", variant: "destructive" });
-        setIsSubmittingStock(false);
-        return;
+    
+    let price: number | undefined = undefined;
+    if (session && session.role !== 'staff' && newPurchasePrice !== "") {
+      price = Number(newPurchasePrice);
+      if (price !== undefined && price < 0) {
+          toast({ title: "Input Error", description: "Purchase price cannot be negative.", variant: "destructive" });
+          setIsSubmittingStock(false);
+          return;
+      }
     }
+
 
     const result = await addStockToProductAction(productForStockAdd.id, qty, price);
     if (result.success) {
@@ -153,10 +174,12 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     setCurrentPage((prev) => Math.max(prev - 1, 1));
   };
   
-  if (!isMounted) {
-    // Simplified loading state to prevent layout shifts before client-side hydration
-    return <div className="py-10 text-center text-muted-foreground">Loading products list...</div>;
+  if (!isMounted || !sessionLoaded) {
+    return <div className="py-10 text-center text-muted-foreground">Loading products list and user data...</div>;
   }
+
+  const showPurchasePriceColumn = session && session.role !== 'staff';
+  const tableColSpan = showPurchasePriceColumn ? 8 : 7;
 
   return (
     <>
@@ -180,7 +203,9 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
               <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Category</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Stock</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Purch. Price (Rs.)</th>
+              {showPurchasePriceColumn && (
+                <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Purch. Price (Rs.)</th>
+              )}
               <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Retail Price (Rs.)</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Wholesale Price (Rs.)</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Units</th>
@@ -193,7 +218,9 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
                 <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-foreground">{product.name}</td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.category}</td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.quantityInStock} {product.baseUnit}</td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{product.purchasePrice.toFixed(2)} <span className="text-xs">/{product.purchaseUnit}</span></td>
+                {showPurchasePriceColumn && (
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{product.purchasePrice.toFixed(2)} <span className="text-xs">/{product.purchaseUnit}</span></td>
+                )}
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{product.retailPricePerBaseUnit.toFixed(2)} <span className="text-xs">/{product.baseUnit}</span></td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{product.wholesalePricePerBaseUnit.toFixed(2)} <span className="text-xs">/{product.baseUnit}</span></td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground">
@@ -215,14 +242,14 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
             ))}
             {filteredProducts.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-6 py-4 text-center text-sm text-muted-foreground">
+                <td colSpan={tableColSpan} className="px-6 py-4 text-center text-sm text-muted-foreground">
                     {searchTerm ? `No products found matching "${searchTerm}".` : "No products found."}
                 </td>
               </tr>
             )}
              {filteredProducts.length > 0 && paginatedProducts.length === 0 && currentPage > 1 && (
               <tr>
-                <td colSpan={8} className="px-6 py-4 text-center text-sm text-muted-foreground">
+                <td colSpan={tableColSpan} className="px-6 py-4 text-center text-sm text-muted-foreground">
                   No products on this page. Try adjusting your search or page number.
                 </td>
               </tr>
@@ -291,22 +318,24 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
                     disabled={isSubmittingStock}
                   />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="newPurchasePrice" className="text-right col-span-1">
-                    Price / {productForStockAdd.purchaseUnit} (Rs.)
-                  </Label>
-                  <Input
-                    id="newPurchasePrice"
-                    type="number"
-                    value={newPurchasePrice}
-                    onChange={(e) => setNewPurchasePrice(e.target.value)}
-                    className="col-span-3"
-                    placeholder={`Optional: Current is Rs. ${productForStockAdd.purchasePrice.toFixed(2)}`}
-                    step="0.01"
-                    min="0"
-                    disabled={isSubmittingStock}
-                  />
-                </div>
+                {showPurchasePriceColumn && ( // Only show if user is not staff
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="newPurchasePrice" className="text-right col-span-1">
+                      Price / {productForStockAdd.purchaseUnit} (Rs.)
+                    </Label>
+                    <Input
+                      id="newPurchasePrice"
+                      type="number"
+                      value={newPurchasePrice}
+                      onChange={(e) => setNewPurchasePrice(e.target.value)}
+                      className="col-span-3"
+                      placeholder={`Optional. Current: Rs. ${productForStockAdd.purchasePrice.toFixed(2)}`}
+                      step="0.01"
+                      min="0"
+                      disabled={isSubmittingStock}
+                    />
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsAddStockDialogOpen(false)} disabled={isSubmittingStock}>
