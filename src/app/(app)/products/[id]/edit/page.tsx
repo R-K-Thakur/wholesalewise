@@ -40,6 +40,18 @@ export default function EditProductPage() {
 
   const form = useForm<ValidatedProductFormData>({
     resolver: zodResolver(productFormSchema),
+    defaultValues: { // Provide defaults for all fields expected by schema
+        productName: "",
+        category: PRODUCT_CATEGORIES[0],
+        baseUnit: PRODUCT_UNITS[0],
+        purchaseUnit: PRODUCT_UNITS[0],
+        purchaseUnitConversionFactor: 1,
+        purchasePrice: '' as unknown as number,
+        retailPricePerBaseUnit: '' as unknown as number,
+        wholesalePricePerBaseUnit: '' as unknown as number,
+        initialStock: '' as unknown as number, // Represents current stock on edit page
+        reorderThreshold: 0,
+    }
   });
 
   const watchedBaseUnit = useWatch({ control: form.control, name: "baseUnit" });
@@ -81,9 +93,9 @@ export default function EditProductPage() {
               purchaseUnit: product.purchaseUnit,
               purchaseUnitConversionFactor: conversionFactor,
               purchasePrice: product.purchasePrice,
-              retailPricePerBaseUnit: product.retailPricePerBaseUnit,
+              retailPricePerBaseUnit: product.retailPricePerBaseUnit ?? 0, // Default to 0 if null/undefined
               wholesalePricePerBaseUnit: product.wholesalePricePerBaseUnit,
-              initialStock: product.quantityInStock, // This is current stock on edit form
+              initialStock: product.quantityInStock, 
               reorderThreshold: product.reorderThreshold ?? 0,
             });
             setProductNotFound(false);
@@ -100,7 +112,7 @@ export default function EditProductPage() {
         }
       } else {
         setIsLoadingProduct(false);
-        setProductNotFound(true); // No ID, no product
+        setProductNotFound(true); 
       }
     }
     fetchInitialData();
@@ -138,8 +150,6 @@ export default function EditProductPage() {
         return;
     }
     
-    // If staff is editing, and the purchase price field was hidden,
-    // ensure the original purchase price is sent, not a potentially empty/default one from the form state.
     if (userRole === 'staff' && productDetails) {
         formData.purchasePrice = productDetails.purchasePrice;
     }
@@ -316,7 +326,7 @@ export default function EditProductPage() {
                     <FormItem>
                       <FormLabel>Purchase Price (Rs. per {watchedPurchaseUnit || 'Purchase Unit'})</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 350.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')}/>
+                        <Input type="number" placeholder="e.g., 350.00" step="0.01" {...field} onChange={e => field.onChange(e.target.value)}/>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -334,7 +344,6 @@ export default function EditProductPage() {
                     </div>
                   </div>
                 )
-                // If staff and price > 0, the field is simply not rendered.
               )}
 
 
@@ -344,9 +353,9 @@ export default function EditProductPage() {
                   name="retailPricePerBaseUnit"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Retail Price (Rs. per {watchedBaseUnit || 'Base Unit'})</FormLabel>
+                      <FormLabel>Retail Price (Rs. per {watchedBaseUnit || 'Base Unit'}) (Optional)</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 50.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
+                        <Input type="number" placeholder="e.g., 50.00" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -359,7 +368,7 @@ export default function EditProductPage() {
                     <FormItem>
                       <FormLabel>Wholesale Price (Rs. per {watchedBaseUnit || 'Base Unit'})</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 40.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
+                        <Input type="number" placeholder="e.g., 40.00" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -370,7 +379,7 @@ export default function EditProductPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
-                  name="initialStock" // This field on edit form represents CURRENT stock
+                  name="initialStock" 
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Current Stock (in {watchedBaseUnit || 'Base Units'})</FormLabel>
@@ -381,7 +390,7 @@ export default function EditProductPage() {
                           step="1" 
                           {...field} 
                           onChange={e => field.onChange(parseInt(e.target.value, 10) || '')} 
-                          disabled={!canEditStock && userRole === 'staff'} // Disable for staff if they can't edit stock here
+                          disabled={!canEditStock && userRole === 'staff'} 
                         />
                       </FormControl>
                       {!canEditStock && userRole === 'staff' && (
@@ -396,7 +405,7 @@ export default function EditProductPage() {
                   name="reorderThreshold"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Reorder Threshold (in {watchedBaseUnit || 'Base Units'})</FormLabel>
+                      <FormLabel>Reorder Threshold (in {watchedBaseUnit || 'Base Units'}) (Optional)</FormLabel>
                       <FormControl>
                         <Input type="number" placeholder="e.g., 24" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)} />
                       </FormControl>

@@ -30,8 +30,8 @@ const mapDocToProduct = (document: import('firebase/firestore').DocumentSnapshot
     purchaseUnit: PRODUCT_UNITS.includes(data.purchaseUnit) ? data.purchaseUnit : PRODUCT_UNITS[0],
     purchaseUnitConversionFactor: typeof data.purchaseUnitConversionFactor === 'number' ? data.purchaseUnitConversionFactor : 1,
 
-    purchasePrice: typeof data.purchasePrice === 'number' ? data.purchasePrice : 0, // Default to 0 if not present
-    retailPricePerBaseUnit: typeof data.retailPricePerBaseUnit === 'number' ? data.retailPricePerBaseUnit : 0,
+    purchasePrice: typeof data.purchasePrice === 'number' ? data.purchasePrice : 0, 
+    retailPricePerBaseUnit: typeof data.retailPricePerBaseUnit === 'number' ? data.retailPricePerBaseUnit : 0, // Default to 0 if not present
     wholesalePricePerBaseUnit: typeof data.wholesalePricePerBaseUnit === 'number' ? data.wholesalePricePerBaseUnit : 0,
 
     quantityInStock: typeof data.quantityInStock === 'number' ? data.quantityInStock : 0,
@@ -81,9 +81,6 @@ export async function addProduct(data: ValidatedProductFormData) {
 
     const quantityInBaseUnits = data.initialStock * conversionFactor;
 
-    // If staff adds product via quick add, purchasePrice might be 0.
-    // The schema ValidatedProductFormData expects positive purchasePrice, but for quick add, 
-    // we allow 0 to be passed if staff. The action itself will store 0.
     const purchasePriceForDb = (userRole === 'staff' && data.purchasePrice === 0) ? 0 : data.purchasePrice;
     if (userRole !== 'staff' && data.purchasePrice <= 0) {
       return { success: false, message: 'Purchase price must be positive for owners.' };
@@ -96,8 +93,8 @@ export async function addProduct(data: ValidatedProductFormData) {
       baseUnit: data.baseUnit,
       purchaseUnit: data.purchaseUnit,
       purchaseUnitConversionFactor: conversionFactor,
-      purchasePrice: purchasePriceForDb, // Use potentially 0 value
-      retailPricePerBaseUnit: data.retailPricePerBaseUnit,
+      purchasePrice: purchasePriceForDb, 
+      retailPricePerBaseUnit: data.retailPricePerBaseUnit, // Will default to 0 from schema if not provided
       wholesalePricePerBaseUnit: data.wholesalePricePerBaseUnit,
       quantityInStock: quantityInBaseUnits,
       reorderThreshold: data.reorderThreshold ?? 0,
@@ -116,9 +113,6 @@ export async function addProduct(data: ValidatedProductFormData) {
       const newProductRef = doc(collection(db, PRODUCTS_COLLECTION));
       transaction.set(newProductRef, newProductData);
 
-      // The initialStock from the form is in purchaseUnits.
-      // The initialPurchaseRecord should log this quantity in purchaseUnits.
-      // Only record purchase if initial stock > 0 and purchasePrice > 0
       if (data.initialStock > 0 && purchasePriceForDb > 0) {
         const initialPurchaseRecord: Omit<Purchase, 'id'> = {
           productId: newProductRef.id,
@@ -175,7 +169,7 @@ const getProductsCached = unstable_cache(
   },
   ['products_list'],
   {
-    revalidate: 300, // 5 minutes
+    revalidate: 300, 
     tags: ['products'],
   }
 );
@@ -250,27 +244,19 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
 
 
     if (data.purchasePrice !== undefined) {
-      // Staff can't set purchase price directly here if it was 0. Owners can.
       if (userRole === 'staff' && currentProductData.purchasePrice === 0 && data.purchasePrice > 0) {
-        // Staff trying to set a non-zero purchase price for a product that previously had 0
-        // This implies they are trying to bypass the "pending work" flow. We could allow it or block it.
-        // For now, let's assume only owners can set a purchase price if it's 0.
-        // If staff is somehow submitting this, it's an anomaly, but we'll let owner's value pass.
-        // This logic is more for the main edit page. Quick-add handles staff setting to 0 initially.
-         if (data.purchasePrice !== currentProductData.purchasePrice) {
-            console.warn(`[updateProductAction] Staff attempting to change purchase price for product ${id}. This should be handled by an owner. Owner's value will be used if different.`);
-            // If owner is editing, they can set any valid price.
-            // If staff is editing AND current price is 0, they should not be able to set it to non-zero.
-            // This case should ideally be prevented by disabling the field for staff on edit page if currentPurchasePrice is 0.
-         }
+         // Staff cannot set purchase price if it was 0. This should be blocked by UI ideally.
+         // If owner is editing, they can set any valid price.
       }
       updateData.purchasePrice = data.purchasePrice;
     }
 
-    if (data.retailPricePerBaseUnit !== undefined) updateData.retailPricePerBaseUnit = data.retailPricePerBaseUnit;
+    if (data.retailPricePerBaseUnit !== undefined) {
+      updateData.retailPricePerBaseUnit = data.retailPricePerBaseUnit; // Will be a number (defaulted to 0 by schema if empty)
+    }
     if (data.wholesalePricePerBaseUnit !== undefined) updateData.wholesalePricePerBaseUnit = data.wholesalePricePerBaseUnit;
 
-    if (data.initialStock !== undefined) { // initialStock on edit form means new current stock
+    if (data.initialStock !== undefined) { 
         if (userRole === 'staff' && data.initialStock < currentProductData.quantityInStock) {
             return {
                 success: false,
@@ -376,17 +362,13 @@ export async function addStockToProductAction(
 
       let purchasePriceForRecord = productData.purchasePrice;
       if (newPurchasePricePerPurchaseUnit !== undefined && newPurchasePricePerPurchaseUnit >= 0) {
-        // Only owners can update the product's main purchase price.
-        // Staff can record a purchase at a new price, but it won't update the product's default purchase price.
         if (userRole === 'owner') {
             productUpdatePayload.purchasePrice = newPurchasePricePerPurchaseUnit;
         }
         purchasePriceForRecord = newPurchasePricePerPurchaseUnit;
       } else if (productData.purchasePrice === 0 && userRole === 'owner' && newPurchasePricePerPurchaseUnit === undefined) {
-         // If owner is adding stock to a product with 0 purchase price, they must provide a new purchase price
          throw new Error("Owner must set a purchase price when adding stock to a product with no existing purchase price.");
       } else if (productData.purchasePrice === 0 && userRole === 'staff' ) {
-         // If staff adds stock to an item with 0 purchase price, the purchase record should also reflect 0 cost.
          purchasePriceForRecord = 0;
       }
 
@@ -482,7 +464,7 @@ const getPurchasesCached = unstable_cache(
   },
   ['purchases_list'],
   {
-    revalidate: 300, // 5 minutes
+    revalidate: 300, 
     tags: ['purchases'],
   }
 );

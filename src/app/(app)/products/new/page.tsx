@@ -53,21 +53,18 @@ export default function NewProductPage() {
     } else if (watchedBaseUnit === watchedPurchaseUnit) {
       form.setValue("purchaseUnitConversionFactor", 1, { shouldValidate: true });
     }
-    // For other differing units, user inputs factor if showConversionFactorInput is true
   }, [watchedBaseUnit, watchedPurchaseUnit, form]);
 
 
   async function onSubmit(data: ValidatedProductFormData) {
     let formData = {...data};
     
-    // Ensure conversion factor is correctly set based on final unit selection
     if (formData.baseUnit === formData.purchaseUnit) {
       formData.purchaseUnitConversionFactor = 1;
     } else if (formData.purchaseUnit === "dozen" && formData.baseUnit === "piece") {
       formData.purchaseUnitConversionFactor = 12;
     }
 
-    // SuperRefine in Zod already checks if factor is required for other differing units
     if (formData.baseUnit !== formData.purchaseUnit && 
         !(formData.purchaseUnit === "dozen" && formData.baseUnit === "piece") &&
         (!formData.purchaseUnitConversionFactor || formData.purchaseUnitConversionFactor < 1) ) {
@@ -223,7 +220,7 @@ export default function NewProductPage() {
                   <FormItem>
                     <FormLabel>Purchase Price (Rs. per {watchedPurchaseUnit || 'Purchase Unit'})</FormLabel>
                     <FormControl>
-                      <Input type="number" placeholder="e.g., 350.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')}/>
+                      <Input type="number" placeholder="e.g., 350.00" step="0.01" {...field} onChange={e => field.onChange(e.target.value)}/>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -236,9 +233,9 @@ export default function NewProductPage() {
                   name="retailPricePerBaseUnit"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Retail Price (Rs. per {watchedBaseUnit || 'Base Unit'})</FormLabel>
+                      <FormLabel>Retail Price (Rs. per {watchedBaseUnit || 'Base Unit'}) (Optional)</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 50.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
+                        <Input type="number" placeholder="e.g., 50.00" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -251,7 +248,7 @@ export default function NewProductPage() {
                     <FormItem>
                       <FormLabel>Wholesale Price (Rs. per {watchedBaseUnit || 'Base Unit'})</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 40.00" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || '')} />
+                        <Input type="number" placeholder="e.g., 40.00" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -278,7 +275,7 @@ export default function NewProductPage() {
                   name="reorderThreshold"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Reorder Threshold (in {watchedBaseUnit || 'Base Units'})</FormLabel>
+                      <FormLabel>Reorder Threshold (in {watchedBaseUnit || 'Base Units'}) (Optional)</FormLabel>
                       <FormControl>
                         <Input type="number" placeholder="e.g., 24" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)} />
                       </FormControl>
