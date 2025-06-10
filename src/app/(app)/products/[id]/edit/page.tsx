@@ -40,16 +40,16 @@ export default function EditProductPage() {
 
   const form = useForm<ValidatedProductFormData>({
     resolver: zodResolver(productFormSchema),
-    defaultValues: { // Provide defaults for all fields expected by schema
+    defaultValues: {
         productName: "",
         category: PRODUCT_CATEGORIES[0],
         baseUnit: PRODUCT_UNITS[0],
         purchaseUnit: PRODUCT_UNITS[0],
         purchaseUnitConversionFactor: 1,
         purchasePrice: '' as unknown as number,
-        retailPricePerBaseUnit: '' as unknown as number,
+        retailPricePerBaseUnit: '' as unknown as number, // Will be handled by Zod default
         wholesalePricePerBaseUnit: '' as unknown as number,
-        initialStock: '' as unknown as number, // Represents current stock on edit page
+        initialStock: '' as unknown as number,
         reorderThreshold: 0,
     }
   });
@@ -67,7 +67,7 @@ export default function EditProductPage() {
     async function fetchInitialData() {
       setIsLoadingSession(true);
       setIsLoadingProduct(true);
-      
+
       const currentSession = await getSession();
       setSession(currentSession);
       setUserRole(currentSession?.role);
@@ -86,6 +86,14 @@ export default function EditProductPage() {
               conversionFactor = 1;
             }
 
+            // Determine wholesale price to display in form
+            // If purchase unit is different from base unit, display price per purchase unit
+            let wholesalePriceForForm = product.wholesalePricePerBaseUnit;
+            if (product.baseUnit !== product.purchaseUnit && product.purchaseUnitConversionFactor && product.purchaseUnitConversionFactor > 0) {
+              wholesalePriceForForm = product.wholesalePricePerBaseUnit * product.purchaseUnitConversionFactor;
+            }
+
+
             form.reset({
               productName: product.name,
               category: product.category,
@@ -93,9 +101,9 @@ export default function EditProductPage() {
               purchaseUnit: product.purchaseUnit,
               purchaseUnitConversionFactor: conversionFactor,
               purchasePrice: product.purchasePrice,
-              retailPricePerBaseUnit: product.retailPricePerBaseUnit ?? 0, // Default to 0 if null/undefined
-              wholesalePricePerBaseUnit: product.wholesalePricePerBaseUnit,
-              initialStock: product.quantityInStock, 
+              retailPricePerBaseUnit: product.retailPricePerBaseUnit ?? 0,
+              wholesalePricePerBaseUnit: parseFloat(wholesalePriceForForm.toFixed(2)), // This is what user edits
+              initialStock: product.quantityInStock,
               reorderThreshold: product.reorderThreshold ?? 0,
             });
             setProductNotFound(false);
@@ -112,7 +120,7 @@ export default function EditProductPage() {
         }
       } else {
         setIsLoadingProduct(false);
-        setProductNotFound(true); 
+        setProductNotFound(true);
       }
     }
     fetchInitialData();
@@ -134,29 +142,35 @@ export default function EditProductPage() {
   const { isSubmitting } = form.formState;
 
   async function onSubmit(data: ValidatedProductFormData) {
-    let formData = {...data};
+    let submissionData = {...data};
 
-    if (formData.baseUnit === formData.purchaseUnit) {
-      formData.purchaseUnitConversionFactor = 1;
-    } else if (formData.purchaseUnit === "dozen" && formData.baseUnit === "piece") {
-      formData.purchaseUnitConversionFactor = 12;
+    if (submissionData.baseUnit === submissionData.purchaseUnit) {
+      submissionData.purchaseUnitConversionFactor = 1;
+    } else if (submissionData.purchaseUnit === "dozen" && submissionData.baseUnit === "piece") {
+      submissionData.purchaseUnitConversionFactor = 12;
     }
 
-    if (formData.baseUnit !== formData.purchaseUnit &&
-        !(formData.purchaseUnit === "dozen" && formData.baseUnit === "piece") &&
-        (!formData.purchaseUnitConversionFactor || formData.purchaseUnitConversionFactor < 1) ) {
+    if (submissionData.baseUnit !== submissionData.purchaseUnit &&
+        !(submissionData.purchaseUnit === "dozen" && submissionData.baseUnit === "piece") &&
+        (!submissionData.purchaseUnitConversionFactor || submissionData.purchaseUnitConversionFactor < 1) ) {
         toast({ title: "Error", description: "A valid conversion factor (>0) is required if units differ and are not dozen/piece.", variant: "destructive" });
         form.setError("purchaseUnitConversionFactor", { type: "manual", message: "Conversion factor is required and must be > 0."});
         return;
     }
-    
+
     if (userRole === 'staff' && productDetails) {
-        formData.purchasePrice = productDetails.purchasePrice;
+        submissionData.purchasePrice = productDetails.purchasePrice;
+    }
+
+    // Convert wholesale price to per base unit if entered per purchase unit
+    if (submissionData.baseUnit !== submissionData.purchaseUnit && submissionData.purchaseUnitConversionFactor && submissionData.purchaseUnitConversionFactor > 0) {
+      const enteredWholesalePrice = submissionData.wholesalePricePerBaseUnit; // User entered this as "per purchase unit"
+      submissionData.wholesalePricePerBaseUnit = parseFloat((enteredWholesalePrice / submissionData.purchaseUnitConversionFactor).toFixed(2));
     }
 
 
     try {
-      const result = await updateProductAction(productId, formData);
+      const result = await updateProductAction(productId, submissionData);
       if (result.success) {
         toast({
           title: "Success!",
@@ -182,6 +196,8 @@ export default function EditProductPage() {
 
   const canEditStock = userRole === 'owner';
   const canEditPurchasePrice = userRole === 'owner';
+  const wholesalePriceUnitLabel = watchedBaseUnit === watchedPurchaseUnit ? watchedBaseUnit : watchedPurchaseUnit || "Purchase Unit";
+
 
   if (isLoadingProduct || isLoadingSession) {
     return (
@@ -317,7 +333,7 @@ export default function EditProductPage() {
                   Automatic conversion: 1 dozen = 12 pieces. Factor is set to 12.
                 </div>
               )}
-              
+
               {canEditPurchasePrice ? (
                 <FormField
                   control={form.control}
@@ -333,7 +349,7 @@ export default function EditProductPage() {
                   )}
                 />
               ) : (
-                productDetails && (productDetails.purchasePrice === undefined || productDetails.purchasePrice <= 0) && (
+                 productDetails && (productDetails.purchasePrice === undefined || productDetails.purchasePrice <= 0) && (
                   <div className="space-y-1">
                     <FormLabel>Purchase Price</FormLabel>
                     <div className="p-3 border rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-sm">
@@ -363,10 +379,10 @@ export default function EditProductPage() {
                 />
                 <FormField
                   control={form.control}
-                  name="wholesalePricePerBaseUnit"
+                  name="wholesalePricePerBaseUnit" // Name remains for RHF, label is dynamic
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Wholesale Price (Rs. per {watchedBaseUnit || 'Base Unit'})</FormLabel>
+                      <FormLabel>Wholesale Price (Rs. per {wholesalePriceUnitLabel})</FormLabel>
                       <FormControl>
                         <Input type="number" placeholder="e.g., 40.00" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} />
                       </FormControl>
@@ -379,18 +395,18 @@ export default function EditProductPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
-                  name="initialStock" 
+                  name="initialStock"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Current Stock (in {watchedBaseUnit || 'Base Units'})</FormLabel>
                       <FormControl>
-                        <Input 
-                          type="number" 
-                          placeholder="e.g., 100" 
-                          step="1" 
-                          {...field} 
-                          onChange={e => field.onChange(parseInt(e.target.value, 10) || '')} 
-                          disabled={!canEditStock && userRole === 'staff'} 
+                        <Input
+                          type="number"
+                          placeholder="e.g., 100"
+                          step="1"
+                          {...field}
+                          onChange={e => field.onChange(parseInt(e.target.value, 10) || '')}
+                          disabled={!canEditStock && userRole === 'staff'}
                         />
                       </FormControl>
                       {!canEditStock && userRole === 'staff' && (
@@ -463,5 +479,3 @@ export default function EditProductPage() {
     </div>
   );
 }
-
-    

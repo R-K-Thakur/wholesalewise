@@ -62,7 +62,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
   const form = useForm<SaleFormData>({
     resolver: zodResolver(saleFormSchema),
     defaultValues: {
-      saleType: 'wholesale', 
+      saleType: 'wholesale',
       saleDate: new Date().toISOString().split('T')[0],
       items: [{
         productId: '',
@@ -73,9 +73,9 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       paymentMethod: 'cash',
       customerName: '',
       notes: '',
-      packagingCharges: undefined, 
-      transportCharges: undefined, 
-      amountPaid: 0, 
+      packagingCharges: undefined,
+      transportCharges: undefined,
+      amountPaid: 0,
     },
   });
 
@@ -98,33 +98,30 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
   }, [JSON.stringify(currentWatchedItems)]);
 
   const grandTotal = React.useMemo(() => {
-    const packaging = Number(watchedPackagingCharges) || 0; 
-    const transport = Number(watchedTransportCharges) || 0; 
+    const packaging = Number(watchedPackagingCharges) || 0;
+    const transport = Number(watchedTransportCharges) || 0;
     return parseFloat((itemsTotal + packaging + transport).toFixed(2));
   }, [itemsTotal, watchedPackagingCharges, watchedTransportCharges]);
-  
+
   React.useEffect(() => {
     const amountPaidFieldState = form.getFieldState("amountPaid");
-    const numericAmountPaid = Number(form.getValues("amountPaid")); // Use getValues for current form value
+    const numericAmountPaid = Number(form.getValues("amountPaid"));
     const roundedGrandTotal = parseFloat(grandTotal.toFixed(2));
-  
+
     if (isNaN(roundedGrandTotal) || roundedGrandTotal < 0) {
-      // If grandTotal is invalid, set amountPaid to 0 if it wasn't already dirty
       if (!amountPaidFieldState.isDirty && (isNaN(numericAmountPaid) || numericAmountPaid !== 0)) {
         form.setValue("amountPaid", 0, { shouldValidate: true, shouldDirty: false });
       }
       return;
     }
-  
+
     if (!amountPaidFieldState.isDirty) {
-      // If not dirty, always set to grandTotal
-      if (isNaN(numericAmountPaid) || Math.abs(numericAmountPaid - roundedGrandTotal) > 0.001) { // Check against current form value
+      if (isNaN(numericAmountPaid) || Math.abs(numericAmountPaid - roundedGrandTotal) > 0.001) {
           form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true, shouldDirty: false });
       }
     } else {
-      // If dirty, only cap at grandTotal if it's an overpayment
       if (!isNaN(numericAmountPaid) && numericAmountPaid > roundedGrandTotal) {
-        form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true, shouldDirty: true }); // Keep it dirty as it's a correction of user's input
+        form.setValue("amountPaid", roundedGrandTotal, { shouldValidate: true, shouldDirty: true });
       }
     }
   }, [grandTotal, form]);
@@ -154,8 +151,8 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       baseUnit: PRODUCT_UNITS[0],
       purchaseUnit: PRODUCT_UNITS[0],
       purchaseUnitConversionFactor: 1,
-      purchasePrice: 0, 
-      retailPricePerBaseUnit: '' as unknown as number,
+      purchasePrice: 0,
+      retailPricePerBaseUnit: '' as unknown as number, // Zod default
       wholesalePricePerBaseUnit: '' as unknown as number,
       initialStock: 0,
       reorderThreshold: 0,
@@ -197,7 +194,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     if (changed) {
       setItemSearchTexts(newSearchTexts);
     }
-  }, [currentWatchedItems, allProducts, itemSearchTexts]);
+  }, [JSON.stringify(currentWatchedItems), allProducts, itemSearchTexts]);
 
 
   const handleAddItem = () => {
@@ -228,8 +225,22 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       }
       form.setValue(`items.${itemIndex}.productId`, product.id, { shouldDirty: true });
       form.setValue(`items.${itemIndex}.soldUnit`, product.baseUnit, { shouldDirty: true });
-      const pricePerBaseUnit = product.wholesalePricePerBaseUnit;
-      form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerBaseUnit.toFixed(2)), { shouldDirty: true, shouldValidate: true });
+
+      // Set default price based on product.wholesalePricePerBaseUnit and the selected soldUnit
+      let pricePerSoldUnit = product.wholesalePricePerBaseUnit;
+      if (product.baseUnit === product.purchaseUnit || !product.purchaseUnitConversionFactor || product.purchaseUnitConversionFactor <= 0) {
+        // If units are same or conversion not applicable, price is per base unit
+        pricePerSoldUnit = product.wholesalePricePerBaseUnit;
+      } else {
+        // If selling in purchase units, multiply base unit price by conversion factor
+        if (form.getValues(`items.${itemIndex}.soldUnit`) === product.purchaseUnit) {
+           pricePerSoldUnit = product.wholesalePricePerBaseUnit * product.purchaseUnitConversionFactor;
+        } else { // selling in base units
+           pricePerSoldUnit = product.wholesalePricePerBaseUnit;
+        }
+      }
+
+      form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), { shouldDirty: true, shouldValidate: true });
 
       const newSearchTexts = [...itemSearchTexts];
       newSearchTexts[itemIndex] = product.name;
@@ -261,11 +272,14 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     currentWatchedItems.forEach((item, index) => {
         const product = allProducts.find(p => p.id === item.productId);
         if (product) {
-            const price = product.wholesalePricePerBaseUnit; 
-            let pricePerSoldUnit = price;
-            if (item.soldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor > 0) {
-                pricePerSoldUnit = price * product.purchaseUnitConversionFactor;
+            // product.wholesalePricePerBaseUnit is always per base unit
+            let pricePerSoldUnit = product.wholesalePricePerBaseUnit;
+
+            if (item.soldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor && product.purchaseUnitConversionFactor > 0) {
+                pricePerSoldUnit = product.wholesalePricePerBaseUnit * product.purchaseUnitConversionFactor;
             }
+            // If item.soldUnit is baseUnit, pricePerSoldUnit remains product.wholesalePricePerBaseUnit
+
             const newCalculatedPrice = parseFloat(pricePerSoldUnit.toFixed(2));
             if (!form.formState.dirtyFields.items?.[index]?.pricePerUnitSold || Number(form.getValues(`items.${index}.pricePerUnitSold`)) === 0) {
                  form.setValue(`items.${index}.pricePerUnitSold`, newCalculatedPrice, { shouldValidate: true, shouldDirty: !!form.formState.dirtyFields.items?.[index]?.pricePerUnitSold });
@@ -314,7 +328,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
           continue;
         }
         productNameForPayload = currentItemSearchText;
-        baseUnitForPayload = formItem.soldUnit; 
+        baseUnitForPayload = formItem.soldUnit;
         productIdForPayload = undefined;
       }
 
@@ -334,15 +348,15 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
         toast({title: "Validation Error", description: "Please correct the errors in the form.", variant: "destructive"});
         return;
     }
-    
+
     const finalItemsTotal = itemsForAction.reduce((sum, item) => sum + item.total, 0);
     const finalPackagingCharges = Number(data.packagingCharges) || 0;
     const finalTransportCharges = Number(data.transportCharges) || 0;
     const finalGrandTotalForSubmission = parseFloat((finalItemsTotal + finalPackagingCharges + finalTransportCharges).toFixed(2));
-    
+
     const finalAmountPaid = Number(data.amountPaid) || 0;
 
-    if (finalAmountPaid > finalGrandTotalForSubmission + 0.001) { 
+    if (finalAmountPaid > finalGrandTotalForSubmission + 0.001) {
         form.setError("amountPaid", {message: "Amount paid cannot exceed the grand total."});
         toast({title: "Validation Error", description: `Amount paid (Rs. ${finalAmountPaid.toFixed(2)}) cannot exceed the grand total (Rs. ${finalGrandTotalForSubmission.toFixed(2)}).`, variant: "destructive"});
         return;
@@ -392,10 +406,10 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     form.setValue(`items.${itemIndex}.soldUnit`, newSoldUnit, { shouldDirty: true });
     const product = allProducts.find(p => p.id === form.getValues(`items.${itemIndex}.productId`));
     if (product) {
-        const pricePerBaseUnit = product.wholesalePricePerBaseUnit; 
-        let pricePerSoldUnit = pricePerBaseUnit;
-        if (newSoldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor > 0) {
-            pricePerSoldUnit = pricePerBaseUnit * product.purchaseUnitConversionFactor;
+        // product.wholesalePricePerBaseUnit is always per base unit
+        let pricePerSoldUnit = product.wholesalePricePerBaseUnit;
+        if (newSoldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor && product.purchaseUnitConversionFactor > 0) {
+            pricePerSoldUnit = product.wholesalePricePerBaseUnit * product.purchaseUnitConversionFactor;
         }
         form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), { shouldValidate: true, shouldDirty: true });
     }
@@ -416,7 +430,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       baseUnit: PRODUCT_UNITS[0],
       purchaseUnit: PRODUCT_UNITS[0],
       purchaseUnitConversionFactor: 1,
-      purchasePrice: 0, 
+      purchasePrice: 0,
       retailPricePerBaseUnit: '' as unknown as number,
       wholesalePricePerBaseUnit: '' as unknown as number,
       initialStock: 0,
@@ -429,29 +443,37 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     setIsQuickAddModalOpen(true);
   };
 
+  const qafWholesalePriceUnitLabel = qafWatchedBaseUnit === qafWatchedPurchaseUnit ? qafWatchedBaseUnit : qafWatchedPurchaseUnit || "Purchase Unit";
+
   const handleQuickAddSubmit = async (data: AddProductFormData) => {
     setIsSubmittingQuickAdd(true);
-    
-    const payloadForAddProduct: AddProductFormData = {
-      ...data,
-      productName: data.productName.trim(), 
-      initialStock: 0, 
-      purchasePrice: currentUserRole === 'staff' ? 0 : (Number(data.purchasePrice) || 0), 
-      retailPricePerBaseUnit: data.retailPricePerBaseUnit ?? 0, // Ensure it defaults to 0 if empty
-    };
-    if (currentUserRole !== 'staff' && payloadForAddProduct.purchasePrice <=0 ) {
+
+    let submissionData = { ...data };
+    submissionData.productName = submissionData.productName.trim();
+    submissionData.initialStock = 0;
+    submissionData.purchasePrice = currentUserRole === 'staff' ? 0 : (Number(data.purchasePrice) || 0);
+    submissionData.retailPricePerBaseUnit = data.retailPricePerBaseUnit ?? 0;
+
+
+    if (currentUserRole !== 'staff' && submissionData.purchasePrice <=0 ) {
         quickAddForm.setError("purchasePrice", {type: "manual", message: "Owner must set a positive purchase price."});
         setIsSubmittingQuickAdd(false);
         return;
     }
 
+    // Convert wholesale price to per base unit if entered per purchase unit
+    if (submissionData.baseUnit !== submissionData.purchaseUnit && submissionData.purchaseUnitConversionFactor && submissionData.purchaseUnitConversionFactor > 0) {
+      const enteredWholesalePrice = submissionData.wholesalePricePerBaseUnit; // User entered this as "per purchase unit"
+      submissionData.wholesalePricePerBaseUnit = parseFloat((enteredWholesalePrice / submissionData.purchaseUnitConversionFactor).toFixed(2));
+    }
+
 
     try {
-      const result = await addProductAction(payloadForAddProduct);
+      const result = await addProductAction(submissionData);
       if (result.success && result.product) {
         toast({ title: "Product Added", description: `${result.product.name} added to inventory (Purchase Price: Rs. ${result.product.purchasePrice.toFixed(2)}). Stock is 0.` });
-        await onProductAdded(); 
-        setProductJustAddedId(result.product.id); 
+        await onProductAdded();
+        setProductJustAddedId(result.product.id);
         setIsQuickAddModalOpen(false);
       } else {
         toast({ title: "Error Adding Product", description: result.message || "Failed to add product.", variant: "destructive" });
@@ -570,11 +592,11 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                               {allProducts
                                 .filter(p => {
                                   const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                  if (!searchText) return true; 
+                                  if (!searchText) return true;
                                   return p.name.toLowerCase().includes(searchText) ||
                                     (p.sku && p.sku.toLowerCase().includes(searchText));
                                 })
-                                .slice(0, 10) 
+                                .slice(0, 10)
                                 .map((product) => (
                                   <CommandItem
                                     key={product.id}
@@ -657,7 +679,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                       <FormItem>
                         <FormLabel>Rate/Unit (Rs.)</FormLabel>
                         <FormControl>
-                          <Input 
+                          <Input
                               type="number"
                               placeholder="e.g., 700.00"
                               step="0.01" {...field}
@@ -714,7 +736,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   <FormLabel className="flex items-center gap-1"><PackagePlus className="h-4 w-4 text-muted-foreground" />Packaging Charges (Rs.)</FormLabel>
                   <FormControl>
                     <Input type="number" placeholder="e.g., 50.00" step="0.01" {...field}
-                          onChange={e => field.onChange(e.target.value)} 
+                          onChange={e => field.onChange(e.target.value)}
                           min="0" />
                   </FormControl>
                   <FormMessage />
@@ -729,7 +751,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   <FormLabel className="flex items-center gap-1"><Truck className="h-4 w-4 text-muted-foreground" />Transport Charges (Rs.)</FormLabel>
                   <FormControl>
                     <Input type="number" placeholder="e.g., 100.00" step="0.01" {...field}
-                          onChange={e => field.onChange(e.target.value)} 
+                          onChange={e => field.onChange(e.target.value)}
                           min="0" />
                   </FormControl>
                   <FormMessage />
@@ -748,7 +770,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                     <FormLabel>Amount Paid (Rs.)</FormLabel>
                     <FormControl>
                       <Input type="number" placeholder="e.g., 500.00" step="0.01" {...field}
-                            onChange={e => field.onChange(e.target.value)} 
+                            onChange={e => field.onChange(e.target.value)}
                              />
                     </FormControl>
                     <FormMessage />
@@ -878,7 +900,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Conversion ({qafWatchedBaseUnit}s per {qafWatchedPurchaseUnit})</FormLabel>
-                      <FormControl><Input type="number" placeholder="e.g., 12" step="1" {...field} onChange={e => field.onChange(e.target.value)} /></FormControl>
+                      <FormControl><Input type="number" placeholder="e.g., 12" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || '')} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -931,7 +953,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   name="wholesalePricePerBaseUnit"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Wholesale Price (Rs. per {quickAddForm.getValues("baseUnit") || 'Base Unit'})</FormLabel>
+                      <FormLabel>Wholesale Price (Rs. per {qafWholesalePriceUnitLabel})</FormLabel>
                       <FormControl><Input type="number" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} /></FormControl>
                       <FormMessage />
                     </FormItem>
@@ -944,7 +966,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Reorder Threshold (in {quickAddForm.getValues("baseUnit") || 'Base Units'}) (Optional)</FormLabel>
-                      <FormControl><Input type="number" step="1" {...field} onChange={e => field.onChange(e.target.value)} /></FormControl>
+                      <FormControl><Input type="number" step="1" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -1037,5 +1059,3 @@ export default function NewSalePage() {
     </div>
   );
 }
-
-    

@@ -29,10 +29,10 @@ export default function NewProductPage() {
       baseUnit: PRODUCT_UNITS[0],
       purchaseUnit: PRODUCT_UNITS[0],
       purchaseUnitConversionFactor: 1,
-      purchasePrice: '' as unknown as number, 
-      retailPricePerBaseUnit: '' as unknown as number, 
+      purchasePrice: '' as unknown as number,
+      retailPricePerBaseUnit: '' as unknown as number, // Handled by Zod default
       wholesalePricePerBaseUnit: '' as unknown as number,
-      initialStock: '' as unknown as number, 
+      initialStock: '' as unknown as number,
       reorderThreshold: 0,
     },
   });
@@ -40,7 +40,7 @@ export default function NewProductPage() {
   const { isSubmitting } = form.formState;
   const watchedBaseUnit = useWatch({ control: form.control, name: "baseUnit" });
   const watchedPurchaseUnit = useWatch({ control: form.control, name: "purchaseUnit" });
-  
+
   const showConversionFactorInput = React.useMemo(() => {
     if (watchedBaseUnit === watchedPurchaseUnit) return false;
     if (watchedPurchaseUnit === "dozen" && watchedBaseUnit === "piece") return false;
@@ -57,30 +57,36 @@ export default function NewProductPage() {
 
 
   async function onSubmit(data: ValidatedProductFormData) {
-    let formData = {...data};
-    
-    if (formData.baseUnit === formData.purchaseUnit) {
-      formData.purchaseUnitConversionFactor = 1;
-    } else if (formData.purchaseUnit === "dozen" && formData.baseUnit === "piece") {
-      formData.purchaseUnitConversionFactor = 12;
+    let submissionData = { ...data };
+
+    if (submissionData.baseUnit === submissionData.purchaseUnit) {
+      submissionData.purchaseUnitConversionFactor = 1;
+    } else if (submissionData.purchaseUnit === "dozen" && submissionData.baseUnit === "piece") {
+      submissionData.purchaseUnitConversionFactor = 12;
     }
 
-    if (formData.baseUnit !== formData.purchaseUnit && 
-        !(formData.purchaseUnit === "dozen" && formData.baseUnit === "piece") &&
-        (!formData.purchaseUnitConversionFactor || formData.purchaseUnitConversionFactor < 1) ) {
+    if (submissionData.baseUnit !== submissionData.purchaseUnit &&
+        !(submissionData.purchaseUnit === "dozen" && submissionData.baseUnit === "piece") &&
+        (!submissionData.purchaseUnitConversionFactor || submissionData.purchaseUnitConversionFactor < 1) ) {
         toast({ title: "Error", description: "A valid conversion factor (>0) is required if units differ and are not dozen/piece.", variant: "destructive" });
         form.setError("purchaseUnitConversionFactor", { type: "manual", message: "Conversion factor is required and must be > 0."});
         return;
     }
 
+    // Convert wholesale price to per base unit if entered per purchase unit
+    if (submissionData.baseUnit !== submissionData.purchaseUnit && submissionData.purchaseUnitConversionFactor && submissionData.purchaseUnitConversionFactor > 0) {
+      const enteredWholesalePrice = submissionData.wholesalePricePerBaseUnit; // User entered this as "per purchase unit"
+      submissionData.wholesalePricePerBaseUnit = parseFloat((enteredWholesalePrice / submissionData.purchaseUnitConversionFactor).toFixed(2));
+    }
+
     try {
-      const result = await addProduct(formData);
+      const result = await addProduct(submissionData);
       if (result.success) {
         toast({
           title: "Success!",
           description: result.message,
         });
-        form.reset(); 
+        form.reset();
         router.push('/products');
       } else {
         toast({
@@ -99,6 +105,9 @@ export default function NewProductPage() {
     }
   }
 
+  const wholesalePriceUnitLabel = watchedBaseUnit === watchedPurchaseUnit ? watchedBaseUnit : watchedPurchaseUnit || "Purchase Unit";
+
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-4">
@@ -110,7 +119,7 @@ export default function NewProductPage() {
         </Button>
         <h1 className="text-3xl font-bold tracking-tight font-headline">Add New Product</h1>
       </div>
-      
+
       <Card className="max-w-2xl mx-auto w-full">
         <CardHeader>
           <CardTitle>Product Details</CardTitle>
@@ -190,7 +199,7 @@ export default function NewProductPage() {
                   )}
                 />
               </div>
-              
+
               {showConversionFactorInput && (
                 <FormField
                   control={form.control}
@@ -226,7 +235,7 @@ export default function NewProductPage() {
                   </FormItem>
                 )}
               />
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
@@ -246,7 +255,7 @@ export default function NewProductPage() {
                   name="wholesalePricePerBaseUnit"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Wholesale Price (Rs. per {watchedBaseUnit || 'Base Unit'})</FormLabel>
+                      <FormLabel>Wholesale Price (Rs. per {wholesalePriceUnitLabel})</FormLabel>
                       <FormControl>
                         <Input type="number" placeholder="e.g., 40.00" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} />
                       </FormControl>
@@ -255,7 +264,7 @@ export default function NewProductPage() {
                   )}
                 />
               </div>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
@@ -301,4 +310,3 @@ export default function NewProductPage() {
     </div>
   );
 }
-

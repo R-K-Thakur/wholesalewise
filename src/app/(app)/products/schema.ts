@@ -17,19 +17,21 @@ export const productFormSchema = z.object({
     .number({ invalid_type_error: 'Conversion factor must be a number.' })
     .min(1, { message: 'Conversion factor must be at least 1.' })
     .optional(),
-  purchasePrice: z.coerce 
+  purchasePrice: z.coerce
     .number({ invalid_type_error: 'Purchase price must be a number.' })
     .nonnegative({ message: 'Purchase price (per purchase unit) cannot be negative.' }),
   retailPricePerBaseUnit: z.preprocess(
-    (val) => (val === "" || val === null || val === undefined ? undefined : Number(val)),
-    z.number({ invalid_type_error: 'Retail price must be a number or empty.' })
+    // Ensure empty strings or null/undefined become undefined for optional() to work with default()
+    (val) => (val === "" || val === null || val === undefined ? undefined : val),
+    z.coerce
+      .number({ invalid_type_error: 'Retail price must be a valid number or left empty.' })
       .nonnegative({ message: 'Retail price (per base unit) cannot be negative.' })
       .optional()
       .default(0)
   ),
-  wholesalePricePerBaseUnit: z.coerce
+  wholesalePricePerBaseUnit: z.coerce // This will store the price per BASE unit after potential client-side conversion
     .number({ invalid_type_error: 'Wholesale price must be a number.' })
-    .positive({ message: 'Wholesale price (per base unit) must be positive.' }),
+    .positive({ message: 'Wholesale price must be positive.' }),
   initialStock: z.coerce
     .number({ invalid_type_error: 'Stock quantity must be a number.' })
     .int({ message: 'Stock quantity must be a whole number.' })
@@ -41,7 +43,7 @@ export const productFormSchema = z.object({
     .optional(),
 }).superRefine((data, ctx) => {
   if (data.baseUnit !== data.purchaseUnit && (data.purchaseUnitConversionFactor === undefined || data.purchaseUnitConversionFactor < 1)) {
-    if (!(data.purchaseUnit === "dozen" && data.baseUnit === "piece")) { 
+    if (!(data.purchaseUnit === "dozen" && data.baseUnit === "piece")) {
         ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message: "Conversion factor is required and must be at least 1 when purchase unit differs from base unit.",
@@ -52,4 +54,3 @@ export const productFormSchema = z.object({
 });
 
 export type ValidatedProductFormData = z.infer<typeof productFormSchema>;
-
