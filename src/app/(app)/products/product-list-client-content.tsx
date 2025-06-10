@@ -28,7 +28,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import type { Product } from "@/lib/types";
 import { deleteProductAction, addStockToProductAction } from "./actions";
-import { ChevronLeft, ChevronRight, PlusCircle, Edit, Trash2, PackagePlus, Loader2, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, PlusCircle, Edit, Trash2, PackagePlus, Loader2, Search, AlertTriangle } from "lucide-react";
 import { ITEMS_PER_PAGE_STORAGE_KEY } from "@/lib/constants";
 import { getSession, type SessionData } from "@/app/login/actions";
 
@@ -47,6 +47,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [productToDelete, setProductToDelete] = React.useState<Product | null>(null);
+  const [isDeleting, setIsDeleting] = React.useState(false);
 
   const [isAddStockDialogOpen, setIsAddStockDialogOpen] = React.useState(false);
   const [productForStockAdd, setProductForStockAdd] = React.useState<Product | null>(null);
@@ -59,15 +60,26 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   
   const [session, setSession] = React.useState<SessionData | null>(null);
   const [sessionLoaded, setSessionLoaded] = React.useState(false);
-  const [isMounted, setIsMounted] = React.useState(false); // Still useful for localStorage
+  const [isMounted, setIsMounted] = React.useState(false);
+
+  // State for column visibility, defaults to hidden (staff view)
+  const [showPurchasePriceColumn, setShowPurchasePriceColumn] = React.useState(false);
+  const [tableColSpan, setTableColSpan] = React.useState(7);
 
 
   React.useEffect(() => {
-    setIsMounted(true); // For localStorage access
+    setIsMounted(true);
     async function fetchSessionData() {
       const currentSession = await getSession();
       setSession(currentSession);
-      setSessionLoaded(true); // Mark session as loaded
+      if (currentSession && currentSession.role !== 'staff') {
+        setShowPurchasePriceColumn(true);
+        setTableColSpan(8);
+      } else {
+        setShowPurchasePriceColumn(false);
+        setTableColSpan(7);
+      }
+      setSessionLoaded(true);
     }
     fetchSessionData();
 
@@ -98,6 +110,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
 
   const confirmDelete = async () => {
     if (productToDelete) {
+      setIsDeleting(true);
       const result = await deleteProductAction(productToDelete.id);
       if (result.success) {
         toast({
@@ -112,6 +125,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
           variant: "destructive",
         });
       }
+      setIsDeleting(false);
     }
     setProductToDelete(null);
     setIsDeleteDialogOpen(false);
@@ -120,11 +134,11 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   const handleAddStockClick = (product: Product) => {
     setProductForStockAdd(product);
     setQuantityToAdd("");
-    // Staff should not see or set purchase price here either
-    if (session && session.role !== 'staff') {
+    // Use the state variable showPurchasePriceColumn to decide
+    if (showPurchasePriceColumn) {
       setNewPurchasePrice(product.purchasePrice !== undefined ? product.purchasePrice.toString() : "");
     } else {
-      setNewPurchasePrice(""); // Clear it for staff or if undefined
+      setNewPurchasePrice(""); 
     }
     setIsAddStockDialogOpen(true);
   };
@@ -139,7 +153,8 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     const qty = Number(quantityToAdd);
     
     let price: number | undefined = undefined;
-    if (session && session.role !== 'staff' && newPurchasePrice !== "") {
+    // Use the state variable showPurchasePriceColumn here as well
+    if (showPurchasePriceColumn && newPurchasePrice !== "") {
       price = Number(newPurchasePrice);
       if (price !== undefined && price < 0) {
           toast({ title: "Input Error", description: "Purchase price cannot be negative.", variant: "destructive" });
@@ -178,8 +193,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     return <div className="py-10 text-center text-muted-foreground">Loading products list and user data...</div>;
   }
 
-  const showPurchasePriceColumn = session && session.role !== 'staff';
-  const tableColSpan = showPurchasePriceColumn ? 8 : 7;
+  // showPurchasePriceColumn and tableColSpan are now reliable state variables
 
   return (
     <>
@@ -234,9 +248,17 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
                   <Button variant="outline" size="sm" asChild title="Edit Product">
                     <Link href={`/products/${product.id}/edit`}><Edit className="h-4 w-4" /></Link>
                   </Button>
-                  <Button variant="destructive" size="sm" onClick={() => handleDeleteClick(product)} title="Delete Product">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  {session?.role === 'owner' && ( // Only owners can delete products from this list
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      onClick={() => handleDeleteClick(product)} 
+                      disabled={isDeleting && productToDelete?.id === product.id}
+                      title="Delete Product"
+                    >
+                      {isDeleting && productToDelete?.id === product.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -278,15 +300,21 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
         <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure you want to delete this product?</AlertDialogTitle>
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-6 w-6 text-destructive" />
+                 <AlertDialogTitle>Delete Product: {productToDelete.name}?</AlertDialogTitle>
+              </div>
               <AlertDialogDescription>
                 This action cannot be undone. This will permanently delete the product
-                "{productToDelete.name}".
+                "{productToDelete.name}". Associated sales records will remain but may show this product as unlisted.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setProductToDelete(null)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">Delete</AlertDialogAction>
+              <AlertDialogCancel onClick={() => {setIsDeleteDialogOpen(false); setProductToDelete(null);}} disabled={isDeleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" disabled={isDeleting}>
+                 {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Delete Product
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -318,7 +346,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
                     disabled={isSubmittingStock}
                   />
                 </div>
-                {showPurchasePriceColumn && ( // Only show if user is not staff
+                {showPurchasePriceColumn && ( 
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="newPurchasePrice" className="text-right col-span-1">
                       Price / {productForStockAdd.purchaseUnit} (Rs.)
@@ -353,4 +381,3 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     </>
   );
 }
-
