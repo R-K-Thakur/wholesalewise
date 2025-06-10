@@ -8,7 +8,7 @@ import { db } from '@/lib/firebase';
 import type { RecordSaleActionPayload } from './schema';
 import type { Product, Sale, SaleItem, PaymentTransaction, RecordAdditionalPaymentPayload } from '@/lib/types';
 import type { ProductUnit } from '@/lib/constants';
-import { getSession } from '@/app/login/actions';
+import { getSession, type SessionData } from '@/app/login/actions';
 
 const SALES_COLLECTION = 'sales';
 const PRODUCTS_COLLECTION = 'products';
@@ -61,6 +61,8 @@ const mapDocToSale = (document: import('firebase/firestore').DocumentSnapshot | 
     saleType: 'wholesale', // Always wholesale
     saleDate: typeof data.saleDate === 'string' ? data.saleDate : (data.saleDate?.toDate ? data.saleDate.toDate().toISOString().split('T')[0] : nowAsISO.split('T')[0]),
     customerName: typeof data.customerName === 'string' ? data.customerName : '',
+    customerNameInitiallyEmpty: typeof data.customerNameInitiallyEmpty === 'boolean' ? data.customerNameInitiallyEmpty : undefined,
+    staffMadeInitialEdit: typeof data.staffMadeInitialEdit === 'boolean' ? data.staffMadeInitialEdit : undefined,
     paymentMethod: ['cash', 'card', 'online', 'manual_adjustment'].includes(data.paymentMethod) ? data.paymentMethod as Sale['paymentMethod'] : undefined,
     notes: typeof data.notes === 'string' ? data.notes : '',
     createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (typeof data.createdAt === 'string' ? data.createdAt : nowAsISO),
@@ -138,9 +140,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         itemsTotalAmount += item.quantitySold * item.pricePerUnitSold;
       }
 
-      // Use data.packagingCharges directly from Zod (which is number | undefined)
       const finalBillTotalAmount = parseFloat((itemsTotalAmount + (data.packagingCharges || 0) + (data.transportCharges || 0)).toFixed(2));
-
       const totalPaidAmountForSale = parseFloat(data.amountPaid.toFixed(2));
 
       if (Math.abs(finalBillTotalAmount - data.totalAmount) > EPSILON) {
@@ -179,6 +179,8 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
 
       const newSaleDataObject: any = {
         customerName: data.customerName || '',
+        customerNameInitiallyEmpty: !data.customerName || data.customerName.trim() === '',
+        // staffMadeInitialEdit is not set at creation
         saleDate: data.saleDate,
         saleType: 'wholesale',
         items: saleItemsForDb,
@@ -197,14 +199,13 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
       if (paymentHistory.length > 0 && data.paymentMethod) {
         newSaleDataObject.paymentMethod = data.paymentMethod;
       }
-
-      // Conditionally add packagingCharges and transportCharges if they are defined (i.e., not empty in form)
-      if (data.packagingCharges !== undefined) {
+      if (data.packagingCharges !== undefined && data.packagingCharges > 0) {
         newSaleDataObject.packagingCharges = data.packagingCharges;
       }
-      if (data.transportCharges !== undefined) {
+      if (data.transportCharges !== undefined && data.transportCharges > 0) {
         newSaleDataObject.transportCharges = data.transportCharges;
       }
+
 
       transaction.set(doc(collection(db, SALES_COLLECTION)), newSaleDataObject as Omit<Sale, 'id'>);
     });
@@ -537,5 +538,62 @@ export async function deleteSaleAction(saleId: string): Promise<{ success: boole
   } catch (error) {
     console.error(`Error deleting sale ${saleId}:`, error);
     return { success: false, message: `Failed to delete sale: ${error instanceof Error ? error.message : 'Unknown error'}` };
+  }
+}
+
+export async function updateSaleCustomerNameAction(
+  saleId: string,
+  newCustomerName: string
+): Promise<{ success: boolean; message: string }> {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, message: "Unauthorized: You must be logged in." };
+  }
+
+  if (!newCustomerName || newCustomerName.trim() === "") {
+    // Allow setting to empty if it was initially empty and staff is making their one edit (or owner anytime)
+    // But generally, if a name exists, UI should prevent submitting an empty new name.
+    // For now, we'll allow empty string to signify clearing, but it's better handled by UI validation if a name is expected.
+  }
+  const trimmedNewName = newCustomerName.trim();
+
+  const saleRef = doc(db, SALES_COLLECTION, saleId);
+  const nowISO = Timestamp.now().toDate().toISOString();
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const saleDoc = await transaction.get(saleRef);
+      if (!saleDoc.exists()) {
+        throw new Error("Sale not found.");
+      }
+      const saleData = mapDocToSale(saleDoc);
+      const updatePayload: { customerName: string; updatedAt: string; staffMadeInitialEdit?: boolean } = {
+        customerName: trimmedNewName,
+        updatedAt: nowISO,
+      };
+
+      if (session.role === 'owner') {
+        // Owners can always edit
+      } else if (session.role === 'staff') {
+        if (saleData.customerNameInitiallyEmpty && !saleData.staffMadeInitialEdit) {
+          updatePayload.staffMadeInitialEdit = true;
+        } else {
+          throw new Error("Staff members are not permitted to change the customer name for this sale, or have already made their one-time edit.");
+        }
+      } else {
+        throw new Error("Unauthorized role for this action.");
+      }
+      transaction.update(saleRef, updatePayload);
+    });
+
+    revalidateTag('sales');
+    revalidatePath(`/sales/${saleId}`);
+    revalidatePath('/sales');
+    revalidatePath('/dashboard'); // Customer name might appear in recent activity
+
+    return { success: true, message: "Customer name updated successfully." };
+  } catch (error) {
+    console.error("Error updating sale customer name:", error);
+    return { success: false, message: `Failed to update customer name: ${error instanceof Error ? error.message : "Unknown error"}` };
   }
 }

@@ -13,8 +13,8 @@ import {
   DialogFooter,
   DialogDescription
 } from "@/components/ui/dialog";
-import { ArrowLeft, Printer, Eye, Loader2, Edit, PlusCircle, UserCircle, QrCode } from 'lucide-react';
-import { getSaleByIdAction, updateSalePaymentStatusAction, recordAdditionalPaymentAction, type UpdateSaleStatusPayload } from '../actions';
+import { ArrowLeft, Printer, Eye, Loader2, Edit, PlusCircle, UserCircle, QrCode, Pencil } from 'lucide-react';
+import { getSaleByIdAction, updateSalePaymentStatusAction, recordAdditionalPaymentAction, type UpdateSaleStatusPayload, updateSaleCustomerNameAction } from '../actions';
 import type { Sale, PaymentTransaction, RecordAdditionalPaymentPayload } from '@/lib/types';
 import { APP_NAME } from '@/lib/constants';
 import jsPDF from 'jspdf';
@@ -76,6 +76,10 @@ export default function SaleDetailPage() {
   const [paymentMethod, setPaymentMethod] = useState<Sale['paymentMethod']>('cash');
   const [paymentNotes, setPaymentNotes] = useState<string>("");
 
+  const [isEditCustomerNameDialogOpen, setIsEditCustomerNameDialogOpen] = useState(false);
+  const [editingCustomerName, setEditingCustomerName] = useState("");
+  const [isSubmittingCustomerName, setIsSubmittingCustomerName] = useState(false);
+
   const [pageUrlForQr, setPageUrlForQr] = useState<string>("");
 
   useEffect(() => {
@@ -112,10 +116,13 @@ export default function SaleDetailPage() {
           ]);
           setSale(fetchedSale);
           setSession(currentSession);
-          if (fetchedSale && fetchedSale.totalAmountDue > EPSILON) {
-            setPaymentAmount(fetchedSale.totalAmountDue.toFixed(2));
-          } else {
-            setPaymentAmount("");
+          if (fetchedSale) {
+            setEditingCustomerName(fetchedSale.customerName || "");
+            if (fetchedSale.totalAmountDue > EPSILON) {
+              setPaymentAmount(fetchedSale.totalAmountDue.toFixed(2));
+            } else {
+              setPaymentAmount("");
+            }
           }
         } catch (err) {
           console.error("Failed to fetch sale details or session:", err);
@@ -137,6 +144,16 @@ export default function SaleDetailPage() {
       invoicePrimaryColor: session?.invoicePrimaryColor,
     };
   }, [session]);
+
+  const canEditCustomerName = useMemo(() => {
+    if (!sale || !session) return false;
+    if (session.role === 'owner') return true;
+    if (session.role === 'staff') {
+      return sale.customerNameInitiallyEmpty === true && (sale.staffMadeInitialEdit === false || sale.staffMadeInitialEdit === undefined);
+    }
+    return false;
+  }, [sale, session]);
+
 
   if (isLoading) {
     return (
@@ -282,10 +299,7 @@ export default function SaleDetailPage() {
         tableLineWidth: 0.5,
         autoPaging: true, 
         didDrawPage: (data) => {
-            // This callback is for each page autoTable creates for the items list.
-            // We reset currentY to margin for content after the table, if the table itself adds pages.
-            // The final position after the whole table is handled by lastAutoTable.finalY.
-            if (data.pageNumber > 1) { // If autoTable added pages for items
+            if (data.pageNumber > 1) { 
                 currentY = margin;
             }
         },
@@ -623,10 +637,13 @@ export default function SaleDetailPage() {
       toast({ title: "Success", description: result.message });
       const updatedSale = await getSaleByIdAction(sale.id);
       setSale(updatedSale);
-      if (updatedSale && updatedSale.totalAmountDue > EPSILON) {
-        setPaymentAmount(updatedSale.totalAmountDue.toFixed(2));
-      } else {
-        setPaymentAmount("");
+      if (updatedSale) {
+        setEditingCustomerName(updatedSale.customerName || "");
+        if (updatedSale.totalAmountDue > EPSILON) {
+          setPaymentAmount(updatedSale.totalAmountDue.toFixed(2));
+        } else {
+          setPaymentAmount("");
+        }
       }
     } else {
       toast({ title: "Error", description: result.message, variant: "destructive" });
@@ -667,15 +684,46 @@ export default function SaleDetailPage() {
 
       const updatedSale = await getSaleByIdAction(sale.id);
       setSale(updatedSale);
-      if (updatedSale && updatedSale.totalAmountDue > EPSILON) {
+      if (updatedSale) {
+        setEditingCustomerName(updatedSale.customerName || "");
+        if (updatedSale.totalAmountDue > EPSILON) {
           setPaymentAmount(updatedSale.totalAmountDue.toFixed(2));
-      } else {
+        } else {
           setPaymentAmount("");
+        }
       }
     } else {
       toast({ title: "Error", description: result.message, variant: "destructive" });
     }
     setIsSubmittingPayment(false);
+  };
+
+  const handleEditCustomerNameSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!sale) return;
+    if (!editingCustomerName.trim() && sale.customerName) {
+        toast({ title: "Customer Name Required", description: "Customer name cannot be empty if it was previously set.", variant: "destructive" });
+        return;
+    }
+    if (editingCustomerName.trim() === (sale.customerName || "")) {
+        setIsEditCustomerNameDialogOpen(false);
+        return;
+    }
+
+    setIsSubmittingCustomerName(true);
+    const result = await updateSaleCustomerNameAction(sale.id, editingCustomerName.trim());
+    if (result.success) {
+        toast({ title: "Success", description: result.message });
+        setIsEditCustomerNameDialogOpen(false);
+        const updatedSale = await getSaleByIdAction(sale.id);
+        setSale(updatedSale);
+        if (updatedSale) {
+            setEditingCustomerName(updatedSale.customerName || "");
+        }
+    } else {
+        toast({ title: "Error", description: result.message, variant: "destructive" });
+    }
+    setIsSubmittingCustomerName(false);
   };
 
 
@@ -803,7 +851,46 @@ export default function SaleDetailPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3 text-sm">
-            <div><strong>Customer:</strong> {sale.customerName || 'N/A'}</div>
+            <div className="flex items-center gap-1">
+                <strong>Customer:</strong> {sale.customerName || 'N/A'}
+                {canEditCustomerName && (
+                    <Dialog open={isEditCustomerNameDialogOpen} onOpenChange={setIsEditCustomerNameDialogOpen}>
+                        <DialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 ml-1" onClick={() => setEditingCustomerName(sale.customerName || "")}>
+                                <Pencil className="h-3 w-3" />
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-md">
+                            <DialogHeader>
+                                <DialogTitle>Edit Customer Name</DialogTitle>
+                                <DialogDescription>Update the customer's name for this sale.</DialogDescription>
+                            </DialogHeader>
+                            <form onSubmit={handleEditCustomerNameSubmit} className="space-y-4">
+                                <div>
+                                    <Label htmlFor="editingCustomerName">New Customer Name</Label>
+                                    <Input
+                                        id="editingCustomerName"
+                                        value={editingCustomerName}
+                                        onChange={(e) => setEditingCustomerName(e.target.value)}
+                                        placeholder="Enter customer name"
+                                        disabled={isSubmittingCustomerName}
+                                        maxLength={100}
+                                    />
+                                </div>
+                                <DialogFooter>
+                                    <Button type="button" variant="outline" onClick={() => setIsEditCustomerNameDialogOpen(false)} disabled={isSubmittingCustomerName}>
+                                        Cancel
+                                    </Button>
+                                    <Button type="submit" disabled={isSubmittingCustomerName || editingCustomerName.trim() === (sale.customerName || "")}>
+                                        {isSubmittingCustomerName ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                        Save Name
+                                    </Button>
+                                </DialogFooter>
+                            </form>
+                        </DialogContent>
+                    </Dialog>
+                )}
+            </div>
             <div><strong>Sale Date:</strong> {new Date(sale.saleDate).toLocaleDateString()}</div>
             <div><strong>Sale Type:</strong> <span className="capitalize">{sale.saleType}</span></div>
             <div>

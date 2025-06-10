@@ -66,6 +66,8 @@ export interface Sale {
   saleType: 'wholesale'; // Changed to wholesale only
   saleDate: string;
   customerName?: string;
+  customerNameInitiallyEmpty?: boolean; // New field
+  staffMadeInitialEdit?: boolean;      // New field
   paymentMethod?: 'cash' | 'card' | 'online';
   notes?: string;
   createdAt: string;
@@ -137,6 +139,7 @@ export interface RecordAdditionalPaymentPayload {
     
 
     
+
 
 
 
