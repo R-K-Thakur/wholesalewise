@@ -138,9 +138,8 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         itemsTotalAmount += item.quantitySold * item.pricePerUnitSold;
       }
 
-      const packagingCharges = data.packagingCharges || 0;
-      const transportCharges = data.transportCharges || 0;
-      const finalBillTotalAmount = parseFloat((itemsTotalAmount + packagingCharges + transportCharges).toFixed(2));
+      // Use data.packagingCharges directly from Zod (which is number | undefined)
+      const finalBillTotalAmount = parseFloat((itemsTotalAmount + (data.packagingCharges || 0) + (data.transportCharges || 0)).toFixed(2));
 
       const totalPaidAmountForSale = parseFloat(data.amountPaid.toFixed(2));
 
@@ -178,14 +177,11 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         paymentHistory.push(initialPayment);
       }
 
-      const newSaleData: Omit<Sale, 'id'> = {
+      const newSaleDataObject: any = {
         customerName: data.customerName || '',
         saleDate: data.saleDate,
-        saleType: 'wholesale', // Hardcoded to wholesale
-        paymentMethod: paymentHistory.length > 0 ? (data.paymentMethod || 'cash') : undefined,
+        saleType: 'wholesale',
         items: saleItemsForDb,
-        packagingCharges: packagingCharges > 0 ? packagingCharges : undefined,
-        transportCharges: transportCharges > 0 ? transportCharges : undefined,
         totalAmount: finalBillTotalAmount,
         totalPaidAmount: totalPaidAmountForSale,
         totalAmountDue: totalAmountDueForSale < 0 ? 0 : totalAmountDueForSale,
@@ -198,7 +194,19 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         recordedByName: userName,
       };
 
-      transaction.set(doc(collection(db, SALES_COLLECTION)), newSaleData);
+      if (paymentHistory.length > 0 && data.paymentMethod) {
+        newSaleDataObject.paymentMethod = data.paymentMethod;
+      }
+
+      // Conditionally add packagingCharges and transportCharges if they are defined (i.e., not empty in form)
+      if (data.packagingCharges !== undefined) {
+        newSaleDataObject.packagingCharges = data.packagingCharges;
+      }
+      if (data.transportCharges !== undefined) {
+        newSaleDataObject.transportCharges = data.transportCharges;
+      }
+
+      transaction.set(doc(collection(db, SALES_COLLECTION)), newSaleDataObject as Omit<Sale, 'id'>);
     });
 
     revalidateTag('sales');
