@@ -2,20 +2,18 @@
 "use server";
 
 import { cookies } from "next/headers";
-// import { redirect } from "next/navigation"; // redirect is removed
 import { doc, getDoc, setDoc, updateDoc, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import crypto from "crypto";
 
 const SESSION_COOKIE_NAME = "auth-session";
+const PIN_PENDING_COOKIE_NAME = "auth-session-pin-pending";
 const APP_SETTINGS_COLLECTION = "app_settings";
 const ROLE_MANAGEMENT_DOC = "role_management";
 const USERS_COLLECTION = "users";
 
-// Assuming shop operates 9:00 AM to 11:00 PM IST (UTC+5:30)
-// These constants represent the window in UTC.
-const UTC_STAFF_LOGIN_START_TIME = { H: 3, M: 30 }; // Represents 09:00 AM IST
-const UTC_STAFF_LOGIN_END_TIME = { H: 17, M: 30 };  // Represents 11:00 PM (23:00) IST. Login allowed if current UTC is strictly LESS than this.
-                                                  // (i.e., up to 17:29:59 UTC, which is 22:59:59 IST)
+const UTC_STAFF_LOGIN_START_TIME = { H: 3, M: 30 }; 
+const UTC_STAFF_LOGIN_END_TIME = { H: 17, M: 30 };  
 
 export interface SessionData {
   username: string;
@@ -35,12 +33,35 @@ interface UserDocumentData {
   shopName?: string;
   shopAddress?: string;
   shopContact?: string;
+  ownerPinHash?: string;
+  ownerPinSalt?: string;
 }
 
 interface RoleEmails {
   ownerEmails: string[];
   staffEmails: string[];
 }
+
+// --- PIN Hashing Utilities ---
+const HASH_ITERATIONS = 10000;
+const HASH_KEYLEN = 64;
+const HASH_DIGEST = "sha512";
+
+function generateSalt(length = 16): string {
+  return crypto.randomBytes(length).toString("hex");
+}
+
+function hashPin(pin: string, salt: string): string {
+  return crypto
+    .pbkdf2Sync(pin, salt, HASH_ITERATIONS, HASH_KEYLEN, HASH_DIGEST)
+    .toString("hex");
+}
+
+function verifyPin(pin: string, hash: string, salt: string): boolean {
+  const hashToVerify = hashPin(pin, salt);
+  return crypto.timingSafeEqual(Buffer.from(hashToVerify, 'hex'), Buffer.from(hash, 'hex'));
+}
+// --- End PIN Hashing Utilities ---
 
 async function getRoleEmailsFromFirestore(): Promise<RoleEmails> {
   if (!db) {
@@ -68,7 +89,7 @@ async function getRoleEmailsFromFirestore(): Promise<RoleEmails> {
   }
 }
 
-export async function signInWithEmailAction(email: string): Promise<{ success: boolean; error?: string }> {
+export async function signInWithEmailAction(email: string): Promise<{ success: boolean; error?: string; pinRequired?: boolean; email?: string }> {
   if (!db) {
     return { success: false, error: "Authentication service is critically misconfigured. Database unavailable." };
   }
@@ -100,67 +121,71 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
     const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
     let userDocSnap = await getDoc(userDocRef);
     let userDocDataFromDb: UserDocumentData | null = userDocSnap.exists() ? userDocSnap.data() as UserDocumentData : null;
-
-    console.log(`[signInWithEmailAction] Firestore displayName for ${userEmailLower}: '${userDocDataFromDb?.displayName}'`);
-
-    const userDataToSet: UserDocumentData = {
-      email: userEmailLower,
-      displayName: userDocDataFromDb?.displayName?.trim() ? userDocDataFromDb.displayName.trim() : userEmailLower,
-      invoicePrimaryColor: userDocDataFromDb?.invoicePrimaryColor,
-      shopName: userDocDataFromDb?.shopName,
-      shopAddress: userDocDataFromDb?.shopAddress,
-      shopContact: userDocDataFromDb?.shopContact,
-    };
     
+    const userDisplayName = userDocDataFromDb?.displayName?.trim() ? userDocDataFromDb.displayName.trim() : userEmailLower;
+
     if (userRole === "staff") {
-      const now = new Date(); // Server time (Firebase Functions are typically UTC)
+      const now = new Date(); 
       const currentUTCHour = now.getUTCHours();
       const currentUTCMinute = now.getUTCMinutes();
 
       const isAfterStartTime = currentUTCHour > UTC_STAFF_LOGIN_START_TIME.H || 
                               (currentUTCHour === UTC_STAFF_LOGIN_START_TIME.H && currentUTCMinute >= UTC_STAFF_LOGIN_START_TIME.M);
       
-      // Login is allowed if current time is strictly less than the end time.
-      // e.g., if END_TIME is 17:30 UTC, then 17:29 UTC is allowed, 17:30 UTC is not.
       const isBeforeEndTime = currentUTCHour < UTC_STAFF_LOGIN_END_TIME.H ||
                               (currentUTCHour === UTC_STAFF_LOGIN_END_TIME.H && currentUTCMinute < UTC_STAFF_LOGIN_END_TIME.M);
 
       if (!(isAfterStartTime && isBeforeEndTime)) {
-        // The error message still refers to the user-friendly local time window.
-        // No need to change the constants in the string if they are hardcoded for display.
         return { success: false, error: `Access denied. Staff login is only permitted between 09:00 and 23:00 (exclusive).` };
       }
     }
     
-    // Ensure user document is up-to-date in Firestore (especially if displayName was defaulted to email)
     await setDoc(userDocRef, {
-      email: userDataToSet.email,
-      displayName: userDataToSet.displayName, // Persist the chosen displayName
-      // Persist other details if they were read or defaulted
-      invoicePrimaryColor: userDataToSet.invoicePrimaryColor,
-      shopName: userDataToSet.shopName,
-      shopAddress: userDataToSet.shopAddress,
-      shopContact: userDataToSet.shopContact,
+      email: userEmailLower,
+      displayName: userDisplayName,
+      invoicePrimaryColor: userDocDataFromDb?.invoicePrimaryColor,
+      shopName: userDocDataFromDb?.shopName,
+      shopAddress: userDocDataFromDb?.shopAddress,
+      shopContact: userDocDataFromDb?.shopContact,
+      ownerPinHash: userDocDataFromDb?.ownerPinHash,
+      ownerPinSalt: userDocDataFromDb?.ownerPinSalt,
     }, { merge: true });
+
+    // Fetch the possibly updated doc again to get all fields including PIN fields
+    userDocSnap = await getDoc(userDocRef);
+    userDocDataFromDb = userDocSnap.exists() ? userDocSnap.data() as UserDocumentData : null;
+
+    if (userRole === "owner" && userDocDataFromDb?.ownerPinHash && userDocDataFromDb?.ownerPinSalt) {
+      const cookieStore = cookies();
+      const cookieSecure = process.env.NODE_ENV === 'production';
+      
+      const pinPendingData = { email: userEmailLower, name: userDisplayName };
+      cookieStore.set(PIN_PENDING_COOKIE_NAME, JSON.stringify(pinPendingData), {
+        httpOnly: true,
+        secure: cookieSecure,
+        maxAge: 60 * 10, // 10 minutes to complete PIN verification
+        path: "/",
+        sameSite: "lax" as const,
+      });
+      console.log(`[signInWithEmailAction] Owner ${userEmailLower} has PIN. Setting PIN_PENDING cookie.`);
+      return { success: true, pinRequired: true, email: userEmailLower };
+    }
     
+    // Proceed with full login for staff or owners without a PIN
     const sessionData: SessionData = {
       username: userEmailLower, 
       email: userEmailLower,    
       role: userRole!,
-      name: userDataToSet.displayName, // This uses the (potentially defaulted) displayName
-      invoicePrimaryColor: userDataToSet.invoicePrimaryColor,
-      shopName: userDataToSet.shopName,
-      shopAddress: userDataToSet.shopAddress,
-      shopContact: userDataToSet.shopContact,
+      name: userDisplayName,
+      invoicePrimaryColor: userDocDataFromDb?.invoicePrimaryColor,
+      shopName: userDocDataFromDb?.shopName,
+      shopAddress: userDocDataFromDb?.shopAddress,
+      shopContact: userDocDataFromDb?.shopContact,
     };
     
-    console.log(`[signInWithEmailAction] Setting session cookie. SessionData.name: '${sessionData.name}'`);
-    console.log('[signInWithEmailAction] EXACT Session data being set in cookie:', JSON.stringify(sessionData, null, 2));
-
-
+    console.log(`[signInWithEmailAction] Setting full session cookie for ${userEmailLower}. SessionData.name: '${sessionData.name}'`);
     const cookieStore = cookies();
     const cookieSecure = process.env.NODE_ENV === 'production';
-    console.log(`[signInWithEmailAction] Cookie settings: cookieSecure = ${cookieSecure}, effective SameSite will be 'Lax' (forced for this test)`);
     
     cookieStore.set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
       httpOnly: true,
@@ -184,9 +209,125 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
   }
 }
 
+export async function verifyOwnerPinAction(email: string, enteredPin: string): Promise<{ success: boolean; error?: string }> {
+  if (!email || !enteredPin) {
+    return { success: false, error: "Email and PIN are required." };
+  }
+
+  const userEmailLower = email.toLowerCase();
+  const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
+
+  try {
+    const userDocSnap = await getDoc(userDocRef);
+    if (!userDocSnap.exists()) {
+      return { success: false, error: "User not found." };
+    }
+
+    const userData = userDocSnap.data() as UserDocumentData;
+    if (userData.role !== "owner" && !(await getRoleEmailsFromFirestore()).ownerEmails.includes(userEmailLower) ) { // Double check role
+      return { success: false, error: "PIN verification is for owners only." };
+    }
+
+    if (!userData.ownerPinHash || !userData.ownerPinSalt) {
+      // This case should ideally not be reached if signInWithEmailAction handled it.
+      // But as a safeguard, if PIN is not set, log them in.
+      console.warn(`[verifyOwnerPinAction] Owner ${userEmailLower} reached PIN verification without a PIN set. Logging in directly.`);
+      // Fall through to create full session, or could redirect to PIN setup.
+      // For now, create full session.
+    } else {
+      const isPinValid = verifyPin(enteredPin, userData.ownerPinHash, userData.ownerPinSalt);
+      if (!isPinValid) {
+        return { success: false, error: "Invalid PIN." };
+      }
+    }
+
+    // PIN is valid or not set (allowing login), create full session
+    const sessionData: SessionData = {
+      username: userEmailLower,
+      email: userEmailLower,
+      role: "owner",
+      name: userData.displayName,
+      invoicePrimaryColor: userData.invoicePrimaryColor,
+      shopName: userData.shopName,
+      shopAddress: userData.shopAddress,
+      shopContact: userData.shopContact,
+    };
+
+    const cookieStore = cookies();
+    const cookieSecure = process.env.NODE_ENV === 'production';
+    
+    cookieStore.set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
+      httpOnly: true,
+      secure: cookieSecure,
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: "/",
+      sameSite: "lax" as const,
+    });
+
+    // Clear the PIN pending cookie
+    cookieStore.delete(PIN_PENDING_COOKIE_NAME);
+    console.log(`[verifyOwnerPinAction] PIN verified for ${userEmailLower}. Full session set. PIN_PENDING cookie cleared.`);
+    return { success: true };
+
+  } catch (e: any) {
+    console.error("[verifyOwnerPinAction] Error:", e);
+    return { success: false, error: "An unexpected error occurred during PIN verification." };
+  }
+}
+
+
+export async function setOrChangeOwnerPinAction(newPin: string, currentPin?: string): Promise<{ success: boolean; message?: string }> {
+  const session = await getSession();
+  if (!session || session.role !== "owner") {
+    return { success: false, message: "Unauthorized. Only owners can set/change PIN." };
+  }
+  if (!newPin || newPin.length < 4 || newPin.length > 8 || !/^\d+$/.test(newPin)) {
+    return { success: false, message: "New PIN must be 4-8 digits." };
+  }
+
+  const userEmailLower = session.email.toLowerCase();
+  const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
+
+  try {
+    const userDocSnap = await getDoc(userDocRef);
+    if (!userDocSnap.exists()) {
+      return { success: false, message: "User document not found." };
+    }
+    const userData = userDocSnap.data() as UserDocumentData;
+
+    if (userData.ownerPinHash && userData.ownerPinSalt) { // Changing existing PIN
+      if (!currentPin) {
+        return { success: false, message: "Current PIN is required to change an existing PIN." };
+      }
+      const isCurrentPinValid = verifyPin(currentPin, userData.ownerPinHash, userData.ownerPinSalt);
+      if (!isCurrentPinValid) {
+        return { success: false, message: "Incorrect current PIN." };
+      }
+    }
+    // Setting new PIN or changing after current PIN verified
+
+    const newSalt = generateSalt();
+    const newPinHash = hashPin(newPin, newSalt);
+
+    await updateDoc(userDocRef, {
+      ownerPinHash: newPinHash,
+      ownerPinSalt: newSalt,
+      updatedAt: Timestamp.now().toDate().toISOString(),
+    });
+
+    return { success: true, message: userData.ownerPinHash ? "PIN changed successfully." : "PIN set successfully." };
+
+  } catch (error) {
+    console.error("Error setting/changing PIN:", error);
+    return { success: false, message: `Failed to update PIN: ${error instanceof Error ? error.message : "Unknown error"}` };
+  }
+}
+
+
 export async function logoutAction() {
   const cookieStore = cookies(); 
   cookieStore.delete(SESSION_COOKIE_NAME);
+  cookieStore.delete(PIN_PENDING_COOKIE_NAME); // Also clear PIN pending cookie
 }
 
 export async function getSession(): Promise<SessionData | null> {
@@ -237,6 +378,25 @@ export async function getSession(): Promise<SessionData | null> {
     }
   }
   console.log("[getSession] No session cookie found.");
+  return null;
+}
+
+export async function getPinPendingSession(): Promise<{email: string; name: string} | null> {
+  const cookieStore = cookies();
+  const pinPendingCookie = cookieStore.get(PIN_PENDING_COOKIE_NAME);
+
+  if (pinPendingCookie && pinPendingCookie.value) {
+    try {
+      const parsedData = JSON.parse(pinPendingCookie.value);
+      if (parsedData && parsedData.email && parsedData.name) {
+        return { email: parsedData.email, name: parsedData.name };
+      }
+    } catch (error) {
+      console.error("[getPinPendingSession] Failed to parse PIN pending cookie:", error);
+      cookieStore.delete(PIN_PENDING_COOKIE_NAME); // Delete potentially malformed cookie
+      return null;
+    }
+  }
   return null;
 }
 

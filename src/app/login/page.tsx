@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { signInWithEmailAction } from "./actions"; // Removed logoutAction as it's not used here
+import { signInWithEmailAction } from "./actions"; 
 import { APP_NAME } from "@/lib/constants";
 import { Loader2, LogIn, Mail } from "lucide-react";
 
@@ -53,19 +53,22 @@ export default function LoginPage() {
       const serverResult = await signInWithEmailAction(email);
 
       if (serverResult?.success) {
-        toast({ title: "Login Successful", description: "Redirecting to dashboard...", variant: "default" });
-        router.push('/dashboard'); // Perform client-side redirect
+        if (serverResult.pinRequired && serverResult.email) {
+          toast({ title: "PIN Required", description: "Please enter your PIN to continue.", variant: "default" });
+          router.push(`/login/verify-pin?email=${encodeURIComponent(serverResult.email)}`);
+        } else {
+          toast({ title: "Login Successful", description: "Redirecting to dashboard...", variant: "default" });
+          router.push('/dashboard'); 
+        }
       } else if (serverResult?.error) { 
         setError(serverResult.error);
         toast({ title: "Login Failed", description: serverResult.error, variant: "destructive" });
       } else {
-        // This case should ideally not be reached if serverResult always has {success: boolean, error?: string}
         setError("An unexpected error occurred during login. Server response was unclear.");
         toast({ title: "Login Failed", description: "An unexpected error occurred. Server response was unclear.", variant: "destructive" });
       }
     } catch (e: any) {
       console.error("Email Sign-In Error (client-side catch):", e);
-      // Avoid showing generic NEXT_REDIRECT errors to the user directly if they occur
       const errorMessage = (e.message && !e.message.includes('NEXT_REDIRECT')) ? e.message : "An unknown error occurred during Sign-In.";
       setError(errorMessage);
       toast({ title: "Sign-In Failed", description: errorMessage, variant: "destructive" });
@@ -137,3 +140,4 @@ export default function LoginPage() {
 
 
     
+
