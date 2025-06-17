@@ -8,6 +8,7 @@ import crypto from "crypto";
 
 const SESSION_COOKIE_NAME = "auth-session";
 const PIN_PENDING_COOKIE_NAME = "auth-session-pin-pending";
+const PIN_SETUP_PENDING_COOKIE_NAME = "auth-session-pin-setup-pending"; // New cookie
 const APP_SETTINGS_COLLECTION = "app_settings";
 const ROLE_MANAGEMENT_DOC = "role_management";
 const USERS_COLLECTION = "users";
@@ -35,7 +36,6 @@ interface UserDocumentData {
   shopContact?: string;
   ownerPinHash?: string;
   ownerPinSalt?: string;
-  // Added role to UserDocumentData to simplify role check in verifyOwnerPinAction
   role?: "owner" | "staff"; 
 }
 
@@ -91,7 +91,32 @@ async function getRoleEmailsFromFirestore(): Promise<RoleEmails> {
   }
 }
 
-export async function signInWithEmailAction(email: string): Promise<{ success: boolean; error?: string; pinRequired?: boolean; email?: string }> {
+async function finalizeLoginSession(userData: UserDocumentData, role: "owner" | "staff"): Promise<void> {
+  const sessionData: SessionData = {
+    username: userData.email,
+    email: userData.email,
+    role: role,
+    name: userData.displayName,
+    invoicePrimaryColor: userData.invoicePrimaryColor,
+    shopName: userData.shopName,
+    shopAddress: userData.shopAddress,
+    shopContact: userData.shopContact,
+  };
+
+  const cookieStore = cookies();
+  const cookieSecure = process.env.NODE_ENV === 'production';
+  
+  cookieStore.set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
+    httpOnly: true,
+    secure: cookieSecure,
+    maxAge: 60 * 60 * 24 * 7, // 7 days
+    path: "/",
+    sameSite: "lax" as const,
+  });
+}
+
+
+export async function signInWithEmailAction(email: string): Promise<{ success: boolean; error?: string; pinRequired?: boolean; pinSetupRequired?: boolean; email?: string }> {
   if (!db) {
     return { success: false, error: "Authentication service is critically misconfigured. Database unavailable." };
   }
@@ -145,75 +170,62 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
     const userDataToSet: Partial<UserDocumentData> = {
       email: userEmailLower,
       displayName: userDisplayName,
-      role: userRole, // Store the role in the user document
+      role: userRole,
     };
 
-    if (userDocDataFromDb) { // If document exists, preserve existing optional fields
-        if (userDocDataFromDb.invoicePrimaryColor !== undefined) userDataToSet.invoicePrimaryColor = userDocDataFromDb.invoicePrimaryColor;
-        if (userDocDataFromDb.shopName !== undefined) userDataToSet.shopName = userDocDataFromDb.shopName;
-        if (userDocDataFromDb.shopAddress !== undefined) userDataToSet.shopAddress = userDocDataFromDb.shopAddress;
-        if (userDocDataFromDb.shopContact !== undefined) userDataToSet.shopContact = userDocDataFromDb.shopContact;
-        if (userDocDataFromDb.ownerPinHash !== undefined) userDataToSet.ownerPinHash = userDocDataFromDb.ownerPinHash;
-        if (userDocDataFromDb.ownerPinSalt !== undefined) userDataToSet.ownerPinSalt = userDocDataFromDb.ownerPinSalt;
+    if (userDocDataFromDb) {
+      if (userDocDataFromDb.invoicePrimaryColor !== undefined) userDataToSet.invoicePrimaryColor = userDocDataFromDb.invoicePrimaryColor;
+      if (userDocDataFromDb.shopName !== undefined) userDataToSet.shopName = userDocDataFromDb.shopName;
+      if (userDocDataFromDb.shopAddress !== undefined) userDataToSet.shopAddress = userDocDataFromDb.shopAddress;
+      if (userDocDataFromDb.shopContact !== undefined) userDataToSet.shopContact = userDocDataFromDb.shopContact;
+      // Only include PIN fields if they exist in the DB
+      if (userDocDataFromDb.ownerPinHash !== undefined) userDataToSet.ownerPinHash = userDocDataFromDb.ownerPinHash;
+      if (userDocDataFromDb.ownerPinSalt !== undefined) userDataToSet.ownerPinSalt = userDocDataFromDb.ownerPinSalt;
     }
-    // For a new user, ownerPinHash/Salt will NOT be in userDataToSet, so they won't be written as undefined.
-    // The role WILL be written.
 
     await setDoc(userDocRef, userDataToSet, { merge: true });
-
-    // Fetch the possibly updated doc again to get all fields including PIN fields
-    userDocSnap = await getDoc(userDocRef);
+    userDocSnap = await getDoc(userDocRef); // Re-fetch to get merged data
     userDocDataFromDb = userDocSnap.exists() ? userDocSnap.data() as UserDocumentData : null;
 
-    if (userRole === "owner" && userDocDataFromDb?.ownerPinHash && userDocDataFromDb?.ownerPinSalt) {
-      const cookieStore = cookies();
-      const cookieSecure = process.env.NODE_ENV === 'production';
-      
-      const pinPendingData = { email: userEmailLower, name: userDisplayName };
-      cookieStore.set(PIN_PENDING_COOKIE_NAME, JSON.stringify(pinPendingData), {
-        httpOnly: true,
-        secure: cookieSecure,
-        maxAge: 60 * 10, // 10 minutes to complete PIN verification
-        path: "/",
-        sameSite: "lax" as const,
-      });
-      console.log(`[signInWithEmailAction] Owner ${userEmailLower} has PIN. Setting PIN_PENDING cookie.`);
-      return { success: true, pinRequired: true, email: userEmailLower };
+    if (!userDocDataFromDb) {
+        // This should ideally not happen after a successful setDoc
+        throw new Error("Failed to retrieve user data after update.");
     }
-    
-    // Proceed with full login for staff or owners without a PIN
-    const sessionData: SessionData = {
-      username: userEmailLower, 
-      email: userEmailLower,    
-      role: userRole!,
-      name: userDisplayName,
-      invoicePrimaryColor: userDocDataFromDb?.invoicePrimaryColor,
-      shopName: userDocDataFromDb?.shopName,
-      shopAddress: userDocDataFromDb?.shopAddress,
-      shopContact: userDocDataFromDb?.shopContact,
-    };
-    
-    console.log(`[signInWithEmailAction] Setting full session cookie for ${userEmailLower}. SessionData.name: '${sessionData.name}'`);
+
     const cookieStore = cookies();
     const cookieSecure = process.env.NODE_ENV === 'production';
-    
-    cookieStore.set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
-      httpOnly: true,
-      secure: cookieSecure, 
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      path: "/",
-      sameSite: "lax" as const, 
-    });
 
+    if (userRole === "owner") {
+      if (userDocDataFromDb.ownerPinHash && userDocDataFromDb.ownerPinSalt) {
+        // Owner has an existing PIN, require verification
+        const pinPendingData = { email: userEmailLower, name: userDisplayName };
+        cookieStore.set(PIN_PENDING_COOKIE_NAME, JSON.stringify(pinPendingData), {
+          httpOnly: true, secure: cookieSecure, maxAge: 60 * 10, path: "/", sameSite: "lax" as const,
+        });
+        console.log(`[signInWithEmailAction] Owner ${userEmailLower} has PIN. Setting PIN_PENDING cookie.`);
+        return { success: true, pinRequired: true, email: userEmailLower };
+      } else {
+        // New owner or owner without PIN, require setup
+        const pinSetupPendingData = { email: userEmailLower, name: userDisplayName };
+        cookieStore.set(PIN_SETUP_PENDING_COOKIE_NAME, JSON.stringify(pinSetupPendingData), {
+          httpOnly: true, secure: cookieSecure, maxAge: 60 * 10, path: "/", sameSite: "lax" as const,
+        });
+        console.log(`[signInWithEmailAction] New owner ${userEmailLower} or owner without PIN. Setting PIN_SETUP_PENDING cookie.`);
+        return { success: true, pinSetupRequired: true, email: userEmailLower };
+      }
+    }
+    
+    // Staff login directly
+    await finalizeLoginSession(userDocDataFromDb, userRole);
+    console.log(`[signInWithEmailAction] Setting full session cookie for staff ${userEmailLower}.`);
     return { success: true };
 
   } catch (e: any) {
-    console.error("[signInWithEmailAction] Caught an unhandled server error during login:", e);
+    console.error("[signInWithEmailAction] Error:", e);
     let safeErrorMessage = "An unexpected server error occurred during login.";
-    // Prevent leaking detailed Firestore errors to client if they aren't strings
     if (e instanceof Error && typeof e.message === 'string' && e.message.trim() !== "") {
       safeErrorMessage = e.message.startsWith("Function setDoc() called with invalid data. Unsupported field value: undefined")
-        ? "Login setup error. Please try again." // Generic message for this specific error
+        ? "Login setup error. Please try again." 
         : `Login failed: ${e.message}`;
     } else if (typeof e === 'string' && e.trim() !== "") {
       safeErrorMessage = `Login failed: ${e}`;
@@ -237,7 +249,6 @@ export async function verifyOwnerPinAction(email: string, enteredPin: string): P
     }
 
     const userData = userDocSnap.data() as UserDocumentData;
-    // Check the role from the user document itself, or fall back to role_management doc as a safety
     if (userData.role !== "owner") { 
         const { ownerEmails } = await getRoleEmailsFromFirestore();
         if (!ownerEmails.includes(userEmailLower)) {
@@ -245,41 +256,17 @@ export async function verifyOwnerPinAction(email: string, enteredPin: string): P
         }
     }
 
-
     if (!userData.ownerPinHash || !userData.ownerPinSalt) {
-      console.warn(`[verifyOwnerPinAction] Owner ${userEmailLower} reached PIN verification without a PIN set. Logging in directly.`);
-    } else {
-      const isPinValid = verifyPin(enteredPin, userData.ownerPinHash, userData.ownerPinSalt);
-      if (!isPinValid) {
-        return { success: false, error: "Invalid PIN." };
-      }
+      return { success: false, error: "No PIN set for this owner account. Please set up a PIN first." };
+    }
+    
+    const isPinValid = verifyPin(enteredPin, userData.ownerPinHash, userData.ownerPinSalt);
+    if (!isPinValid) {
+      return { success: false, error: "Invalid PIN." };
     }
 
-    // PIN is valid or not set (allowing login), create full session
-    const sessionData: SessionData = {
-      username: userEmailLower,
-      email: userEmailLower,
-      role: "owner", // Role is confirmed owner at this point
-      name: userData.displayName,
-      invoicePrimaryColor: userData.invoicePrimaryColor,
-      shopName: userData.shopName,
-      shopAddress: userData.shopAddress,
-      shopContact: userData.shopContact,
-    };
-
-    const cookieStore = cookies();
-    const cookieSecure = process.env.NODE_ENV === 'production';
-    
-    cookieStore.set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
-      httpOnly: true,
-      secure: cookieSecure,
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      path: "/",
-      sameSite: "lax" as const,
-    });
-
-    // Clear the PIN pending cookie
-    cookieStore.delete(PIN_PENDING_COOKIE_NAME);
+    await finalizeLoginSession(userData, "owner");
+    cookies().delete(PIN_PENDING_COOKIE_NAME);
     console.log(`[verifyOwnerPinAction] PIN verified for ${userEmailLower}. Full session set. PIN_PENDING cookie cleared.`);
     return { success: true };
 
@@ -290,16 +277,41 @@ export async function verifyOwnerPinAction(email: string, enteredPin: string): P
 }
 
 
-export async function setOrChangeOwnerPinAction(newPin: string, currentPin?: string): Promise<{ success: boolean; message?: string }> {
-  const session = await getSession();
-  if (!session || session.role !== "owner") {
-    return { success: false, message: "Unauthorized. Only owners can set/change PIN." };
+export async function setOrChangeOwnerPinAction(newPin: string, currentPin?: string): Promise<{ success: boolean; message?: string, email?: string }> {
+  const sessionCookie = cookies().get(SESSION_COOKIE_NAME);
+  const pinSetupPendingCookie = cookies().get(PIN_SETUP_PENDING_COOKIE_NAME);
+
+  let userEmailLower: string | undefined;
+  let isSettingUpNewPin = false;
+
+  if (pinSetupPendingCookie && pinSetupPendingCookie.value) {
+    try {
+      const parsedData = JSON.parse(pinSetupPendingCookie.value);
+      userEmailLower = parsedData.email?.toLowerCase();
+      isSettingUpNewPin = true;
+    } catch {
+      // Malformed cookie, ignore
+    }
+  } else if (sessionCookie && sessionCookie.value) {
+    try {
+      const session = JSON.parse(sessionCookie.value) as SessionData;
+      if (session.role !== "owner") {
+        return { success: false, message: "Unauthorized. Only owners can set/change PIN from an active session." };
+      }
+      userEmailLower = session.email.toLowerCase();
+    } catch {
+      return { success: false, message: "Invalid session data." };
+    }
   }
+
+  if (!userEmailLower) {
+    return { success: false, message: "Unauthorized or session expired. Please log in again." };
+  }
+  
   if (!newPin || newPin.length < 4 || newPin.length > 8 || !/^\d+$/.test(newPin)) {
     return { success: false, message: "New PIN must be 4-8 digits." };
   }
 
-  const userEmailLower = session.email.toLowerCase();
   const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
 
   try {
@@ -309,7 +321,7 @@ export async function setOrChangeOwnerPinAction(newPin: string, currentPin?: str
     }
     const userData = userDocSnap.data() as UserDocumentData;
 
-    if (userData.ownerPinHash && userData.ownerPinSalt) { // Changing existing PIN
+    if (!isSettingUpNewPin && userData.ownerPinHash && userData.ownerPinSalt) { // Changing existing PIN from active session
       if (!currentPin) {
         return { success: false, message: "Current PIN is required to change an existing PIN." };
       }
@@ -329,7 +341,17 @@ export async function setOrChangeOwnerPinAction(newPin: string, currentPin?: str
       updatedAt: Timestamp.now().toDate().toISOString(),
     });
 
-    return { success: true, message: userData.ownerPinHash ? "PIN changed successfully." : "PIN set successfully." };
+    const message = (userData.ownerPinHash && !isSettingUpNewPin) ? "PIN changed successfully." : "PIN set successfully.";
+    
+    // If setting up new pin, clear the setup pending cookie
+    if (isSettingUpNewPin) {
+      cookies().delete(PIN_SETUP_PENDING_COOKIE_NAME);
+      console.log(`[setOrChangeOwnerPinAction] New PIN set for ${userEmailLower}. PIN_SETUP_PENDING cookie cleared.`);
+      // The calling page (/login/setup-pin) will handle finalizing the full session.
+      return { success: true, message: message, email: userEmailLower };
+    }
+
+    return { success: true, message: message };
 
   } catch (error) {
     console.error("Error setting/changing PIN:", error);
@@ -341,7 +363,8 @@ export async function setOrChangeOwnerPinAction(newPin: string, currentPin?: str
 export async function logoutAction() {
   const cookieStore = cookies(); 
   cookieStore.delete(SESSION_COOKIE_NAME);
-  cookieStore.delete(PIN_PENDING_COOKIE_NAME); // Also clear PIN pending cookie
+  cookieStore.delete(PIN_PENDING_COOKIE_NAME); 
+  cookieStore.delete(PIN_SETUP_PENDING_COOKIE_NAME); // Clear PIN setup pending cookie
 }
 
 export async function getSession(): Promise<SessionData | null> {
@@ -395,7 +418,12 @@ export async function getSession(): Promise<SessionData | null> {
   return null;
 }
 
-export async function getPinPendingSession(): Promise<{email: string; name: string} | null> {
+interface TempSessionInfo {
+  email: string;
+  name: string;
+}
+
+export async function getPinPendingSession(): Promise<TempSessionInfo | null> {
   const cookieStore = cookies();
   const pinPendingCookie = cookieStore.get(PIN_PENDING_COOKIE_NAME);
 
@@ -407,11 +435,58 @@ export async function getPinPendingSession(): Promise<{email: string; name: stri
       }
     } catch (error) {
       console.error("[getPinPendingSession] Failed to parse PIN pending cookie:", error);
-      cookieStore.delete(PIN_PENDING_COOKIE_NAME); // Delete potentially malformed cookie
+      cookieStore.delete(PIN_PENDING_COOKIE_NAME);
       return null;
     }
   }
   return null;
+}
+
+export async function getPinSetupPendingSession(): Promise<TempSessionInfo | null> {
+  const cookieStore = cookies();
+  const pinSetupPendingCookie = cookieStore.get(PIN_SETUP_PENDING_COOKIE_NAME);
+
+  if (pinSetupPendingCookie && pinSetupPendingCookie.value) {
+    try {
+      const parsedData = JSON.parse(pinSetupPendingCookie.value);
+      if (parsedData && parsedData.email && parsedData.name) {
+        return { email: parsedData.email, name: parsedData.name };
+      }
+    } catch (error) {
+      console.error("[getPinSetupPendingSession] Failed to parse PIN setup pending cookie:", error);
+      cookieStore.delete(PIN_SETUP_PENDING_COOKIE_NAME);
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function finalizeLoginAfterPinSetup(email: string): Promise<{ success: boolean; error?: string }> {
+    if (!email) {
+        return { success: false, error: "Email is required to finalize login." };
+    }
+    const userEmailLower = email.toLowerCase();
+    const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
+
+    try {
+        const userDocSnap = await getDoc(userDocRef);
+        if (!userDocSnap.exists()) {
+        return { success: false, error: "User not found during login finalization." };
+        }
+        const userData = userDocSnap.data() as UserDocumentData;
+        if (userData.role !== "owner") {
+             return { success: false, error: "Login finalization is for owners only." };
+        }
+
+        await finalizeLoginSession(userData, "owner");
+        cookies().delete(PIN_SETUP_PENDING_COOKIE_NAME); // Ensure this is cleared
+        console.log(`[finalizeLoginAfterPinSetup] Finalized login for ${userEmailLower}. Full session set. PIN_SETUP_PENDING cookie cleared.`);
+        return { success: true };
+
+    } catch (e:any) {
+        console.error("[finalizeLoginAfterPinSetup] Error:", e);
+        return { success: false, error: "An unexpected error occurred during login finalization." };
+    }
 }
 
 
@@ -432,7 +507,6 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
   const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
 
   try {
-    // Also update the role field in case it was missing, ensuring consistency
     await updateDoc(userDocRef, { displayName: newTrimmedName, role: session.role });
   } catch (dbError) {
     console.error("Error updating user displayName in Firestore:", dbError);
@@ -550,4 +624,5 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
 
 
     
+
 

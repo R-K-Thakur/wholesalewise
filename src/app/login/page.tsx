@@ -53,7 +53,10 @@ export default function LoginPage() {
       const serverResult = await signInWithEmailAction(email);
 
       if (serverResult?.success) {
-        if (serverResult.pinRequired && serverResult.email) {
+        if (serverResult.pinSetupRequired && serverResult.email) {
+          toast({ title: "PIN Setup Required", description: "Please set up your PIN to secure your account.", variant: "default" });
+          router.push(`/login/setup-pin?email=${encodeURIComponent(serverResult.email)}`);
+        } else if (serverResult.pinRequired && serverResult.email) {
           toast({ title: "PIN Required", description: "Please enter your PIN to continue.", variant: "default" });
           router.push(`/login/verify-pin?email=${encodeURIComponent(serverResult.email)}`);
         } else {
@@ -140,4 +143,5 @@ export default function LoginPage() {
 
 
     
+
 
