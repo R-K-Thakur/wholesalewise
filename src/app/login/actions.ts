@@ -35,6 +35,8 @@ interface UserDocumentData {
   shopContact?: string;
   ownerPinHash?: string;
   ownerPinSalt?: string;
+  // Added role to UserDocumentData to simplify role check in verifyOwnerPinAction
+  role?: "owner" | "staff"; 
 }
 
 interface RoleEmails {
@@ -140,16 +142,24 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
       }
     }
     
-    await setDoc(userDocRef, {
+    const userDataToSet: Partial<UserDocumentData> = {
       email: userEmailLower,
       displayName: userDisplayName,
-      invoicePrimaryColor: userDocDataFromDb?.invoicePrimaryColor,
-      shopName: userDocDataFromDb?.shopName,
-      shopAddress: userDocDataFromDb?.shopAddress,
-      shopContact: userDocDataFromDb?.shopContact,
-      ownerPinHash: userDocDataFromDb?.ownerPinHash,
-      ownerPinSalt: userDocDataFromDb?.ownerPinSalt,
-    }, { merge: true });
+      role: userRole, // Store the role in the user document
+    };
+
+    if (userDocDataFromDb) { // If document exists, preserve existing optional fields
+        if (userDocDataFromDb.invoicePrimaryColor !== undefined) userDataToSet.invoicePrimaryColor = userDocDataFromDb.invoicePrimaryColor;
+        if (userDocDataFromDb.shopName !== undefined) userDataToSet.shopName = userDocDataFromDb.shopName;
+        if (userDocDataFromDb.shopAddress !== undefined) userDataToSet.shopAddress = userDocDataFromDb.shopAddress;
+        if (userDocDataFromDb.shopContact !== undefined) userDataToSet.shopContact = userDocDataFromDb.shopContact;
+        if (userDocDataFromDb.ownerPinHash !== undefined) userDataToSet.ownerPinHash = userDocDataFromDb.ownerPinHash;
+        if (userDocDataFromDb.ownerPinSalt !== undefined) userDataToSet.ownerPinSalt = userDocDataFromDb.ownerPinSalt;
+    }
+    // For a new user, ownerPinHash/Salt will NOT be in userDataToSet, so they won't be written as undefined.
+    // The role WILL be written.
+
+    await setDoc(userDocRef, userDataToSet, { merge: true });
 
     // Fetch the possibly updated doc again to get all fields including PIN fields
     userDocSnap = await getDoc(userDocRef);
@@ -200,8 +210,11 @@ export async function signInWithEmailAction(email: string): Promise<{ success: b
   } catch (e: any) {
     console.error("[signInWithEmailAction] Caught an unhandled server error during login:", e);
     let safeErrorMessage = "An unexpected server error occurred during login.";
+    // Prevent leaking detailed Firestore errors to client if they aren't strings
     if (e instanceof Error && typeof e.message === 'string' && e.message.trim() !== "") {
-      safeErrorMessage = `Login failed: ${e.message}`;
+      safeErrorMessage = e.message.startsWith("Function setDoc() called with invalid data. Unsupported field value: undefined")
+        ? "Login setup error. Please try again." // Generic message for this specific error
+        : `Login failed: ${e.message}`;
     } else if (typeof e === 'string' && e.trim() !== "") {
       safeErrorMessage = `Login failed: ${e}`;
     }
@@ -224,16 +237,17 @@ export async function verifyOwnerPinAction(email: string, enteredPin: string): P
     }
 
     const userData = userDocSnap.data() as UserDocumentData;
-    if (userData.role !== "owner" && !(await getRoleEmailsFromFirestore()).ownerEmails.includes(userEmailLower) ) { // Double check role
-      return { success: false, error: "PIN verification is for owners only." };
+    // Check the role from the user document itself, or fall back to role_management doc as a safety
+    if (userData.role !== "owner") { 
+        const { ownerEmails } = await getRoleEmailsFromFirestore();
+        if (!ownerEmails.includes(userEmailLower)) {
+            return { success: false, error: "PIN verification is for owners only." };
+        }
     }
 
+
     if (!userData.ownerPinHash || !userData.ownerPinSalt) {
-      // This case should ideally not be reached if signInWithEmailAction handled it.
-      // But as a safeguard, if PIN is not set, log them in.
       console.warn(`[verifyOwnerPinAction] Owner ${userEmailLower} reached PIN verification without a PIN set. Logging in directly.`);
-      // Fall through to create full session, or could redirect to PIN setup.
-      // For now, create full session.
     } else {
       const isPinValid = verifyPin(enteredPin, userData.ownerPinHash, userData.ownerPinSalt);
       if (!isPinValid) {
@@ -245,7 +259,7 @@ export async function verifyOwnerPinAction(email: string, enteredPin: string): P
     const sessionData: SessionData = {
       username: userEmailLower,
       email: userEmailLower,
-      role: "owner",
+      role: "owner", // Role is confirmed owner at this point
       name: userData.displayName,
       invoicePrimaryColor: userData.invoicePrimaryColor,
       shopName: userData.shopName,
@@ -418,7 +432,8 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
   const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
 
   try {
-    await updateDoc(userDocRef, { displayName: newTrimmedName });
+    // Also update the role field in case it was missing, ensuring consistency
+    await updateDoc(userDocRef, { displayName: newTrimmedName, role: session.role });
   } catch (dbError) {
     console.error("Error updating user displayName in Firestore:", dbError);
     return { success: false, message: "Failed to save display name to the database." };
@@ -535,3 +550,4 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
 
 
     
+
