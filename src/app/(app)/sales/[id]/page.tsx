@@ -68,6 +68,8 @@ export default function SaleDetailPage() {
   const [isThermalPreviewModalOpen, setIsThermalPreviewModalOpen] = useState(false);
   const [thermalPreviewPdfUrl, setThermalPreviewPdfUrl] = useState<string | null>(null);
 
+  const [isProcessingA4Thermal, setIsProcessingA4Thermal] = useState(false);
+
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   const [isRecordPaymentDialogOpen, setIsRecordPaymentDialogOpen] = useState(false);
@@ -412,15 +414,15 @@ export default function SaleDetailPage() {
     try {
       const thermalWidthMm = 80;
       const thermalWidthPt = thermalWidthMm * (72 / 25.4);
-      const marginPt = 8;
-      const contentWidthPt = thermalWidthPt - 2 * marginPt;
       const initialPageHeightPt = 800; 
 
       const doc = new jsPDF({
         unit: 'pt',
         format: [thermalWidthPt, initialPageHeightPt],
       }) as jsPDFWithAutoTable;
-
+      
+      const marginPt = 8;
+      const contentWidthPt = thermalWidthPt - 2 * marginPt;
       let currentY = marginPt + 5; 
 
       doc.setFontSize(10);
@@ -585,6 +587,172 @@ export default function SaleDetailPage() {
     }
   };
 
+  const generateA4MultiReceiptPDF = (options?: PdfOptions) => {
+    if (!sale) return;
+    setIsProcessingA4Thermal(true);
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' }) as jsPDFWithAutoTable;
+    const pageA4Width = doc.internal.pageSize.getWidth(); // approx 842
+    const receiptColumnWidth = pageA4Width / 3;
+
+    const drawReceipt = (startX: number) => {
+        let currentY = 20;
+        const margin = 15;
+        const contentWidth = receiptColumnWidth - (2 * margin);
+
+        const shopName = options?.shopDetails?.shopName || APP_NAME;
+        const shopAddress = options?.shopDetails?.shopAddress;
+        const shopContact = options?.shopDetails?.shopContact;
+
+        // --- Header ---
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.text(shopName, startX + receiptColumnWidth / 2, currentY, { align: 'center', maxWidth: contentWidth });
+        currentY += doc.getTextDimensions(shopName, {fontSize: 12, maxWidth: contentWidth}).h;
+
+        if (shopAddress) {
+            doc.setFontSize(8);
+            doc.setFont(undefined, 'normal');
+            const addressLines = doc.splitTextToSize(shopAddress, contentWidth);
+            doc.text(addressLines, startX + receiptColumnWidth / 2, currentY, { align: 'center' });
+            currentY += (addressLines.length * 8) + 2;
+        }
+        if (shopContact) {
+            doc.setFontSize(8);
+            doc.setFont(undefined, 'normal');
+            doc.text(shopContact, startX + receiptColumnWidth / 2, currentY, { align: 'center', maxWidth: contentWidth });
+            currentY += 10;
+        }
+
+        // --- Dotted Line ---
+        doc.setLineDashPattern([2, 2], 0);
+        doc.line(startX + margin, currentY, startX + receiptColumnWidth - margin, currentY);
+        doc.setLineDashPattern([], 0);
+        currentY += 10;
+
+        // --- Sale Info ---
+        doc.setFontSize(8);
+        doc.setFont(undefined, 'normal');
+        const saleDate = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.saleDate);
+
+        doc.text(`ID: ${sale.id}`, startX + margin, currentY);
+        currentY += 10;
+        doc.text(`Date: ${format(saleDate, "dd/MM/yyyy hh:mm a")}`, startX + margin, currentY);
+        currentY += 10;
+        if(sale.customerName) {
+            doc.text(`Cust: ${sale.customerName}`, startX + margin, currentY, { maxWidth: contentWidth });
+            currentY += 10;
+        }
+        doc.text(`By: ${sale.recordedByName || sale.recordedByEmail || 'N/A'}`, startX + margin, currentY);
+        currentY += 12;
+
+        // --- Items Table ---
+        const tableRows = sale.items.map(item => [item.productNameSnapshot, item.quantitySold, item.pricePerUnitSold.toFixed(2), item.total.toFixed(2)]);
+        autoTable(doc, {
+            head: [['Item', 'Qty', 'Rate', 'Total']],
+            body: tableRows,
+            startY: currentY,
+            theme: 'plain',
+            styles: { fontSize: 8, cellPadding: { top: 1, bottom: 1, left: 2, right: 2 }, overflow: 'linebreak' },
+            headStyles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5, cellPadding: 2 },
+            columnStyles: {
+                0: { cellWidth: contentWidth * 0.45, halign: 'left' },
+                1: { cellWidth: contentWidth * 0.15, halign: 'right' },
+                2: { cellWidth: contentWidth * 0.20, halign: 'right' },
+                3: { cellWidth: contentWidth * 0.20, halign: 'right' },
+            },
+            margin: { left: startX + margin, right: margin }
+        });
+        currentY = (doc as any).lastAutoTable.finalY + 5;
+
+        // --- Dotted Line ---
+        doc.setLineDashPattern([2, 2], 0);
+        doc.line(startX + margin, currentY, startX + receiptColumnWidth - margin, currentY);
+        doc.setLineDashPattern([], 0);
+        currentY += 12;
+
+        // --- Totals Section ---
+        doc.setFontSize(9);
+        const totalsX = startX + margin;
+        const valuesX = startX + receiptColumnWidth - margin;
+        
+        const itemsSubtotal = sale.items.reduce((sum, item) => sum + item.total, 0);
+        doc.setFont(undefined, 'normal');
+        doc.text('Subtotal:', totalsX, currentY);
+        doc.text(`Rs. ${itemsSubtotal.toFixed(2)}`, valuesX, currentY, { align: 'right' });
+        currentY += 11;
+        
+        if (sale.packagingCharges && sale.packagingCharges > 0) {
+            doc.text('Packaging:', totalsX, currentY);
+            doc.text(`Rs. ${sale.packagingCharges.toFixed(2)}`, valuesX, currentY, { align: 'right' });
+            currentY += 11;
+        }
+        if (sale.transportCharges && sale.transportCharges > 0) {
+            doc.text('Transport:', totalsX, currentY);
+            doc.text(`Rs. ${sale.transportCharges.toFixed(2)}`, valuesX, currentY, { align: 'right' });
+            currentY += 11;
+        }
+
+        doc.setFont(undefined, 'bold');
+        doc.text('Total Bill:', totalsX, currentY);
+        doc.text(`Rs. ${sale.totalAmount.toFixed(2)}`, valuesX, currentY, { align: 'right' });
+        currentY += 11;
+
+        doc.setFont(undefined, 'normal');
+        doc.text('Paid:', totalsX, currentY);
+        doc.text(`Rs. ${sale.totalPaidAmount.toFixed(2)}`, valuesX, currentY, { align: 'right' });
+        currentY += 11;
+
+        doc.setFont(undefined, 'bold');
+        doc.text('Due:', totalsX, currentY);
+        doc.text(`Rs. ${sale.totalAmountDue.toFixed(2)}`, valuesX, currentY, { align: 'right' });
+        currentY += 12;
+
+        doc.setFontSize(8);
+        doc.setFont(undefined, 'normal');
+        doc.text('Payment:', totalsX, currentY);
+        doc.text(displayPaymentMethod, valuesX, currentY, { align: 'right' });
+        currentY += 12;
+
+        // --- Notes ---
+        if (sale.notes && sale.notes.trim() !== "") {
+            const notesLines = doc.splitTextToSize(sale.notes, contentWidth);
+            doc.setFont(undefined, 'bold');
+            doc.text("Notes:", totalsX, currentY);
+            currentY += 10;
+            doc.setFont(undefined, 'normal');
+            doc.text(notesLines, totalsX, currentY);
+            currentY += (notesLines.length * 8) + 5;
+        }
+
+        // --- Footer ---
+        doc.setFontSize(8);
+        doc.text("Thank you for your business!", startX + receiptColumnWidth / 2, currentY, { align: 'center' });
+        currentY += 12;
+        doc.text("***", startX + receiptColumnWidth / 2, currentY, { align: 'center' });
+    };
+
+    try {
+      drawReceipt(0);
+      drawReceipt(receiptColumnWidth);
+      drawReceipt(receiptColumnWidth * 2);
+
+      // Draw cutting guides
+      doc.setLineDashPattern([5, 5], 0);
+      doc.setDrawColor(180, 180, 180);
+      doc.line(receiptColumnWidth, 10, receiptColumnWidth, doc.internal.pageSize.getHeight() - 10);
+      doc.line(receiptColumnWidth * 2, 10, receiptColumnWidth * 2, doc.internal.pageSize.getHeight() - 10);
+
+      doc.save(`A4-thermal-style-bill-${sale.id}.pdf`);
+    } catch (error) {
+      console.error("Error generating A4 multi-receipt PDF:", error);
+      toast({ title: "Error Generating PDF", description: "Could not generate A4 thermal-style bill.", variant: "destructive" });
+    } finally {
+      setIsProcessingA4Thermal(false);
+    }
+  };
+
+
   const handlePreviewA4Bill = () => {
     const dataUri = generateInvoicePDF('datauristring', { shopDetails: currentShopDetails });
     if (dataUri) {
@@ -608,6 +776,11 @@ export default function SaleDetailPage() {
   const handleDownloadThermalReceipt = () => {
     generateThermalReceiptPDF('save', { shopDetails: currentShopDetails });
   };
+
+  const handleGenerateA4ThermalLayout = () => {
+    generateA4MultiReceiptPDF({ shopDetails: currentShopDetails });
+  };
+
 
   const getStatusBadgeVariant = (status: Sale['paymentStatus']): "default" | "secondary" | "destructive" | "outline" => {
     switch (status) {
@@ -742,6 +915,10 @@ export default function SaleDetailPage() {
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <Button onClick={handleGenerateA4ThermalLayout} disabled={isProcessingA4Thermal || isProcessingA4Pdf || isProcessingThermalPdf || isUpdatingStatus} className="flex-grow sm:flex-grow-0">
+            {isProcessingA4Thermal ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+            Print A4 Thermal (3-up)
+          </Button>
           <Button onClick={handlePreviewA4Bill} disabled={isProcessingA4Pdf || isProcessingThermalPdf || isUpdatingStatus} variant="outline" className="flex-grow sm:flex-grow-0">
             {(isProcessingA4Pdf && a4PreviewPdfUrl === null) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}
             Preview Bill
@@ -749,10 +926,6 @@ export default function SaleDetailPage() {
           <Button onClick={handleDownloadA4Pdf} disabled={isProcessingA4Pdf || isProcessingThermalPdf || isUpdatingStatus} className="flex-grow sm:flex-grow-0">
             {(isProcessingA4Pdf && a4PreviewPdfUrl !== null) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
             Download PDF
-          </Button>
-          <Button onClick={handlePreviewThermalReceipt} disabled={isProcessingThermalPdf || isProcessingA4Pdf || isUpdatingStatus} variant="outline" className="flex-grow sm:flex-grow-0">
-            {(isProcessingThermalPdf && thermalPreviewPdfUrl === null) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}
-            Preview Thermal
           </Button>
           <Button onClick={handleDownloadThermalReceipt} disabled={isProcessingThermalPdf || isProcessingA4Pdf || isUpdatingStatus} className="flex-grow sm:flex-grow-0">
             {(isProcessingThermalPdf && thermalPreviewPdfUrl !== null) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
@@ -1058,4 +1231,3 @@ export default function SaleDetailPage() {
     </div>
   );
 }
-
