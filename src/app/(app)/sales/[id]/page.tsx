@@ -775,14 +775,6 @@ export default function SaleDetailPage() {
         // After the table is finished, draw the footer in the final column
         drawFooter();
         
-        // Draw cutting guides
-        doc.setLineDashPattern([2, 2], 0);
-        doc.setDrawColor(180, 180, 180);
-        for(let i = 1; i < numColumns; i++) {
-            const lineX = columnMargin + (i * columnWidth) + (columnMargin / 2);
-            doc.line(lineX, topMargin - 10, lineX, pageA4Height - bottomMargin + 10);
-        }
-
         doc.save(`A4-thermal-bill-${sale.id}.pdf`);
     } catch (error) {
         console.error("Error generating A4 multi-column PDF:", error);
