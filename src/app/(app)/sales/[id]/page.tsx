@@ -474,8 +474,9 @@ export default function SaleDetailPage() {
       currentY += 10;
 
       const tableRows: (string | number)[][] = [];
-      sale.items.forEach(item => {
+      sale.items.forEach((item, index) => {
         tableRows.push([
+          index + 1,
           `${item.productNameSnapshot}`, 
           item.quantitySold,
           item.pricePerUnitSold.toFixed(2),
@@ -484,7 +485,7 @@ export default function SaleDetailPage() {
       });
 
       autoTable(doc, {
-        head: [['Item', 'Qty', 'Rate', 'Total']],
+        head: [['#', 'Item', 'Qty', 'Rate', 'Total']],
         body: tableRows,
         startY: currentY,
         theme: 'plain', 
@@ -502,10 +503,11 @@ export default function SaleDetailPage() {
           lineColor: [180,180,180],
         },
         columnStyles: {
-          0: { cellWidth: contentWidthPt * 0.48, fontStyle: 'normal' }, 
-          1: { cellWidth: contentWidthPt * 0.12, halign: 'right' }, 
-          2: { cellWidth: contentWidthPt * 0.20, halign: 'right' }, 
+          0: { cellWidth: contentWidthPt * 0.08, halign: 'center' },
+          1: { cellWidth: contentWidthPt * 0.40, fontStyle: 'normal' }, 
+          2: { cellWidth: contentWidthPt * 0.12, halign: 'right' }, 
           3: { cellWidth: contentWidthPt * 0.20, halign: 'right' }, 
+          4: { cellWidth: contentWidthPt * 0.20, halign: 'right' }, 
         },
         margin: { left: marginPt, right: marginPt },
         tableWidth: 'auto', 
@@ -654,19 +656,20 @@ export default function SaleDetailPage() {
       currentY += 12;
   
       // --- Items Table ---
-      const tableRows = sale.items.map(item => [item.productNameSnapshot, item.quantitySold, item.pricePerUnitSold.toFixed(2), item.total.toFixed(2)]);
+      const tableRows = sale.items.map((item, index) => [index + 1, item.productNameSnapshot, item.quantitySold, item.pricePerUnitSold.toFixed(2), item.total.toFixed(2)]);
       autoTable(doc, {
-        head: [['Item', 'Qty', 'Rate', 'Total']],
+        head: [['#', 'Item', 'Qty', 'Rate', 'Total']],
         body: tableRows,
         startY: currentY,
         theme: 'plain',
         styles: { fontSize: 8, cellPadding: { top: 1, bottom: 1, left: 2, right: 2 }, overflow: 'linebreak' },
         headStyles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5, cellPadding: 2 },
         columnStyles: {
-          0: { cellWidth: contentWidth * 0.45, halign: 'left' },
-          1: { cellWidth: contentWidth * 0.15, halign: 'right' },
-          2: { cellWidth: contentWidth * 0.20, halign: 'right' },
-          3: { cellWidth: contentWidth * 0.20, halign: 'right' },
+          0: { cellWidth: contentWidth * 0.08, halign: 'center' },
+          1: { cellWidth: contentWidth * 0.42, halign: 'left' },
+          2: { cellWidth: contentWidth * 0.15, halign: 'right' },
+          3: { cellWidth: contentWidth * 0.17, halign: 'right' },
+          4: { cellWidth: contentWidth * 0.18, halign: 'right' },
         },
         margin: { left: startX, right: 0 } // Use 0 for right margin as width is controlled
       });
