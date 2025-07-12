@@ -628,6 +628,8 @@ export default function SaleDetailPage() {
         doc.text(shopContact, startX + contentWidth / 2, currentY, { align: 'center', maxWidth: contentWidth });
         currentY += 10;
       }
+      
+      currentY += 5; // Add space before the line
   
       // --- Dotted Line ---
       doc.setLineDashPattern([2, 2], 0);
