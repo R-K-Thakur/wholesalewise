@@ -8,7 +8,8 @@ import type { ProductUnit } from "@/lib/constants";
 
 export const saleItemSchema = z.object({
   productId: z.string().optional(),
-  quantitySold: z.coerce.number().min(1, "Quantity must be at least 1."),
+  productNameSnapshot: z.string().optional(), // For display on edit form
+  quantitySold: z.coerce.number().min(0.01, "Quantity must be positive."),
   pricePerUnitSold: z.coerce.number().min(0.01, "Price must be positive."), // User can edit this
   soldUnit: z.enum(PRODUCT_UNITS, { errorMap: () => ({ message: 'Invalid sold unit.'}) }),
 });
@@ -17,7 +18,7 @@ export const saleFormSchema = z.object({
   saleType: z.literal('wholesale'), // Hardcoded to wholesale
   customerName: z.string().max(100, "Customer name too long").optional().nullable(),
   saleDate: z.string().refine((date) => !isNaN(Date.parse(date)), { message: "Invalid date" }),
-  items: z.array(saleItemSchema).min(1, "At least one item is required in the sale."),
+  items: z.array(saleItemSchema),
   paymentMethod: z.enum(['cash', 'card', 'online'], { required_error: "Payment method is required."}).optional(),
   packagingCharges: z.coerce
     .number({ invalid_type_error: "Packaging charges must be a number." })
@@ -32,6 +33,14 @@ export const saleFormSchema = z.object({
     .nonnegative("Amount paid cannot be negative."),
   notes: z.string().max(500, "Notes too long").optional().nullable(),
 }).superRefine((data, ctx) => {
+  if (data.items.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "At least one item is required in the sale.",
+      path: ["items"],
+    });
+  }
+
   let itemsTotal = 0;
   data.items.forEach(item => {
     itemsTotal += (item.quantitySold || 0) * (item.pricePerUnitSold || 0);

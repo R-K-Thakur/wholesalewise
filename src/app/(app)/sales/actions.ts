@@ -5,7 +5,7 @@ import { revalidatePath, revalidateTag } from 'next/cache';
 import { collection, addDoc, doc, runTransaction, Timestamp, getDocs, query, orderBy, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { unstable_cache } from 'next/cache';
 import { db } from '@/lib/firebase';
-import type { RecordSaleActionPayload } from './schema';
+import type { RecordSaleActionPayload, SaleFormData } from './schema';
 import type { Product, Sale, SaleItem, PaymentTransaction, RecordAdditionalPaymentPayload } from '@/lib/types';
 import type { ProductUnit } from '@/lib/constants';
 import { getSession, type SessionData } from '@/app/login/actions';
@@ -595,5 +595,122 @@ export async function updateSaleCustomerNameAction(
   } catch (error) {
     console.error("Error updating sale customer name:", error);
     return { success: false, message: `Failed to update customer name: ${error instanceof Error ? error.message : "Unknown error"}` };
+  }
+}
+
+export async function updateSaleAction(
+  saleId: string,
+  updatedFormData: SaleFormData,
+  updatedItemsForAction: RecordSaleActionPayload['items']
+): Promise<{ success: boolean; message: string }> {
+  const session = await getSession();
+  if (!session || session.role !== 'owner') {
+    return { success: false, message: "Unauthorized: Only owners can edit sales." };
+  }
+
+  const userEmail = session.email;
+  const userName = session.name;
+  console.log(`[updateSaleAction] Updating sale ${saleId}. User: '${userName}'`);
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const saleRef = doc(db, SALES_COLLECTION, saleId);
+      const originalSaleDoc = await transaction.get(saleRef);
+      if (!originalSaleDoc.exists()) {
+        throw new Error("Sale not found.");
+      }
+      const originalSaleData = mapDocToSale(originalSaleDoc);
+
+      const stockChanges = new Map<string, number>();
+
+      const originalItemsMap = new Map(originalSaleData.items.map(item => [item.productId, item]));
+      const updatedItemsMap = new Map(updatedItemsForAction.map(item => [item.productId, item]));
+      
+      const allProductIds = new Set([...originalItemsMap.keys(), ...updatedItemsMap.keys()].filter(id => id));
+
+      for (const productId of allProductIds) {
+        if (!productId) continue;
+        const originalItem = originalItemsMap.get(productId);
+        const updatedItem = updatedItemsMap.get(productId);
+
+        const productRef = doc(db, PRODUCTS_COLLECTION, productId);
+        const productSnap = await transaction.get(productRef);
+        if (!productSnap.exists()) {
+            throw new Error(`Product with ID ${productId} not found during update.`);
+        }
+        const product = productSnap.data() as Product;
+
+        const getQuantityInBaseUnits = (item: SaleItem) => {
+            if (item.soldUnit === product.purchaseUnit && product.baseUnit !== product.purchaseUnit) {
+                return item.quantitySold * (product.purchaseUnitConversionFactor || 1);
+            }
+            return item.quantitySold;
+        }
+
+        const originalQtyInBase = originalItem ? getQuantityInBaseUnits(originalItem) : 0;
+        const updatedQtyInBase = updatedItem ? getQuantityInBaseUnits(updatedItem) : 0;
+        const stockDifference = originalQtyInBase - updatedQtyInBase;
+
+        if (stockDifference !== 0) {
+            stockChanges.set(productId, (stockChanges.get(productId) || 0) + stockDifference);
+        }
+      }
+      
+      for (const [productId, stockChange] of stockChanges.entries()) {
+        const productRef = doc(db, PRODUCTS_COLLECTION, productId);
+        const productSnap = await transaction.get(productRef);
+        const product = productSnap.data() as Product;
+        const newStock = product.quantityInStock + stockChange;
+
+        if (newStock < 0) {
+            throw new Error(`Insufficient stock for "${product.name}". Required: ${-stockChange}, Available: ${product.quantityInStock - (stockChanges.get(productId) || 0)}`);
+        }
+        transaction.update(productRef, { 
+            quantityInStock: newStock,
+            updatedAt: Timestamp.now().toDate().toISOString(),
+            lastStockUpdateByEmail: userEmail,
+            lastStockUpdateByName: userName
+        });
+      }
+
+      // Now, update the sale document itself
+      const finalItemsTotal = updatedItemsForAction.reduce((sum, item) => sum + item.total, 0);
+      const finalPackagingCharges = Number(updatedFormData.packagingCharges) || 0;
+      const finalTransportCharges = Number(updatedFormData.transportCharges) || 0;
+      const finalGrandTotal = parseFloat((finalItemsTotal + finalPackagingCharges + finalTransportCharges).toFixed(2));
+      const finalAmountPaid = Number(updatedFormData.amountPaid) || 0;
+
+      if (finalAmountPaid > finalGrandTotal + EPSILON) {
+        throw new Error(`Amount paid (Rs. ${finalAmountPaid.toFixed(2)}) cannot be greater than the new total bill (Rs. ${finalGrandTotal.toFixed(2)}).`);
+      }
+
+      const finalAmountDue = parseFloat((finalGrandTotal - finalAmountPaid).toFixed(2));
+      let paymentStatus: Sale['paymentStatus'] = 'unpaid';
+      if (finalAmountDue <= EPSILON) paymentStatus = 'paid';
+      else if (finalAmountPaid > EPSILON) paymentStatus = 'partially_paid';
+
+      const saleUpdateData = {
+        ...updatedFormData,
+        items: updatedItemsForAction,
+        totalAmount: finalGrandTotal,
+        totalPaidAmount: finalAmountPaid,
+        totalAmountDue: finalAmountDue,
+        paymentStatus: paymentStatus,
+        updatedAt: Timestamp.now().toDate().toISOString(),
+      };
+      
+      transaction.update(saleRef, saleUpdateData);
+    });
+
+    revalidateTag('sales');
+    revalidateTag('products');
+    revalidatePath('/sales');
+    revalidatePath(`/sales/${saleId}`);
+    revalidatePath('/dashboard');
+
+    return { success: true, message: 'Sale updated successfully!' };
+  } catch (error) {
+    console.error("Error updating sale:", error);
+    return { success: false, message: `Failed to update sale: ${error instanceof Error ? error.message : 'Unknown error'}` };
   }
 }

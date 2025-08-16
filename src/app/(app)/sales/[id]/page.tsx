@@ -947,6 +947,13 @@ export default function SaleDetailPage() {
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {session?.role === 'owner' && (
+            <Button asChild variant="secondary" className="flex-grow sm:flex-grow-0">
+                <Link href={`/sales/${sale.id}/edit`}>
+                    <Edit className="mr-2 h-4 w-4" /> Edit Sale
+                </Link>
+            </Button>
+          )}
           <Button onClick={handleGenerateA4ThermalLayout} disabled={isProcessingA4Thermal || isProcessingA4Pdf || isProcessingThermalPdf || isUpdatingStatus} className="flex-grow sm:flex-grow-0">
             {isProcessingA4Thermal ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
             Print A4 Thermal
