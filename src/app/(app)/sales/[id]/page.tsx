@@ -317,9 +317,7 @@ export default function SaleDetailPage() {
       
       addDetailRow(`${docType} No:`, sale.id.substring(0, 12).toUpperCase());
       const invoiceDateTime = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.saleDate);
-      addDetailRow("Date:", format(invoiceDateTime, "dd/MM/yyyy"));
-      addDetailRow("Time:", format(invoiceDateTime, "HH:mm:ss"));
-      addDetailRow("Salesman:", sale.recordedByName || sale.recordedByEmail || "N/A");
+      addDetailRow("Date & Time:", format(invoiceDateTime, "dd/MM/yyyy HH:mm:ss"));
       
       currentY = Math.max(currentY + detailRowHeight, tempY);
       doc.setDrawColor(180, 180, 180);
@@ -387,19 +385,21 @@ export default function SaleDetailPage() {
       ];
 
       const itemsSubtotal = sale.items.reduce((sum, item) => sum + item.total, 0);
-      const rightColBody: (string | { content: string; styles: any })[] = [
-          `Subtotal:||Rs. ${itemsSubtotal.toFixed(2)}`,
+      
+      const rightColBody: any[] = [
+          ['Subtotal:', `Rs. ${itemsSubtotal.toFixed(2)}`],
       ];
-      if (sale.packagingCharges && sale.packagingCharges > 0) rightColBody.push(`Packaging Chrgs:||Rs. ${sale.packagingCharges.toFixed(2)}`);
-      if (sale.transportCharges && sale.transportCharges > 0) rightColBody.push(`Transport Chrgs:||Rs. ${sale.transportCharges.toFixed(2)}`);
-      rightColBody.push({ content: `GRAND TOTAL:||Rs. ${sale.totalAmount.toFixed(2)}`, styles: { fontStyle: 'bold', fontSize: 9 } });
+      if (sale.packagingCharges && sale.packagingCharges > 0) rightColBody.push(['Packaging Chrgs:', `Rs. ${sale.packagingCharges.toFixed(2)}`]);
+      if (sale.transportCharges && sale.transportCharges > 0) rightColBody.push(['Transport Chrgs:', `Rs. ${sale.transportCharges.toFixed(2)}`]);
+      
+      rightColBody.push([{content: 'GRAND TOTAL:', styles: { fontStyle: 'bold', fontSize: 9 } }, {content: `Rs. ${sale.totalAmount.toFixed(2)}`, styles: { fontStyle: 'bold', fontSize: 9 } }]);
 
       if (docType === 'Invoice') {
-        rightColBody.push(`Amount Paid:||Rs. ${sale.totalPaidAmount.toFixed(2)}`);
-        rightColBody.push({ 
-          content: `Amount Due:||Rs. ${sale.totalAmountDue.toFixed(2)}`, 
-          styles: { fontStyle: 'bold', textColor: sale.totalAmountDue > EPSILON ? [255, 0, 0] : [0, 128, 0] } 
-        });
+        rightColBody.push(['Amount Paid:', `Rs. ${sale.totalPaidAmount.toFixed(2)}`]);
+        rightColBody.push([
+            { content: 'Amount Due:', styles: { fontStyle: 'bold', textColor: sale.totalAmountDue > EPSILON ? [255, 0, 0] : [0, 128, 0] } },
+            { content: `Rs. ${sale.totalAmountDue.toFixed(2)}`, styles: { fontStyle: 'bold', textColor: sale.totalAmountDue > EPSILON ? [255, 0, 0] : [0, 128, 0] } }
+        ]);
       }
       
       const maxRows = Math.max(leftColBody.length, rightColBody.length);
@@ -407,11 +407,11 @@ export default function SaleDetailPage() {
       for (let i = 0; i < maxRows; i++) {
           const leftCell = typeof leftColBody[i] === 'object' ? (leftColBody[i] as any).content : leftColBody[i] || '';
           
-          const rightCellRaw = rightColBody[i] || '||';
-          const rightCellContent = typeof rightCellRaw === 'string' ? rightCellRaw.split('||') : [(rightCellRaw as any).content.split('||')[0], (rightCellRaw as any).content.split('||')[1]];
-          const rightLabel = rightCellContent[0];
-          const rightValue = rightCellContent[1] || '';
-          const rightStyles = typeof rightColBody[i] === 'object' ? (rightColBody[i] as any).styles : {};
+          const rightCellRaw = rightColBody[i] || ['', ''];
+          const rightLabel = Array.isArray(rightCellRaw) ? (typeof rightCellRaw[0] === 'object' ? (rightCellRaw[0] as any).content : rightCellRaw[0]) : '';
+          const rightValue = Array.isArray(rightCellRaw) ? (typeof rightCellRaw[1] === 'object' ? (rightCellRaw[1] as any).content : rightCellRaw[1]) : '';
+          const rightStyles = typeof rightCellRaw[0] === 'object' ? (rightCellRaw[0] as any).styles : {};
+
 
           finalTableBody.push([
               { content: leftCell, styles: (leftColBody[i] as any)?.styles || {} },
@@ -430,6 +430,7 @@ export default function SaleDetailPage() {
             1: { cellWidth: contentWidth * 0.175, fontStyle: 'bold' },
             2: { cellWidth: contentWidth * 0.175 },
         },
+        margin: { left: margin },
       });
 
       currentY = (doc as any).lastAutoTable.finalY + 8;
@@ -1361,3 +1362,4 @@ export default function SaleDetailPage() {
     </div>
   );
 }
+
