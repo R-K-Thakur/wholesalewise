@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import Link from 'next/link';
@@ -324,7 +325,14 @@ export default function SaleDetailPage() {
       const totalsBlockWidth = 200; // Reduced
       const totalsX = pageWidth - margin - totalsBlockWidth;
       const valueColX = pageWidth - margin;
-      const numTotalLines = 6; 
+      
+      let numTotalLines = 2; // Subtotal, Grand Total
+      if (sale.packagingCharges && sale.packagingCharges > 0) numTotalLines++;
+      if (sale.transportCharges && sale.transportCharges > 0) numTotalLines++;
+      if (docType === 'Invoice') {
+          numTotalLines += 2; // Paid, Due
+      }
+
       const estTotalsHeight = (numTotalLines * totalRowHeightInner) + 20; // Reduced
       addNewPageIfNeeded(estTotalsHeight);
       
@@ -345,9 +353,12 @@ export default function SaleDetailPage() {
       doc.line(totalsX, currentY, valueColX, currentY);
       currentY += 6; // Reduced
       drawTotalRowInner("GRAND TOTAL:", sale.totalAmount, true, true);
-      currentY += 4; // Reduced
-      drawTotalRowInner("Amount Paid:", sale.totalPaidAmount);
-      drawTotalRowInner("Amount Due:", sale.totalAmountDue, sale.totalAmountDue > EPSILON, sale.totalAmountDue > EPSILON);
+      
+      if (docType === 'Invoice') {
+        currentY += 4; // Reduced
+        drawTotalRowInner("Amount Paid:", sale.totalPaidAmount);
+        drawTotalRowInner("Amount Due:", sale.totalAmountDue, sale.totalAmountDue > EPSILON, sale.totalAmountDue > EPSILON);
+      }
       currentY += 4; // Reduced
 
       const amountInWordsText = `Rupee ${sale.totalAmount.toFixed(2)} only`;
@@ -609,41 +620,32 @@ export default function SaleDetailPage() {
     const pageA4Height = doc.internal.pageSize.getHeight();
     const a4Margin = 30;
     
-    const columnCount = 3;
-    const columnWidth = (pageA4Width - (a4Margin * (columnCount - 1))) / columnCount;
+    const columnWidth = pageA4Width / 3;
     const columnMargin = 15;
     const contentWidth = columnWidth - (columnMargin * 2);
-    const contentHeight = pageA4Height - (a4Margin * 2);
     
-    let currentX = a4Margin / 2;
-    let currentY = a4Margin;
-
-    const shopName = options?.shopDetails?.shopName || APP_NAME;
-    const shopAddress = options?.shopDetails?.shopAddress;
-    const shopContact = options?.shopDetails?.shopContact;
-
     const drawHeader = (colIndex: number, isContinuation: boolean) => {
         let tempY = a4Margin;
         const startX = (colIndex * columnWidth) + columnMargin;
         
         doc.setFontSize(12);
         doc.setFont(undefined, 'bold');
-        const shopNameText = shopName + (isContinuation ? " (cont.)" : "");
+        const shopNameText = (options?.shopDetails?.shopName || APP_NAME) + (isContinuation ? " (cont.)" : "");
         const shopNameLines = doc.splitTextToSize(shopNameText, contentWidth);
         doc.text(shopNameLines, startX + contentWidth / 2, tempY, { align: 'center' });
         tempY += (shopNameLines.length * 12);
         
-        if (shopAddress) {
+        if (options?.shopDetails?.shopAddress) {
             doc.setFontSize(8);
             doc.setFont(undefined, 'normal');
-            const addressLines = doc.splitTextToSize(shopAddress, contentWidth);
+            const addressLines = doc.splitTextToSize(options.shopDetails.shopAddress, contentWidth);
             doc.text(addressLines, startX + contentWidth / 2, tempY, { align: 'center' });
             tempY += (addressLines.length * 8) + 2;
         }
-        if (shopContact) {
+        if (options?.shopDetails?.shopContact) {
             doc.setFontSize(8);
             doc.setFont(undefined, 'normal');
-            doc.text(shopContact, startX + contentWidth / 2, tempY, { align: 'center', maxWidth: contentWidth });
+            doc.text(options.shopDetails.shopContact, startX + contentWidth / 2, tempY, { align: 'center', maxWidth: contentWidth });
             tempY += 10;
         }
         
@@ -668,17 +670,17 @@ export default function SaleDetailPage() {
             doc.text(`By: ${sale.recordedByName || sale.recordedByEmail || 'N/A'}`, startX, tempY);
             tempY += 12;
         }
-
+        
         return tempY;
     };
     
     try {
         let currentColumnIndex = 0;
-        let startY = drawHeader(currentColumnIndex, false);
+        let currentY = drawHeader(currentColumnIndex, false);
+        const pageBottom = pageA4Height - a4Margin;
         
         const tableHead = [['#', 'Item', 'Qty', 'Rate', 'Total']];
-        let tableBody: any[][] = [];
-
+        
         sale.items.forEach((item, index) => {
             const row = [
                 (index + 1).toString(),
@@ -688,8 +690,8 @@ export default function SaleDetailPage() {
                 item.total.toFixed(2)
             ];
 
-            const tempDoc = new jsPDF() as jsPDFWithAutoTable;
-            autoTable(tempDoc, {
+            const tempDoc = new jsPDF() as jsPDFWithAutoTable; // Temp doc to calculate row height
+             autoTable(tempDoc, {
                 head: tableHead,
                 body: [row],
                 styles: { fontSize: 8, cellPadding: {top:1, bottom:1, left: 2, right: 2} },
@@ -698,63 +700,37 @@ export default function SaleDetailPage() {
                     2: { cellWidth: contentWidth * 0.15 }, 3: { cellWidth: contentWidth * 0.17 },
                     4: { cellWidth: contentWidth * 0.18 },
                 },
-            });
+             });
+             const rowHeight = (tempDoc as any).lastAutoTable.finalY - (tempDoc as any).lastAutoTable.startY;
 
-            const rowHeight = (tempDoc as any).lastAutoTable.finalY - (tempDoc as any).lastAutoTable.startY;
-
-            if ((startY + rowHeight) > (pageA4Height - a4Margin - 100)) { // 100 as footer buffer
-                if (tableBody.length > 0) {
-                    autoTable(doc, {
-                        head: tableHead,
-                        body: tableBody,
-                        startY: (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 1 : drawHeader(currentColumnIndex, currentColumnIndex > 0),
-                        theme: 'plain',
-                        styles: { fontSize: 8, cellPadding: {top:1, bottom:1, left: 2, right: 2}, overflow: 'linebreak' },
-                        headStyles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5, cellPadding: 2, lineWidth: 0.1, lineColor: [180,180,180] },
-                        columnStyles: {
-                           0: { cellWidth: contentWidth * 0.08, halign: 'center' }, 1: { cellWidth: contentWidth * 0.42, halign: 'left' },
-                           2: { cellWidth: contentWidth * 0.15, halign: 'right' }, 3: { cellWidth: contentWidth * 0.17, halign: 'right' },
-                           4: { cellWidth: contentWidth * 0.18, halign: 'right' },
-                        },
-                        margin: { left: (currentColumnIndex * columnWidth) + columnMargin, right: pageA4Width - ((currentColumnIndex * columnWidth) + columnWidth - columnMargin) },
-                        showHead: 'firstPage',
-                    });
-                }
-                
+            if (currentY + rowHeight > pageBottom - 100) { // Check if space for row + footer
                 currentColumnIndex++;
-                if (currentColumnIndex >= columnCount) {
+                if (currentColumnIndex >= 3) {
                     doc.addPage();
                     currentColumnIndex = 0;
                 }
-                startY = drawHeader(currentColumnIndex, true);
-                tableBody = [row];
-            } else {
-                tableBody.push(row);
+                currentY = drawHeader(currentColumnIndex, true);
             }
-        });
-        
-        // Draw any remaining rows
-        if (tableBody.length > 0) {
-             autoTable(doc, {
-                head: tableHead,
-                body: tableBody,
-                startY: startY,
+            
+            autoTable(doc, {
+                body: [row],
+                startY: currentY,
                 theme: 'plain',
                 styles: { fontSize: 8, cellPadding: {top:1, bottom:1, left: 2, right: 2}, overflow: 'linebreak' },
-                headStyles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5, cellPadding: 2, lineWidth: 0.1, lineColor: [180,180,180] },
                 columnStyles: {
-                    0: { cellWidth: contentWidth * 0.08, halign: 'center' }, 1: { cellWidth: contentWidth * 0.42, halign: 'left' },
-                    2: { cellWidth: contentWidth * 0.15, halign: 'right' }, 3: { cellWidth: contentWidth * 0.17, halign: 'right' },
-                    4: { cellWidth: contentWidth * 0.18, halign: 'right' },
+                   0: { cellWidth: contentWidth * 0.08, halign: 'center' }, 1: { cellWidth: contentWidth * 0.42, halign: 'left' },
+                   2: { cellWidth: contentWidth * 0.15, halign: 'right' }, 3: { cellWidth: contentWidth * 0.17, halign: 'right' },
+                   4: { cellWidth: contentWidth * 0.18, halign: 'right' },
                 },
                 margin: { left: (currentColumnIndex * columnWidth) + columnMargin, right: pageA4Width - ((currentColumnIndex * columnWidth) + columnWidth - columnMargin) },
-                showHead: 'firstPage',
+                showHead: 'never',
             });
-            startY = (doc as any).lastAutoTable.finalY;
-        }
-
+            currentY = (doc as any).lastAutoTable.finalY;
+        });
+        
+        // Draw footer at the end of the last column
         const footerStartX = (currentColumnIndex * columnWidth) + columnMargin;
-        currentY = startY + 5;
+        currentY += 5;
         doc.setLineDashPattern([2, 2], 0);
         doc.line(footerStartX, currentY, footerStartX + contentWidth, currentY);
         doc.setLineDashPattern([], 0);
@@ -809,7 +785,7 @@ export default function SaleDetailPage() {
         doc.text("Thank you for your business!", footerStartX + contentWidth/2, currentY, { align: 'center' });
         currentY += 12;
         doc.text("***", footerStartX + contentWidth/2, currentY, { align: 'center' });
-
+        
         doc.save(`A4-thermal-bill-${sale.id}.pdf`);
     } catch (error) {
       console.error("Error generating A4 multi-column PDF:", error);
@@ -1322,3 +1298,4 @@ export default function SaleDetailPage() {
     </div>
   );
 }
+
