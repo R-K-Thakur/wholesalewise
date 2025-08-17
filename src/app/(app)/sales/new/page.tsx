@@ -6,7 +6,7 @@ import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, ChevronsUpDown, PackagePlus, Truck, Save, AlertCircle } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, ChevronsUpDown, PackagePlus, Truck, Save, ShieldAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -95,7 +95,8 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       const price = Number(item?.pricePerUnitSold) || 0;
       return sum + (quantity * price);
     }, 0);
-  }, [JSON.stringify(currentWatchedItems)]);
+  }, [currentWatchedItems]);
+
 
   const grandTotal = React.useMemo(() => {
     const packaging = Number(watchedPackagingCharges) || 0;
@@ -194,7 +195,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     if (changed) {
       setItemSearchTexts(newSearchTexts);
     }
-  }, [JSON.stringify(currentWatchedItems), allProducts, itemSearchTexts]);
+  }, [currentWatchedItems, allProducts, itemSearchTexts]);
 
 
   const handleAddItem = () => {
@@ -215,39 +216,24 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     remove(index);
     setItemSearchTexts(prev => prev.filter((_, i) => i !== index));
   };
-
+  
   const handleProductSelectInternal = (itemIndex: number, productIdToSelect: string) => {
     const product = allProducts.find(p => p.id === productIdToSelect);
     if (product) {
-      if (product.quantityInStock === 0) {
-        toast({ title: "Out of Stock", description: `${product.name} is out of stock. Cannot select.`, variant: "destructive" });
-        return;
-      }
-      form.setValue(`items.${itemIndex}.productId`, product.id, { shouldDirty: true });
-      form.setValue(`items.${itemIndex}.soldUnit`, product.baseUnit, { shouldDirty: true });
-
-      // Set default price based on product.wholesalePricePerBaseUnit and the selected soldUnit
-      let pricePerSoldUnit = product.wholesalePricePerBaseUnit;
-      if (product.baseUnit === product.purchaseUnit || !product.purchaseUnitConversionFactor || product.purchaseUnitConversionFactor <= 0) {
-        // If units are same or conversion not applicable, price is per base unit
-        pricePerSoldUnit = product.wholesalePricePerBaseUnit;
-      } else {
-        // If selling in purchase units, multiply base unit price by conversion factor
-        if (form.getValues(`items.${itemIndex}.soldUnit`) === product.purchaseUnit) {
-           pricePerSoldUnit = product.wholesalePricePerBaseUnit * product.purchaseUnitConversionFactor;
-        } else { // selling in base units
-           pricePerSoldUnit = product.wholesalePricePerBaseUnit;
+        if (product.quantityInStock === 0) {
+            toast({ title: "Out of Stock", description: `${product.name} is out of stock. Cannot select.`, variant: "destructive" });
+            return;
         }
-      }
+        form.setValue(`items.${itemIndex}.productId`, product.id, { shouldDirty: true });
+        // Set unit and price together
+        handleSoldUnitChange(itemIndex, product.baseUnit, product);
+        
+        const newSearchTexts = [...itemSearchTexts];
+        newSearchTexts[itemIndex] = product.name;
+        setItemSearchTexts(newSearchTexts);
 
-      form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), { shouldDirty: true, shouldValidate: true });
-
-      const newSearchTexts = [...itemSearchTexts];
-      newSearchTexts[itemIndex] = product.name;
-      setItemSearchTexts(newSearchTexts);
-
-      form.trigger(`items.${itemIndex}`);
-      setOpenComboboxIndex(null);
+        form.trigger(`items.${itemIndex}`);
+        setOpenComboboxIndex(null);
     }
   };
 
@@ -266,28 +252,6 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
         }
     }
   };
-
-
-  React.useEffect(() => {
-    currentWatchedItems.forEach((item, index) => {
-        const product = allProducts.find(p => p.id === item.productId);
-        if (product) {
-            // product.wholesalePricePerBaseUnit is always per base unit
-            let pricePerSoldUnit = product.wholesalePricePerBaseUnit;
-
-            if (item.soldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor && product.purchaseUnitConversionFactor > 0) {
-                pricePerSoldUnit = product.wholesalePricePerBaseUnit * product.purchaseUnitConversionFactor;
-            }
-            // If item.soldUnit is baseUnit, pricePerSoldUnit remains product.wholesalePricePerBaseUnit
-
-            const newCalculatedPrice = parseFloat(pricePerSoldUnit.toFixed(2));
-            if (!form.formState.dirtyFields.items?.[index]?.pricePerUnitSold || Number(form.getValues(`items.${index}.pricePerUnitSold`)) === 0) {
-                 form.setValue(`items.${index}.pricePerUnitSold`, newCalculatedPrice, { shouldValidate: true, shouldDirty: !!form.formState.dirtyFields.items?.[index]?.pricePerUnitSold });
-            }
-        }
-    });
-  }, [JSON.stringify(currentWatchedItems), allProducts, form]);
-
 
   React.useEffect(() => {
     if (productJustAddedId && quickAddItemIndex !== null) {
@@ -402,11 +366,13 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
     }
   }
 
-  const handleSoldUnitChange = (itemIndex: number, newSoldUnit: ProductUnit) => {
+  const handleSoldUnitChange = (itemIndex: number, newSoldUnit: ProductUnit, productData?: Product) => {
     form.setValue(`items.${itemIndex}.soldUnit`, newSoldUnit, { shouldDirty: true });
-    const product = allProducts.find(p => p.id === form.getValues(`items.${itemIndex}.productId`));
+    
+    // If productData is not passed, find it. This happens when called from the select's onValueChange.
+    const product = productData || allProducts.find(p => p.id === form.getValues(`items.${itemIndex}.productId`));
+
     if (product) {
-        // product.wholesalePricePerBaseUnit is always per base unit
         let pricePerSoldUnit = product.wholesalePricePerBaseUnit;
         if (newSoldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor && product.purchaseUnitConversionFactor > 0) {
             pricePerSoldUnit = product.wholesalePricePerBaseUnit * product.purchaseUnitConversionFactor;
@@ -414,6 +380,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
         form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), { shouldValidate: true, shouldDirty: true });
     }
   };
+
 
   const openQuickAddModal = (index: number) => {
     const productName = itemSearchTexts[index]?.trim();
@@ -461,9 +428,8 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
         return;
     }
 
-    // Convert wholesale price to per base unit if entered per purchase unit
     if (submissionData.baseUnit !== submissionData.purchaseUnit && submissionData.purchaseUnitConversionFactor && submissionData.purchaseUnitConversionFactor > 0) {
-      const enteredWholesalePrice = submissionData.wholesalePricePerBaseUnit; // User entered this as "per purchase unit"
+      const enteredWholesalePrice = submissionData.wholesalePricePerBaseUnit;
       submissionData.wholesalePricePerBaseUnit = parseFloat((enteredWholesalePrice / submissionData.purchaseUnitConversionFactor).toFixed(2));
     }
 
@@ -484,6 +450,20 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
       setIsSubmittingQuickAdd(false);
     }
   };
+
+  const memoizedFilteredProducts = React.useMemo(() => {
+    return itemSearchTexts.map(searchText => {
+        if (!searchText) return allProducts.slice(0, 10);
+        const lowercasedSearchText = searchText.toLowerCase().trim();
+        return allProducts
+            .filter(p => 
+                p.name.toLowerCase().includes(lowercasedSearchText) ||
+                (p.sku && p.sku.toLowerCase().includes(lowercasedSearchText))
+            )
+            .slice(0, 10);
+    });
+  }, [itemSearchTexts, allProducts]);
+
 
   return (
     <>
@@ -554,6 +534,8 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
               }
               const popoverTriggerText = itemSearchTexts[index] || "Select or Type Product";
               const isAdHocItem = !currentProductId && itemSearchTexts[index]?.trim() !== "";
+              
+              const filteredProductList = memoizedFilteredProducts[index];
 
               return (
               <Card key={fieldItem.id} className="mb-4 p-4 space-y-3 bg-card/50 dark:bg-card/80">
@@ -589,14 +571,7 @@ function SaleForm({ allProducts, onProductAdded, currentUserRole }: SaleFormProp
                               {itemSearchTexts[index]?.trim() !== "" ? `No product found. Type full name to add as unlisted item.` : "Start typing..."}
                             </CommandEmpty>
                             <CommandGroup>
-                              {allProducts
-                                .filter(p => {
-                                  const searchText = (itemSearchTexts[index] || "").toLowerCase().trim();
-                                  if (!searchText) return true;
-                                  return p.name.toLowerCase().includes(searchText) ||
-                                    (p.sku && p.sku.toLowerCase().includes(searchText));
-                                })
-                                .slice(0, 10)
+                              {filteredProductList
                                 .map((product) => (
                                   <CommandItem
                                     key={product.id}

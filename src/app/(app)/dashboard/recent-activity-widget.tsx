@@ -120,4 +120,3 @@ export function RecentActivityWidget({ activities }: RecentActivityWidgetProps) 
     </Card>
   );
 }
-

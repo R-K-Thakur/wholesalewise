@@ -45,8 +45,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   const { toast } = useToast();
   
   const [searchTerm, setSearchTerm] = React.useState("");
-  const [filteredProducts, setFilteredProducts] = React.useState<Product[]>(initialProducts);
-
+  
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [productToDelete, setProductToDelete] = React.useState<Product | null>(null);
   const [isDeleting, setIsDeleting] = React.useState(false);
@@ -64,17 +63,16 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   const [sessionLoaded, setSessionLoaded] = React.useState(false);
   const [isMounted, setIsMounted] = React.useState(false);
 
-  // State for column visibility, defaults to hidden (staff view)
   const [showPurchasePriceColumn, setShowPurchasePriceColumn] = React.useState(false);
-  const [tableColSpan, setTableColSpan] = React.useState(7); // Default for hidden purchase price column
+  const [tableColSpan, setTableColSpan] = React.useState(7);
 
 
   React.useEffect(() => {
     setIsMounted(true);
     async function fetchSessionData() {
       const currentSession = await getSession();
-      setSession(currentSession); // Store the full session for other uses (e.g., delete button)
-      if (currentSession && currentSession.role !== 'staff') { // Only show for non-staff (e.g., owner)
+      setSession(currentSession);
+      if (currentSession && currentSession.role !== 'staff') {
         setShowPurchasePriceColumn(true);
         setTableColSpan(8);
       } else {
@@ -91,18 +89,19 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     }
   }, []);
 
-  React.useEffect(() => {
+  const filteredProducts = React.useMemo(() => {
     const lowercasedSearchTerm = searchTerm.toLowerCase().trim();
-    const newFilteredProducts = lowercasedSearchTerm
-      ? initialProducts.filter(product => 
-          product.name.toLowerCase().includes(lowercasedSearchTerm) ||
-          product.category.toLowerCase().includes(lowercasedSearchTerm) ||
-          (product.sku && product.sku.toLowerCase().includes(lowercasedSearchTerm))
-        )
-      : initialProducts;
-    setFilteredProducts(newFilteredProducts);
-    setCurrentPage(1); 
+    if (!lowercasedSearchTerm) return initialProducts;
+    return initialProducts.filter(product =>
+      product.name.toLowerCase().includes(lowercasedSearchTerm) ||
+      product.category.toLowerCase().includes(lowercasedSearchTerm) ||
+      (product.sku && product.sku.toLowerCase().includes(lowercasedSearchTerm))
+    );
   }, [initialProducts, searchTerm]);
+
+  React.useEffect(() => {
+    setCurrentPage(1); 
+  }, [searchTerm, itemsPerPage]);
 
 
   const handleDeleteClick = (product: Product) => {
@@ -136,7 +135,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   const handleAddStockClick = (product: Product) => {
     setProductForStockAdd(product);
     setQuantityToAdd("");
-    if (showPurchasePriceColumn) { // Uses the state variable now
+    if (showPurchasePriceColumn) {
       setNewPurchasePrice(product.purchasePrice !== undefined ? product.purchasePrice.toString() : "");
     } else {
       setNewPurchasePrice(""); 
@@ -154,7 +153,7 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     const qty = Number(quantityToAdd);
     
     let price: number | undefined = undefined;
-    if (showPurchasePriceColumn && newPurchasePrice !== "") { // Uses the state variable
+    if (showPurchasePriceColumn && newPurchasePrice !== "") {
       price = Number(newPurchasePrice);
       if (price !== undefined && price < 0) {
           toast({ title: "Input Error", description: "Purchase price cannot be negative.", variant: "destructive" });
@@ -378,5 +377,3 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     </>
   );
 }
-
-    

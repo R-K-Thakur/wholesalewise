@@ -15,22 +15,20 @@ interface DashboardProductSearchWidgetProps {
 
 export function DashboardProductSearchWidget({ products: initialProducts }: DashboardProductSearchWidgetProps) {
   const [searchTerm, setSearchTerm] = React.useState("");
-  const [filteredProducts, setFilteredProducts] = React.useState<Product[]>([]);
 
-  React.useEffect(() => {
+  const filteredProducts = React.useMemo(() => {
     if (searchTerm.trim() === "") {
-      setFilteredProducts([]);
-      return;
+      return [];
     }
 
     const lowercasedSearchTerm = searchTerm.toLowerCase().trim();
-    const newFilteredProducts = initialProducts.filter(product => 
+    return initialProducts.filter(product =>
       product.name.toLowerCase().includes(lowercasedSearchTerm) ||
       product.category.toLowerCase().includes(lowercasedSearchTerm) ||
       (product.sku && product.sku.toLowerCase().includes(lowercasedSearchTerm))
     );
-    setFilteredProducts(newFilteredProducts);
   }, [searchTerm, initialProducts]);
+
 
   return (
     <Card>
