@@ -258,7 +258,7 @@ export default function SaleDetailPage() {
       const doc = new jsPDF({ unit: "pt", format: "a4" }) as jsPDFWithAutoTable;
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
-      const margin = 30;
+      const margin = 20;
       const contentWidth = pageWidth - 2 * margin;
       const contentBottomLimit = pageHeight - margin; 
 
@@ -268,36 +268,36 @@ export default function SaleDetailPage() {
       doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
       doc.text(shopName.toUpperCase(), margin, currentY);
-      currentY += 16;
+      currentY += 14;
 
       if (shopAddress) {
         doc.setFontSize(8);
         doc.setFont(undefined, 'normal');
         const addressLines = doc.splitTextToSize(shopAddress, contentWidth * 0.7);
         doc.text(addressLines, margin, currentY);
-        currentY += (addressLines.length * 9) + 2;
+        currentY += (addressLines.length * 8) + 2;
       }
 
       if (shopContact) {
         doc.setFontSize(8);
         doc.setFont(undefined, 'normal');
         doc.text(shopContact, margin, currentY);
-        currentY += 12;
+        currentY += 10;
       }
-      currentY += 5;
+      currentY += 3;
 
-      doc.setFontSize(12);
+      doc.setFontSize(11);
       doc.setFont(undefined, 'bold');
       doc.text(docType.toUpperCase(), pageWidth / 2, currentY, { align: 'center' });
-      currentY += 20;
+      currentY += 18;
 
       // ---- BILLING & INVOICE DETAILS ----
       const detailsStartY = currentY;
       const halfContentWidth = contentWidth / 2;
-      const detailRowHeight = 12;
+      const detailRowHeight = 11;
       const labelWidth = 60;
 
-      doc.setFontSize(9);
+      doc.setFontSize(8);
       doc.setFont(undefined, 'bold');
       doc.text("BILL TO:", margin, currentY);
       currentY += detailRowHeight;
@@ -324,7 +324,7 @@ export default function SaleDetailPage() {
       currentY = Math.max(currentY + detailRowHeight, tempY);
       doc.setDrawColor(180, 180, 180);
       doc.line(margin, currentY, pageWidth - margin, currentY);
-      currentY += 15;
+      currentY += 12;
 
       // ---- ITEMS TABLE ----
       const tableColumns = ["#", "Item Description", "Qty", "Unit", "Rate (Rs.)", "Amount (Rs.)"];
@@ -352,7 +352,7 @@ export default function SaleDetailPage() {
         body: tableRows,
         startY: currentY,
         theme: 'striped',
-        styles: { fontSize: 8, cellPadding: { top: 3, right: 5, bottom: 3, left: 5 }, valign: 'middle', overflow: 'linebreak', lineWidth: 0.2, lineColor: [200, 200, 200] },
+        styles: { fontSize: 8, cellPadding: { top: 2, right: 4, bottom: 2, left: 4 }, valign: 'middle', overflow: 'linebreak', lineWidth: 0.2, lineColor: [200, 200, 200] },
         headStyles: { fillColor: accentColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
         columnStyles: { 0: { halign: 'center', cellWidth: 25 }, 1: { halign: 'left', cellWidth: 'auto' }, 2: { halign: 'right', cellWidth: 40 }, 3: { halign: 'center', cellWidth: 40 }, 4: { halign: 'right', cellWidth: 65 }, 5: { halign: 'right', cellWidth: 75 } },
         alternateRowStyles: { fillColor: [245, 245, 245] },
@@ -367,7 +367,7 @@ export default function SaleDetailPage() {
         },
       });
 
-      currentY = (doc as any).lastAutoTable.finalY + 15;
+      currentY = (doc as any).lastAutoTable.finalY + 10;
 
       // --- TOTALS & FOOTER ---
       const amountTotal = Math.trunc(sale.totalAmount);
@@ -380,14 +380,14 @@ export default function SaleDetailPage() {
 
       const leftColBody = [
           { content: `Amount: ${amountInWordsText}`, styles: { fontStyle: 'normal', fontSize: 8 } },
-          { content: 'Bank Details:', styles: { fontStyle: 'bold', fontSize: 9 } },
+          { content: 'Bank Details:', styles: { fontStyle: 'bold', fontSize: 8 } },
           { content: 'Ac No: 10190002978498', styles: { fontSize: 8 } },
           { content: 'IFS Code: BDBL0001320', styles: { fontSize: 8 } },
           { content: 'Holder Name: ROHAN VARIETY STORE', styles: { fontSize: 8 } },
       ];
 
       const itemsSubtotal = sale.items.reduce((sum, item) => sum + item.total, 0);
-      const rightColBody = [
+      const rightColBody: (string | { content: string; styles: any })[] = [
           `Subtotal:||Rs. ${itemsSubtotal.toFixed(2)}`,
       ];
       if (sale.packagingCharges && sale.packagingCharges > 0) rightColBody.push(`Packaging Chrgs:||Rs. ${sale.packagingCharges.toFixed(2)}`);
@@ -405,7 +405,9 @@ export default function SaleDetailPage() {
       const maxRows = Math.max(leftColBody.length, rightColBody.length);
       const finalTableBody = [];
       for (let i = 0; i < maxRows; i++) {
-          const leftCell = leftColBody[i] || '';
+          const leftContent = typeof leftColBody[i] === 'object' ? (leftColBody[i] as any).content : leftColBody[i];
+          const leftCell = leftColBody[i] ? { content: leftContent, styles: (leftColBody[i] as any).styles || {} } : '';
+
           const rightCellContent = (rightColBody[i] || '||').toString().split('||');
           const rightLabel = rightCellContent[0];
           const rightValue = rightCellContent[1] || '';
@@ -434,30 +436,30 @@ export default function SaleDetailPage() {
       
       // ---- Terms & Signature ----
       const terms = ["- Goods once sold will not be taken back or exchanged.", "- All disputes subject to local jurisdiction only."];
-      const estTermsHeight = (terms.length * 9) + 8;
-      const estSigHeight = 40;
-      const finalBlockHeight = estTermsHeight + estSigHeight + 20;
+      const estTermsHeight = (terms.length * 8) + 8;
+      const estSigHeight = 35;
+      const finalBlockHeight = estTermsHeight + estSigHeight + 15;
       addNewPageIfNeeded(finalBlockHeight);
 
       doc.setFontSize(7);
       doc.setFont(undefined, 'bold');
       doc.text("Terms & Conditions:", margin, currentY);
-      currentY += 9;
+      currentY += 8;
       doc.setFont(undefined, 'normal');
       terms.forEach(term => {
         doc.text(term, margin, currentY);
-        currentY += 9;
+        currentY += 8;
       });
-      currentY += 8;
+      currentY += 6;
 
-      const finalSigLineY = currentY + 15;
+      const finalSigLineY = currentY + 12;
       const sigBlockX = contentWidth * 0.6 + margin;
       doc.setDrawColor(100, 100, 100);
       doc.line(sigBlockX, finalSigLineY, pageWidth - margin, finalSigLineY);
-      let sigTextY = finalSigLineY + 10;
+      let sigTextY = finalSigLineY + 9;
       doc.setFontSize(8);
       doc.text("For " + shopName.toUpperCase(), sigBlockX + ((pageWidth - margin - sigBlockX) / 2), sigTextY, { align: 'center' });
-      sigTextY += 10;
+      sigTextY += 9;
       doc.text("Authorized Signatory", sigBlockX + ((pageWidth - margin - sigBlockX) / 2), sigTextY, { align: 'center' });
 
       // ---- Page Footer ----
@@ -1359,3 +1361,4 @@ export default function SaleDetailPage() {
     </div>
   );
 }
+
