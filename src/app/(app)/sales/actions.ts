@@ -238,7 +238,7 @@ const getSalesCached = unstable_cache(
   },
   ['sales_list'],
   {
-    revalidate: 300, // 5 minutes
+    revalidate: 3600, // 1 hour
     tags: ['sales'],
   }
 );
@@ -465,7 +465,7 @@ export async function recordAdditionalPaymentAction(
 
   } catch (error) {
     console.error('Error recording additional payment:', error);
-    return { success: false, message: `Failed to record payment: ${error instanceof Error ? error.message : 'Unknown error'}` };
+    return { success: false, message: `Failed to record payment: ${error instanceof Error ? error.message : "Unknown error"}` };
   }
 }
 
@@ -714,3 +714,5 @@ export async function updateSaleAction(
     return { success: false, message: `Failed to update sale: ${error instanceof Error ? error.message : 'Unknown error'}` };
   }
 }
+
+    
