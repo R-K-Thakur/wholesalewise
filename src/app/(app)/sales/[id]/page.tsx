@@ -370,14 +370,14 @@ export default function SaleDetailPage() {
       // --- TOTALS & FOOTER ---
       const amountTotal = Math.trunc(sale.totalAmount);
       const paiseTotal = Math.round((sale.totalAmount - amountTotal) * 100);
-      let amountInWordsText = `Rupee ${numberToWords(amountTotal)}`;
+      let amountInWordsText = `Amount: Rupee ${numberToWords(amountTotal)}`;
       if (paiseTotal > 0) {
         amountInWordsText += ` and ${numberToWords(paiseTotal)} Paise`;
       }
       amountInWordsText += " only";
 
       const leftColBody = [
-          { content: `Amount: ${amountInWordsText}`, styles: { fontStyle: 'normal', fontSize: 8 } },
+          { content: amountInWordsText, styles: { fontStyle: 'bold', fontSize: 8 } },
           { content: 'Bank Details:', styles: { fontStyle: 'bold', fontSize: 8 } },
           { content: 'Ac No: 10190002978498', styles: { fontSize: 8 } },
           { content: 'IFS Code: BDBL0001320', styles: { fontSize: 8 } },
@@ -406,6 +406,7 @@ export default function SaleDetailPage() {
       const finalTableBody = [];
       for (let i = 0; i < maxRows; i++) {
           const leftCell = typeof leftColBody[i] === 'object' ? (leftColBody[i] as any).content : leftColBody[i] || '';
+          const leftStyles = typeof leftColBody[i] === 'object' ? (leftColBody[i] as any).styles : {};
           
           const rightCellRaw = rightColBody[i] || ['', ''];
           const rightLabel = Array.isArray(rightCellRaw) ? (typeof rightCellRaw[0] === 'object' ? (rightCellRaw[0] as any).content : rightCellRaw[0]) : '';
@@ -414,7 +415,7 @@ export default function SaleDetailPage() {
 
 
           finalTableBody.push([
-              { content: leftCell, styles: (leftColBody[i] as any)?.styles || {} },
+              { content: leftCell, styles: leftStyles },
               { content: rightLabel, styles: { halign: 'right', ...rightStyles } },
               { content: rightValue, styles: { halign: 'right', ...rightStyles } }
           ]);
@@ -1362,4 +1363,5 @@ export default function SaleDetailPage() {
     </div>
   );
 }
+
 
