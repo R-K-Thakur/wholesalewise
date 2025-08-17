@@ -208,44 +208,46 @@ export default function SaleDetailPage() {
       const doc = new jsPDF({ unit: "pt", format: "a4" }) as jsPDFWithAutoTable;
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
-      const margin = 40;
+      const margin = 30; // Reduced margin
       const contentWidth = pageWidth - 2 * margin;
       const contentBottomLimit = pageHeight - margin; 
 
       let currentY = margin;
 
-      doc.setFontSize(16);
+      // ---- HEADER ----
+      doc.setFontSize(14); // Reduced
       doc.setFont(undefined, 'bold');
       doc.text(shopName.toUpperCase(), margin, currentY);
-      currentY += 18;
+      currentY += 16; // Reduced
 
       if (shopAddress) {
-        doc.setFontSize(9);
+        doc.setFontSize(8); // Reduced
         doc.setFont(undefined, 'normal');
         const addressLines = doc.splitTextToSize(shopAddress, contentWidth * 0.7);
         doc.text(addressLines, margin, currentY);
-        currentY += (addressLines.length * 10) + 4;
+        currentY += (addressLines.length * 9) + 2; // Reduced
       }
 
       if (shopContact) {
-        doc.setFontSize(9);
+        doc.setFontSize(8); // Reduced
         doc.setFont(undefined, 'normal');
         doc.text(shopContact, margin, currentY);
-        currentY += 14;
+        currentY += 12; // Reduced
       }
       currentY += 5;
 
-      doc.setFontSize(14);
+      doc.setFontSize(12); // Reduced
       doc.setFont(undefined, 'bold');
       doc.text(docType.toUpperCase(), pageWidth / 2, currentY, { align: 'center' });
-      currentY += 28;
+      currentY += 20; // Reduced
 
+      // ---- BILLING & INVOICE DETAILS ----
       const detailsStartY = currentY;
       const halfContentWidth = contentWidth / 2;
-      const detailRowHeight = 14;
-      const labelWidth = 70;
+      const detailRowHeight = 12; // Reduced
+      const labelWidth = 60; // Reduced
 
-      doc.setFontSize(10);
+      doc.setFontSize(9); // Reduced
       doc.setFont(undefined, 'bold');
       doc.text("BILL TO:", margin, currentY);
       currentY += detailRowHeight;
@@ -269,11 +271,12 @@ export default function SaleDetailPage() {
       addDetailRow("Time:", format(invoiceDateTime, "HH:mm:ss"));
       addDetailRow("Salesman:", sale.recordedByName || sale.recordedByEmail || "N/A");
       
-      currentY = Math.max(currentY + detailRowHeight, tempY) + 5;
+      currentY = Math.max(currentY + detailRowHeight, tempY); // Adjusted Y
       doc.setDrawColor(180, 180, 180);
       doc.line(margin, currentY, pageWidth - margin, currentY);
-      currentY += 20;
+      currentY += 15; // Reduced
 
+      // ---- TABLE ----
       const tableColumns = ["#", "Item Description", "Qty", "Unit", "Rate (Rs.)", "Amount (Rs.)"];
       const tableRows: (string | number)[][] = [];
       sale.items.forEach((item, index) => {
@@ -299,9 +302,9 @@ export default function SaleDetailPage() {
         body: tableRows,
         startY: currentY,
         theme: 'striped',
-        styles: { fontSize: 9, cellPadding: { top: 5, right: 6, bottom: 5, left: 6 }, valign: 'middle', overflow: 'linebreak', lineWidth: 0.2, lineColor: [200, 200, 200] },
+        styles: { fontSize: 8, cellPadding: { top: 3, right: 5, bottom: 3, left: 5 }, valign: 'middle', overflow: 'linebreak', lineWidth: 0.2, lineColor: [200, 200, 200] }, // Reduced font and padding
         headStyles: { fillColor: accentColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
-        columnStyles: { 0: { halign: 'center', cellWidth: 30 }, 1: { halign: 'left', cellWidth: 'auto' }, 2: { halign: 'right', cellWidth: 45 }, 3: { halign: 'center', cellWidth: 45 }, 4: { halign: 'right', cellWidth: 70 }, 5: { halign: 'right', cellWidth: 80 } },
+        columnStyles: { 0: { halign: 'center', cellWidth: 25 }, 1: { halign: 'left', cellWidth: 'auto' }, 2: { halign: 'right', cellWidth: 40 }, 3: { halign: 'center', cellWidth: 40 }, 4: { halign: 'right', cellWidth: 65 }, 5: { halign: 'right', cellWidth: 75 } }, // Adjusted widths
         alternateRowStyles: { fillColor: [245, 245, 245] },
         margin: { left: margin, right: margin },
         tableLineColor: [180, 180, 180],
@@ -314,19 +317,20 @@ export default function SaleDetailPage() {
         },
       });
 
-      currentY = (doc as any).lastAutoTable.finalY + 20; 
-      
-      const totalRowHeightInner = 15; 
-      const totalsBlockWidth = 220;
+      currentY = (doc as any).lastAutoTable.finalY + 15; // Reduced
+
+      // ---- TOTALS & FOOTER ----
+      const totalRowHeightInner = 13; // Reduced
+      const totalsBlockWidth = 200; // Reduced
       const totalsX = pageWidth - margin - totalsBlockWidth;
       const valueColX = pageWidth - margin;
       const numTotalLines = 6; 
-      const estTotalsHeight = (numTotalLines * totalRowHeightInner) + 30; 
+      const estTotalsHeight = (numTotalLines * totalRowHeightInner) + 20; // Reduced
       addNewPageIfNeeded(estTotalsHeight);
       
       const drawTotalRowInner = (label: string, value: string | number, isBold: boolean = false, isEmphasized: boolean = false) => {
         doc.setFont(undefined, isBold ? 'bold' : 'normal');
-        doc.setFontSize(isEmphasized ? 11 : 10);
+        doc.setFontSize(isEmphasized ? 9 : 8); // Reduced
         doc.text(label, totalsX, currentY);
         doc.text(typeof value === 'number' ? `Rs. ${value.toFixed(2)}` : value, valueColX, currentY, { align: 'right' });
         currentY += totalRowHeightInner;
@@ -336,59 +340,59 @@ export default function SaleDetailPage() {
       drawTotalRowInner("Subtotal:", itemsSubtotal);
       if (sale.packagingCharges && sale.packagingCharges > 0) drawTotalRowInner("Packaging Chrgs:", sale.packagingCharges);
       if (sale.transportCharges && sale.transportCharges > 0) drawTotalRowInner("Transport Chrgs:", sale.transportCharges);
-      currentY += 2;
+      currentY += 1; // Reduced
       doc.setDrawColor(150, 150, 150);
       doc.line(totalsX, currentY, valueColX, currentY);
-      currentY += 8; 
+      currentY += 6; // Reduced
       drawTotalRowInner("GRAND TOTAL:", sale.totalAmount, true, true);
-      currentY += 5;
+      currentY += 4; // Reduced
       drawTotalRowInner("Amount Paid:", sale.totalPaidAmount);
       drawTotalRowInner("Amount Due:", sale.totalAmountDue, sale.totalAmountDue > EPSILON, sale.totalAmountDue > EPSILON);
-      currentY += 5; 
+      currentY += 4; // Reduced
 
       const amountInWordsText = `Rupee ${sale.totalAmount.toFixed(2)} only`;
       const amountInWordsLines = doc.splitTextToSize(amountInWordsText, contentWidth - totalsBlockWidth - 30); 
-      const estAmountInWordsHeight = (amountInWordsLines.length * 10) + 20;
+      const estAmountInWordsHeight = (amountInWordsLines.length * 9) + 15; // Reduced
       addNewPageIfNeeded(estAmountInWordsHeight); 
 
-      doc.setFontSize(9);
+      doc.setFontSize(8); // Reduced
       doc.setFont(undefined, 'bold');
       doc.text("Amount:", margin, currentY);
-      currentY += 12;
+      currentY += 10; // Reduced
       doc.setFont(undefined, 'normal');
       doc.text(amountInWordsLines, margin, currentY);
-      currentY += (amountInWordsLines.length * 10) + 10;
+      currentY += (amountInWordsLines.length * 9) + 8; // Reduced
 
       const terms = ["- Goods once sold will not be taken back or exchanged.", "- All disputes subject to local jurisdiction only."];
-      const estTermsHeight = (terms.length * 10) + 10;
-      const estSigHeight = 50;
-      const finalBlockHeight = estTermsHeight + estSigHeight + 30; 
+      const estTermsHeight = (terms.length * 9) + 8; // Reduced
+      const estSigHeight = 40; // Reduced
+      const finalBlockHeight = estTermsHeight + estSigHeight + 20; // Reduced
       addNewPageIfNeeded(finalBlockHeight);
 
-      doc.setFontSize(8);
+      doc.setFontSize(7); // Reduced
       doc.setFont(undefined, 'bold');
       doc.text("Terms & Conditions:", margin, currentY);
-      currentY += 10;
+      currentY += 9; // Reduced
       doc.setFont(undefined, 'normal');
       terms.forEach(term => {
         doc.text(term, margin, currentY);
-        currentY += 10;
+        currentY += 9; // Reduced
       });
-      currentY += 10; 
+      currentY += 8; // Reduced
 
-      const finalSigLineY = currentY + 20;
+      const finalSigLineY = currentY + 15; // Reduced
       doc.setDrawColor(100, 100, 100);
       doc.line(totalsX, finalSigLineY, pageWidth - margin, finalSigLineY);
-      let sigTextY = finalSigLineY + 12;
-      doc.setFontSize(9);
+      let sigTextY = finalSigLineY + 10; // Reduced
+      doc.setFontSize(8); // Reduced
       doc.text("For " + shopName.toUpperCase(), totalsX + ((pageWidth - margin - totalsX) / 2), sigTextY, { align: 'center' });
-      sigTextY += 12;
+      sigTextY += 10; // Reduced
       doc.text("Authorized Signatory", totalsX + ((pageWidth - margin - totalsX) / 2), sigTextY, { align: 'center' });
 
       const pageCount = (doc as any).internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
-        doc.setFontSize(8);
+        doc.setFontSize(7); // Reduced
         doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, pageHeight - (margin / 2) - 5, { align: 'center' });
         if (i === pageCount) {
           doc.text(`Tally by: ${sale.recordedByName || sale.recordedByEmail || "N/A"}`, margin, pageHeight - (margin / 2) - 5);
