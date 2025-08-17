@@ -54,6 +54,55 @@ interface PdfOptions {
   documentType?: DocumentType;
 }
 
+// Helper function to convert number to words (Indian numbering system)
+function numberToWords(num: number): string {
+    if (num === 0) return "Zero";
+
+    const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    
+    const inWords = (n: number): string => {
+        let str = "";
+        if (n > 19) {
+            str += b[Math.floor(n / 10)] + " " + a[n % 10];
+        } else {
+            str += a[n];
+        }
+        return str.trim();
+    };
+
+    let words = "";
+    const crore = Math.floor(num / 10000000);
+    num %= 10000000;
+    if (crore > 0) {
+        words += inWords(crore) + " Crore ";
+    }
+
+    const lakh = Math.floor(num / 100000);
+    num %= 100000;
+    if (lakh > 0) {
+        words += inWords(lakh) + " Lakh ";
+    }
+
+    const thousand = Math.floor(num / 1000);
+    num %= 1000;
+    if (thousand > 0) {
+        words += inWords(thousand) + " Thousand ";
+    }
+    
+    const hundred = Math.floor(num / 100);
+    num %= 100;
+    if (hundred > 0) {
+        words += inWords(hundred) + " Hundred ";
+    }
+
+    if (num > 0) {
+        words += inWords(num);
+    }
+    
+    return words.trim();
+}
+
 
 export default function SaleDetailPage() {
   const params = useParams();
@@ -348,10 +397,10 @@ export default function SaleDetailPage() {
       drawTotalRowInner("Subtotal:", itemsSubtotal);
       if (sale.packagingCharges && sale.packagingCharges > 0) drawTotalRowInner("Packaging Chrgs:", sale.packagingCharges);
       if (sale.transportCharges && sale.transportCharges > 0) drawTotalRowInner("Transport Chrgs:", sale.transportCharges);
-      currentY += 1; // Reduced
+      currentY += 3; // Added a bit more space here
       doc.setDrawColor(150, 150, 150);
       doc.line(totalsX, currentY, valueColX, currentY);
-      currentY += 6; // Reduced
+      currentY += 8; // Increased space before grand total
       drawTotalRowInner("GRAND TOTAL:", sale.totalAmount, true, true);
       
       if (docType === 'Invoice') {
@@ -359,10 +408,36 @@ export default function SaleDetailPage() {
         drawTotalRowInner("Amount Paid:", sale.totalPaidAmount);
         drawTotalRowInner("Amount Due:", sale.totalAmountDue, sale.totalAmountDue > EPSILON, sale.totalAmountDue > EPSILON);
       }
-      currentY += 4; // Reduced
+      currentY += 4;
 
-      const amountInWordsText = `Rupee ${sale.totalAmount.toFixed(2)} only`;
-      const amountInWordsLines = doc.splitTextToSize(amountInWordsText, contentWidth - totalsBlockWidth - 30); 
+      const bankDetailsYStart = currentY;
+      let bankDetailsY = bankDetailsYStart;
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'bold');
+      doc.text("Bank Details:", margin, bankDetailsY);
+      bankDetailsY += 10;
+      doc.setFont(undefined, 'normal');
+      doc.text("Ac No: 10190002978498", margin, bankDetailsY);
+      bankDetailsY += 10;
+      doc.text("IFS Code: BDBL0001320", margin, bankDetailsY);
+      bankDetailsY += 10;
+      doc.text("Holder Name: ROHAN VARIETY STORE", margin, bankDetailsY, { maxWidth: contentWidth - totalsBlockWidth - 30 });
+      bankDetailsY += 10;
+
+
+      const amountTotal = Math.trunc(sale.totalAmount);
+      const paiseTotal = Math.round((sale.totalAmount - amountTotal) * 100);
+      let amountInWordsText = `Rupee ${numberToWords(amountTotal)}`;
+      if (paiseTotal > 0) {
+        amountInWordsText += ` and ${numberToWords(paiseTotal)} Paise`;
+      }
+      amountInWordsText += " only";
+
+      const amountInWordsLines = doc.splitTextToSize(amountInWordsText, contentWidth - totalsBlockWidth - 30);
+      
+      currentY = Math.max(currentY, bankDetailsY); // Ensure currentY is below both totals and bank details
+      currentY += 10; // Extra space
+      
       const estAmountInWordsHeight = (amountInWordsLines.length * 9) + 15; // Reduced
       addNewPageIfNeeded(estAmountInWordsHeight); 
 
@@ -1298,4 +1373,3 @@ export default function SaleDetailPage() {
     </div>
   );
 }
-
