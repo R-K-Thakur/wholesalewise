@@ -367,7 +367,7 @@ export default function SaleDetailPage() {
         },
       });
 
-      currentY = (doc as any).lastAutoTable.finalY + 10;
+      currentY = (doc as any).lastAutoTable.finalY + 15;
 
       // --- TOTALS & FOOTER ---
       const amountTotal = Math.trunc(sale.totalAmount);
@@ -405,16 +405,16 @@ export default function SaleDetailPage() {
       const maxRows = Math.max(leftColBody.length, rightColBody.length);
       const finalTableBody = [];
       for (let i = 0; i < maxRows; i++) {
-          const leftContent = typeof leftColBody[i] === 'object' ? (leftColBody[i] as any).content : leftColBody[i];
-          const leftCell = leftColBody[i] ? { content: leftContent, styles: (leftColBody[i] as any).styles || {} } : '';
-
-          const rightCellContent = (rightColBody[i] || '||').toString().split('||');
+          const leftCell = typeof leftColBody[i] === 'object' ? (leftColBody[i] as any).content : leftColBody[i] || '';
+          
+          const rightCellRaw = rightColBody[i] || '||';
+          const rightCellContent = typeof rightCellRaw === 'string' ? rightCellRaw.split('||') : [(rightCellRaw as any).content.split('||')[0], (rightCellRaw as any).content.split('||')[1]];
           const rightLabel = rightCellContent[0];
           const rightValue = rightCellContent[1] || '';
           const rightStyles = typeof rightColBody[i] === 'object' ? (rightColBody[i] as any).styles : {};
 
           finalTableBody.push([
-              leftCell,
+              { content: leftCell, styles: (leftColBody[i] as any)?.styles || {} },
               { content: rightLabel, styles: { halign: 'right', ...rightStyles } },
               { content: rightValue, styles: { halign: 'right', ...rightStyles } }
           ]);
@@ -1361,4 +1361,3 @@ export default function SaleDetailPage() {
     </div>
   );
 }
-
