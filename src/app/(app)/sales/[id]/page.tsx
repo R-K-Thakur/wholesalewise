@@ -603,100 +603,162 @@ export default function SaleDetailPage() {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' }) as jsPDFWithAutoTable;
     const pageA4Width = doc.internal.pageSize.getWidth();
     const pageA4Height = doc.internal.pageSize.getHeight();
+    const a4Margin = 30;
     
-    const columnWidth = pageA4Width / 3;
-    const topMargin = 35;
-    const sideMargin = 20;
-    const contentWidth = columnWidth - (2 * sideMargin);
-    const contentHeight = pageA4Height - topMargin - 35;
+    const columnCount = 3;
+    const columnWidth = (pageA4Width - (a4Margin * (columnCount - 1))) / columnCount;
+    const columnMargin = 15;
+    const contentWidth = columnWidth - (columnMargin * 2);
+    const contentHeight = pageA4Height - (a4Margin * 2);
     
-    const drawReceiptInColumn = (colIndex: number) => {
-        let currentX = sideMargin + (colIndex * columnWidth);
-        let currentY = topMargin;
-    
-        // Draw Header
-        const shopName = options?.shopDetails?.shopName || APP_NAME;
-        const shopAddress = options?.shopDetails?.shopAddress;
-        const shopContact = options?.shopDetails?.shopContact;
+    let currentX = a4Margin / 2;
+    let currentY = a4Margin;
 
+    const shopName = options?.shopDetails?.shopName || APP_NAME;
+    const shopAddress = options?.shopDetails?.shopAddress;
+    const shopContact = options?.shopDetails?.shopContact;
+
+    const drawHeader = (colIndex: number, isContinuation: boolean) => {
+        let tempY = a4Margin;
+        const startX = (colIndex * columnWidth) + columnMargin;
+        
         doc.setFontSize(12);
         doc.setFont(undefined, 'bold');
-        const shopNameLines = doc.splitTextToSize(shopName, contentWidth);
-        doc.text(shopNameLines, currentX + contentWidth / 2, currentY, { align: 'center' });
-        currentY += (shopNameLines.length * 12);
+        const shopNameText = shopName + (isContinuation ? " (cont.)" : "");
+        const shopNameLines = doc.splitTextToSize(shopNameText, contentWidth);
+        doc.text(shopNameLines, startX + contentWidth / 2, tempY, { align: 'center' });
+        tempY += (shopNameLines.length * 12);
         
         if (shopAddress) {
             doc.setFontSize(8);
             doc.setFont(undefined, 'normal');
             const addressLines = doc.splitTextToSize(shopAddress, contentWidth);
-            doc.text(addressLines, currentX + contentWidth / 2, currentY, { align: 'center' });
-            currentY += (addressLines.length * 8) + 2;
+            doc.text(addressLines, startX + contentWidth / 2, tempY, { align: 'center' });
+            tempY += (addressLines.length * 8) + 2;
         }
         if (shopContact) {
             doc.setFontSize(8);
             doc.setFont(undefined, 'normal');
-            doc.text(shopContact, currentX + contentWidth / 2, currentY, { align: 'center', maxWidth: contentWidth });
-            currentY += 10;
+            doc.text(shopContact, startX + contentWidth / 2, tempY, { align: 'center', maxWidth: contentWidth });
+            tempY += 10;
         }
         
-        currentY += 5;
+        tempY += 5;
         doc.setLineDashPattern([2, 2], 0);
-        doc.line(currentX, currentY, currentX + contentWidth, currentY);
+        doc.line(startX, tempY, startX + contentWidth, tempY);
         doc.setLineDashPattern([], 0);
-        currentY += 10;
-        
-        doc.setFontSize(8);
-        doc.setFont(undefined, 'normal');
-        const saleDate = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.saleDate);
-        doc.text(`ID: ${sale.id}`, currentX, currentY);
-        currentY += 10;
-        doc.text(`Date: ${format(saleDate, "dd/MM/yyyy hh:mm a")}`, currentX, currentY);
-        currentY += 10;
-        if (sale.customerName) {
-            doc.text(`Cust: ${sale.customerName}`, currentX, currentY, { maxWidth: contentWidth });
-            currentY += 10;
+        tempY += 10;
+
+        if (!isContinuation) {
+            doc.setFontSize(8);
+            doc.setFont(undefined, 'normal');
+            const saleDate = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.saleDate);
+            doc.text(`ID: ${sale.id}`, startX, tempY);
+            tempY += 10;
+            doc.text(`Date: ${format(saleDate, "dd/MM/yyyy hh:mm a")}`, startX, tempY);
+            tempY += 10;
+            if (sale.customerName) {
+                doc.text(`Cust: ${sale.customerName}`, startX, tempY, { maxWidth: contentWidth });
+                tempY += 10;
+            }
+            doc.text(`By: ${sale.recordedByName || sale.recordedByEmail || 'N/A'}`, startX, tempY);
+            tempY += 12;
         }
-        doc.text(`By: ${sale.recordedByName || sale.recordedByEmail || 'N/A'}`, currentX, currentY);
-        currentY += 12;
 
-        // Draw Table
-        const tableHead = [['#', 'Item', 'Qty', 'Rate', 'Total']];
-        const tableBody = sale.items.map((item, index) => [
-            (index + 1).toString(),
-            item.productNameSnapshot,
-            item.quantitySold.toString(),
-            item.pricePerUnitSold.toFixed(2),
-            item.total.toFixed(2)
-        ]);
-
-        autoTable(doc, {
-            head: tableHead,
-            body: tableBody,
-            startY: currentY,
-            theme: 'plain',
-            styles: { fontSize: 8, cellPadding: {top:1, bottom:1, left: 2, right: 2}, overflow: 'linebreak' },
-            headStyles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5, cellPadding: 2 },
-            columnStyles: {
-                0: { cellWidth: contentWidth * 0.08, halign: 'center' },
-                1: { cellWidth: contentWidth * 0.42, halign: 'left' },
-                2: { cellWidth: contentWidth * 0.15, halign: 'right' },
-                3: { cellWidth: contentWidth * 0.17, halign: 'right' },
-                4: { cellWidth: contentWidth * 0.18, halign: 'right' },
-            },
-            margin: { left: currentX, right: pageA4Width - (currentX + contentWidth) },
-        });
-
-        currentY = (doc as any).lastAutoTable.finalY + 5;
+        return tempY;
+    };
+    
+    try {
+        let currentColumnIndex = 0;
+        let startY = drawHeader(currentColumnIndex, false);
         
-        // Draw Footer
+        const tableHead = [['#', 'Item', 'Qty', 'Rate', 'Total']];
+        let tableBody: any[][] = [];
+
+        sale.items.forEach((item, index) => {
+            const row = [
+                (index + 1).toString(),
+                item.productNameSnapshot,
+                item.quantitySold.toString(),
+                item.pricePerUnitSold.toFixed(2),
+                item.total.toFixed(2)
+            ];
+
+            const tempDoc = new jsPDF() as jsPDFWithAutoTable;
+            autoTable(tempDoc, {
+                head: tableHead,
+                body: [row],
+                styles: { fontSize: 8, cellPadding: {top:1, bottom:1, left: 2, right: 2} },
+                columnStyles: {
+                    0: { cellWidth: contentWidth * 0.08 }, 1: { cellWidth: contentWidth * 0.42 },
+                    2: { cellWidth: contentWidth * 0.15 }, 3: { cellWidth: contentWidth * 0.17 },
+                    4: { cellWidth: contentWidth * 0.18 },
+                },
+            });
+
+            const rowHeight = (tempDoc as any).lastAutoTable.finalY - (tempDoc as any).lastAutoTable.startY;
+
+            if ((startY + rowHeight) > (pageA4Height - a4Margin - 100)) { // 100 as footer buffer
+                if (tableBody.length > 0) {
+                    autoTable(doc, {
+                        head: tableHead,
+                        body: tableBody,
+                        startY: (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 1 : drawHeader(currentColumnIndex, currentColumnIndex > 0),
+                        theme: 'plain',
+                        styles: { fontSize: 8, cellPadding: {top:1, bottom:1, left: 2, right: 2}, overflow: 'linebreak' },
+                        headStyles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5, cellPadding: 2, lineWidth: 0.1, lineColor: [180,180,180] },
+                        columnStyles: {
+                           0: { cellWidth: contentWidth * 0.08, halign: 'center' }, 1: { cellWidth: contentWidth * 0.42, halign: 'left' },
+                           2: { cellWidth: contentWidth * 0.15, halign: 'right' }, 3: { cellWidth: contentWidth * 0.17, halign: 'right' },
+                           4: { cellWidth: contentWidth * 0.18, halign: 'right' },
+                        },
+                        margin: { left: (currentColumnIndex * columnWidth) + columnMargin, right: pageA4Width - ((currentColumnIndex * columnWidth) + columnWidth - columnMargin) },
+                        showHead: 'firstPage',
+                    });
+                }
+                
+                currentColumnIndex++;
+                if (currentColumnIndex >= columnCount) {
+                    doc.addPage();
+                    currentColumnIndex = 0;
+                }
+                startY = drawHeader(currentColumnIndex, true);
+                tableBody = [row];
+            } else {
+                tableBody.push(row);
+            }
+        });
+        
+        // Draw any remaining rows
+        if (tableBody.length > 0) {
+             autoTable(doc, {
+                head: tableHead,
+                body: tableBody,
+                startY: startY,
+                theme: 'plain',
+                styles: { fontSize: 8, cellPadding: {top:1, bottom:1, left: 2, right: 2}, overflow: 'linebreak' },
+                headStyles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5, cellPadding: 2, lineWidth: 0.1, lineColor: [180,180,180] },
+                columnStyles: {
+                    0: { cellWidth: contentWidth * 0.08, halign: 'center' }, 1: { cellWidth: contentWidth * 0.42, halign: 'left' },
+                    2: { cellWidth: contentWidth * 0.15, halign: 'right' }, 3: { cellWidth: contentWidth * 0.17, halign: 'right' },
+                    4: { cellWidth: contentWidth * 0.18, halign: 'right' },
+                },
+                margin: { left: (currentColumnIndex * columnWidth) + columnMargin, right: pageA4Width - ((currentColumnIndex * columnWidth) + columnWidth - columnMargin) },
+                showHead: 'firstPage',
+            });
+            startY = (doc as any).lastAutoTable.finalY;
+        }
+
+        const footerStartX = (currentColumnIndex * columnWidth) + columnMargin;
+        currentY = startY + 5;
         doc.setLineDashPattern([2, 2], 0);
-        doc.line(currentX, currentY, currentX + contentWidth, currentY);
+        doc.line(footerStartX, currentY, footerStartX + contentWidth, currentY);
         doc.setLineDashPattern([], 0);
         currentY += 12;
 
         doc.setFontSize(9);
-        const totalsX = currentX;
-        const valuesX = currentX + contentWidth;
+        const totalsX = footerStartX;
+        const valuesX = footerStartX + contentWidth;
 
         const itemsSubtotal = sale.items.reduce((sum, item) => sum + item.total, 0);
         doc.setFont(undefined, 'normal');
@@ -740,21 +802,9 @@ export default function SaleDetailPage() {
         }
         
         doc.setFontSize(8);
-        doc.text("Thank you for your business!", currentX + contentWidth/2, currentY, { align: 'center' });
+        doc.text("Thank you for your business!", footerStartX + contentWidth/2, currentY, { align: 'center' });
         currentY += 12;
-        doc.text("***", currentX + contentWidth/2, currentY, { align: 'center' });
-    };
-
-    try {
-        drawReceiptInColumn(0);
-        drawReceiptInColumn(1);
-        drawReceiptInColumn(2);
-        
-        doc.setLineDashPattern([2, 1], 0);
-        doc.setDrawColor(180, 180, 180);
-        doc.line(columnWidth, topMargin - 10, columnWidth, pageA4Height - topMargin + 10);
-        doc.line(columnWidth * 2, topMargin - 10, columnWidth * 2, pageA4Height - topMargin + 10);
-        doc.setLineDashPattern([], 0);
+        doc.text("***", footerStartX + contentWidth/2, currentY, { align: 'center' });
 
         doc.save(`A4-thermal-bill-${sale.id}.pdf`);
     } catch (error) {
