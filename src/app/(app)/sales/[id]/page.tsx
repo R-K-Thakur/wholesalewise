@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import Link from 'next/link';
@@ -315,8 +314,8 @@ export default function SaleDetailPage() {
         tempY += detailRowHeight;
       };
       
-      addDetailRow(`${docType} No:`, sale.id.substring(0, 12).toUpperCase());
       const invoiceDateTime = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.saleDate);
+      addDetailRow(`${docType} No:`, sale.id.substring(0, 12).toUpperCase());
       addDetailRow("Date & Time:", format(invoiceDateTime, "dd/MM/yyyy HH:mm:ss"));
       
       currentY = Math.max(currentY + detailRowHeight, tempY);
@@ -405,19 +404,13 @@ export default function SaleDetailPage() {
       const maxRows = Math.max(leftColBody.length, rightColBody.length);
       const finalTableBody = [];
       for (let i = 0; i < maxRows; i++) {
-          const leftCell = typeof leftColBody[i] === 'object' ? (leftColBody[i] as any).content : leftColBody[i] || '';
-          const leftStyles = typeof leftColBody[i] === 'object' ? (leftColBody[i] as any).styles : {};
-          
+          const leftCell = leftColBody[i];
           const rightCellRaw = rightColBody[i] || ['', ''];
-          const rightLabel = Array.isArray(rightCellRaw) ? (typeof rightCellRaw[0] === 'object' ? (rightCellRaw[0] as any).content : rightCellRaw[0]) : '';
-          const rightValue = Array.isArray(rightCellRaw) ? (typeof rightCellRaw[1] === 'object' ? (rightCellRaw[1] as any).content : rightCellRaw[1]) : '';
-          const rightStyles = typeof rightCellRaw[0] === 'object' ? (rightCellRaw[0] as any).styles : {};
-
-
+          
           finalTableBody.push([
-              { content: leftCell, styles: leftStyles },
-              { content: rightLabel, styles: { halign: 'right', ...rightStyles } },
-              { content: rightValue, styles: { halign: 'right', ...rightStyles } }
+              leftCell,
+              Array.isArray(rightCellRaw) ? rightCellRaw[0] : '',
+              Array.isArray(rightCellRaw) ? rightCellRaw[1] : ''
           ]);
       }
       
@@ -428,8 +421,8 @@ export default function SaleDetailPage() {
         styles: { fontSize: 8 },
         columnStyles: {
             0: { cellWidth: contentWidth * 0.65 },
-            1: { cellWidth: contentWidth * 0.175, fontStyle: 'bold' },
-            2: { cellWidth: contentWidth * 0.175 },
+            1: { cellWidth: contentWidth * 0.175, fontStyle: 'bold', halign: 'right' },
+            2: { cellWidth: contentWidth * 0.175, halign: 'right' },
         },
         margin: { left: margin },
       });
@@ -1363,5 +1356,4 @@ export default function SaleDetailPage() {
     </div>
   );
 }
-
 
