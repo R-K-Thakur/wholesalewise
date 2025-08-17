@@ -14,7 +14,7 @@ import {
   DialogFooter,
   DialogDescription
 } from "@/components/ui/dialog";
-import { ArrowLeft, Printer, Eye, Loader2, Edit, PlusCircle, UserCircle, QrCode, Pencil } from 'lucide-react';
+import { ArrowLeft, Printer, Eye, Loader2, Edit, PlusCircle, UserCircle, QrCode, Pencil, FileText } from 'lucide-react';
 import { getSaleByIdAction, updateSalePaymentStatusAction, recordAdditionalPaymentAction, type UpdateSaleStatusPayload, updateSaleCustomerNameAction } from '../actions';
 import type { Sale, PaymentTransaction, RecordAdditionalPaymentPayload } from '@/lib/types';
 import { APP_NAME } from '@/lib/constants';
@@ -39,6 +39,8 @@ interface jsPDFWithAutoTable extends jsPDF {
 
 const EPSILON = 0.001; // For floating point comparisons
 
+type DocumentType = 'Invoice' | 'Estimate' | 'Quotation';
+
 
 interface ShopDetails {
   shopName?: string;
@@ -49,6 +51,7 @@ interface ShopDetails {
 
 interface PdfOptions {
   shopDetails?: ShopDetails;
+  documentType?: DocumentType;
 }
 
 
@@ -60,6 +63,8 @@ export default function SaleDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [session, setSession] = useState<SessionData | null>(null);
   const { toast } = useToast();
+
+  const [documentType, setDocumentType] = useState<DocumentType>('Invoice');
 
   const [isProcessingA4Pdf, setIsProcessingA4Pdf] = useState(false);
   const [isA4PreviewModalOpen, setIsA4PreviewModalOpen] = useState(false);
@@ -197,6 +202,8 @@ export default function SaleDetailPage() {
     const shopAddress = options?.shopDetails?.shopAddress;
     const shopContact = options?.shopDetails?.shopContact;
     const accentColor = options?.shopDetails?.invoicePrimaryColor || "#73A7B3"; // Default Muted Teal
+    const docType = options?.documentType || 'Invoice';
+
 
     try {
       const doc = new jsPDF({ unit: "pt", format: "a4" }) as jsPDFWithAutoTable;
@@ -231,7 +238,7 @@ export default function SaleDetailPage() {
 
       doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
-      doc.text("INVOICE", pageWidth / 2, currentY, { align: 'center' });
+      doc.text(docType.toUpperCase(), pageWidth / 2, currentY, { align: 'center' });
       currentY += 28;
 
       const detailsStartY = currentY;
@@ -257,9 +264,9 @@ export default function SaleDetailPage() {
         tempY += detailRowHeight;
       };
       
-      addDetailRow("Invoice No:", sale.id.substring(0, 12).toUpperCase());
+      addDetailRow(`${docType} No:`, sale.id.substring(0, 12).toUpperCase());
       const invoiceDateTime = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.saleDate);
-      addDetailRow("Invoice Date:", format(invoiceDateTime, "dd/MM/yyyy"));
+      addDetailRow("Date:", format(invoiceDateTime, "dd/MM/yyyy"));
       addDetailRow("Time:", format(invoiceDateTime, "HH:mm:ss"));
       addDetailRow("Salesman:", sale.recordedByName || sale.recordedByEmail || "N/A");
       
@@ -394,7 +401,7 @@ export default function SaleDetailPage() {
         setIsProcessingA4Pdf(false);
         return dataUri;
       } else {
-        doc.save(`invoice-${sale.id}.pdf`);
+        doc.save(`${docType}-${sale.id}.pdf`);
         setIsProcessingA4Pdf(false);
       }
     } catch (error) {
@@ -596,197 +603,183 @@ export default function SaleDetailPage() {
 
     const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' }) as jsPDFWithAutoTable;
     const pageA4Width = doc.internal.pageSize.getWidth();
-    const pageA4Height = doc.internal.pageSize.getHeight(); // approx 595pt
+    const pageA4Height = doc.internal.pageSize.getHeight();
 
-    const numColumns = 3;
-    const columnMargin = 15;
+    const columnWidth = pageA4Width / 3;
     const topMargin = 35;
-    const bottomMargin = 35;
-    const contentHeight = pageA4Height - topMargin - bottomMargin;
-    const columnWidth = (pageA4Width - (columnMargin * (numColumns + 1))) / numColumns;
+    const sideMargin = 20;
+    const contentWidth = columnWidth - (2 * sideMargin);
+    const contentHeight = pageA4Height - topMargin - 35;
+
+    let currentX = sideMargin;
     
-    let currentColumn = 0;
-    let currentX = columnMargin;
-    let currentY = topMargin;
-
     const drawHeader = (isContinuation: boolean = false) => {
-        let startY = topMargin;
-        const shopName = options?.shopDetails?.shopName || APP_NAME;
-        const shopAddress = options?.shopDetails?.shopAddress;
-        const shopContact = options?.shopDetails?.shopContact;
+      let startY = topMargin;
+      const shopName = options?.shopDetails?.shopName || APP_NAME;
+      const shopAddress = options?.shopDetails?.shopAddress;
+      const shopContact = options?.shopDetails?.shopContact;
 
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'bold');
-        let headerText = shopName;
-        if(isContinuation) headerText += " (cont.)";
-        doc.text(headerText, currentX + columnWidth / 2, startY, { align: 'center', maxWidth: columnWidth });
-        startY += doc.getTextDimensions(headerText, { fontSize: 12, maxWidth: columnWidth }).h;
-        
-        if (shopAddress) {
-            doc.setFontSize(8);
-            doc.setFont(undefined, 'normal');
-            const addressLines = doc.splitTextToSize(shopAddress, columnWidth);
-            doc.text(addressLines, currentX + columnWidth / 2, startY, { align: 'center' });
-            startY += (addressLines.length * 8) + 2;
-        }
-        if (shopContact) {
-            doc.setFontSize(8);
-            doc.setFont(undefined, 'normal');
-            doc.text(shopContact, currentX + columnWidth / 2, startY, { align: 'center', maxWidth: columnWidth });
-            startY += 10;
-        }
-        
-        startY += 5;
-        doc.setLineDashPattern([2, 2], 0);
-        doc.line(currentX, startY, currentX + columnWidth, startY);
-        doc.setLineDashPattern([], 0);
-        startY += 10;
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      let headerText = shopName;
+      if (isContinuation) headerText += " (cont.)";
+      doc.text(headerText, currentX + contentWidth / 2, startY, { align: 'center', maxWidth: contentWidth });
+      startY += doc.getTextDimensions(headerText, { fontSize: 12, maxWidth: contentWidth }).h;
 
+      if (shopAddress) {
         doc.setFontSize(8);
         doc.setFont(undefined, 'normal');
-        const saleDate = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.saleDate);
-        doc.text(`ID: ${sale.id}`, currentX, startY);
+        const addressLines = doc.splitTextToSize(shopAddress, contentWidth);
+        doc.text(addressLines, currentX + contentWidth / 2, startY, { align: 'center' });
+        startY += (addressLines.length * 8) + 2;
+      }
+      if (shopContact) {
+        doc.setFontSize(8);
+        doc.setFont(undefined, 'normal');
+        doc.text(shopContact, currentX + contentWidth / 2, startY, { align: 'center', maxWidth: contentWidth });
         startY += 10;
-        doc.text(`Date: ${format(saleDate, "dd/MM/yyyy hh:mm a")}`, currentX, startY);
-        startY += 10;
-        if (sale.customerName) {
-            doc.text(`Cust: ${sale.customerName}`, currentX, startY, { maxWidth: columnWidth });
-            startY += 10;
-        }
-        doc.text(`By: ${sale.recordedByName || sale.recordedByEmail || 'N/A'}`, currentX, startY);
-        startY += 12;
+      }
 
-        return startY; // Return the Y position after the header
+      startY += 5;
+      doc.setLineDashPattern([2, 2], 0);
+      doc.line(currentX, startY, currentX + contentWidth, startY);
+      doc.setLineDashPattern([], 0);
+      startY += 10;
+
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'normal');
+      const saleDate = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.saleDate);
+      doc.text(`ID: ${sale.id}`, currentX, startY);
+      startY += 10;
+      doc.text(`Date: ${format(saleDate, "dd/MM/yyyy hh:mm a")}`, currentX, startY);
+      startY += 10;
+      if (sale.customerName) {
+        doc.text(`Cust: ${sale.customerName}`, currentX, startY, { maxWidth: contentWidth });
+        startY += 10;
+      }
+      doc.text(`By: ${sale.recordedByName || sale.recordedByEmail || 'N/A'}`, currentX, startY);
+      startY += 12;
+
+      return startY;
     };
 
-    const drawFooter = () => {
-        let startY = currentY;
+    const drawFooter = (startY: number) => {
+      doc.setLineDashPattern([2, 2], 0);
+      doc.line(currentX, startY, currentX + contentWidth, startY);
+      doc.setLineDashPattern([], 0);
+      startY += 12;
 
-        doc.setLineDashPattern([2, 2], 0);
-        doc.line(currentX, startY, currentX + columnWidth, startY);
-        doc.setLineDashPattern([], 0);
-        startY += 12;
+      doc.setFontSize(9);
+      const totalsX = currentX;
+      const valuesX = currentX + contentWidth;
 
-        doc.setFontSize(9);
-        const totalsX = currentX;
-        const valuesX = currentX + columnWidth;
-        
-        const itemsSubtotal = sale.items.reduce((sum, item) => sum + item.total, 0);
-        doc.setFont(undefined, 'normal');
-        doc.text('Subtotal:', totalsX, startY);
-        doc.text(`Rs. ${itemsSubtotal.toFixed(2)}`, valuesX, startY, { align: 'right' });
+      const itemsSubtotal = sale.items.reduce((sum, item) => sum + item.total, 0);
+      doc.setFont(undefined, 'normal');
+      doc.text('Subtotal:', totalsX, startY);
+      doc.text(`Rs. ${itemsSubtotal.toFixed(2)}`, valuesX, startY, { align: 'right' });
+      startY += 11;
+
+      if (sale.packagingCharges && sale.packagingCharges > 0) {
+        doc.text('Packaging:', totalsX, startY);
+        doc.text(`Rs. ${sale.packagingCharges.toFixed(2)}`, valuesX, startY, { align: 'right' });
         startY += 11;
-        
-        if (sale.packagingCharges && sale.packagingCharges > 0) {
-            doc.text('Packaging:', totalsX, startY);
-            doc.text(`Rs. ${sale.packagingCharges.toFixed(2)}`, valuesX, startY, { align: 'right' });
-            startY += 11;
-        }
-        if (sale.transportCharges && sale.transportCharges > 0) {
-            doc.text('Transport:', totalsX, startY);
-            doc.text(`Rs. ${sale.transportCharges.toFixed(2)}`, valuesX, startY, { align: 'right' });
-            startY += 11;
-        }
+      }
+      if (sale.transportCharges && sale.transportCharges > 0) {
+        doc.text('Transport:', totalsX, startY);
+        doc.text(`Rs. ${sale.transportCharges.toFixed(2)}`, valuesX, startY, { align: 'right' });
+        startY += 11;
+      }
 
+      doc.setFont(undefined, 'bold');
+      doc.text('Total Bill:', totalsX, startY);
+      doc.text(`Rs. ${sale.totalAmount.toFixed(2)}`, valuesX, startY, { align: 'right' });
+      startY += 11;
+      doc.setFont(undefined, 'normal');
+
+      doc.text('Paid:', totalsX, startY);
+      doc.text(`Rs. ${sale.totalPaidAmount.toFixed(2)}`, valuesX, startY, { align: 'right' });
+      startY += 11;
+
+      doc.setFont(undefined, 'bold');
+      doc.text('Due:', totalsX, startY);
+      doc.text(`Rs. ${sale.totalAmountDue.toFixed(2)}`, valuesX, startY, { align: 'right' });
+      startY += 12;
+      doc.setFont(undefined, 'normal');
+
+      doc.setFontSize(8);
+      doc.text('Payment:', totalsX, startY);
+      doc.text(displayPaymentMethod, valuesX, startY, { align: 'right' });
+      startY += 12;
+
+      if (sale.notes && sale.notes.trim() !== "") {
+        const notesLines = doc.splitTextToSize(sale.notes, contentWidth);
         doc.setFont(undefined, 'bold');
-        doc.text('Total Bill:', totalsX, startY);
-        doc.text(`Rs. ${sale.totalAmount.toFixed(2)}`, valuesX, startY, { align: 'right' });
-        startY += 11;
+        doc.text("Notes:", totalsX, startY);
+        startY += 10;
         doc.setFont(undefined, 'normal');
+        doc.text(notesLines, totalsX, startY);
+        startY += (notesLines.length * 8) + 5;
+      }
 
-        doc.text('Paid:', totalsX, startY);
-        doc.text(`Rs. ${sale.totalPaidAmount.toFixed(2)}`, valuesX, startY, { align: 'right' });
-        startY += 11;
-
-        doc.setFont(undefined, 'bold');
-        doc.text('Due:', totalsX, startY);
-        doc.text(`Rs. ${sale.totalAmountDue.toFixed(2)}`, valuesX, startY, { align: 'right' });
-        startY += 12;
-        doc.setFont(undefined, 'normal');
-
-        doc.setFontSize(8);
-        doc.text('Payment:', totalsX, startY);
-        doc.text(displayPaymentMethod, valuesX, startY, { align: 'right' });
-        startY += 12;
-
-        if (sale.notes && sale.notes.trim() !== "") {
-          const notesLines = doc.splitTextToSize(sale.notes, columnWidth);
-          doc.setFont(undefined, 'bold');
-          doc.text("Notes:", totalsX, startY);
-          startY += 10;
-          doc.setFont(undefined, 'normal');
-          doc.text(notesLines, totalsX, startY);
-          startY += (notesLines.length * 8) + 5;
-        }
-
-        doc.setFontSize(8);
-        doc.text("Thank you for your business!", currentX + columnWidth / 2, startY, { align: 'center' });
-        startY += 12;
-        doc.text("***", currentX + columnWidth / 2, startY, { align: 'center' });
+      doc.setFontSize(8);
+      doc.text("Thank you for your business!", currentX + contentWidth / 2, startY, { align: 'center' });
+      startY += 12;
+      doc.text("***", currentX + contentWidth / 2, startY, { align: 'center' });
     };
 
     try {
-        currentY = drawHeader(false);
+      let currentY = drawHeader(false);
+      let isContinuation = false;
 
-        const tableHead = [['#', 'Item', 'Qty', 'Rate', 'Total']];
-        const tableBody = sale.items.map((item, index) => [
-            (index + 1).toString(),
-            item.productNameSnapshot,
-            item.quantitySold.toString(),
-            item.pricePerUnitSold.toFixed(2),
-            item.total.toFixed(2)
-        ]);
+      const tableHead = [['#', 'Item', 'Qty', 'Rate', 'Total']];
+      const tableBody = sale.items.map((item, index) => [
+        (index + 1).toString(),
+        item.productNameSnapshot,
+        item.quantitySold.toString(),
+        item.pricePerUnitSold.toFixed(2),
+        item.total.toFixed(2)
+      ]);
 
-        autoTable(doc, {
-            head: tableHead,
-            body: tableBody,
-            startY: currentY,
-            theme: 'plain',
-            styles: { fontSize: 8, cellPadding: { top: 1, bottom: 1, left: 2, right: 2 }, overflow: 'linebreak' },
-            headStyles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5, cellPadding: 2 },
-            columnStyles: {
-                0: { cellWidth: columnWidth * 0.08, halign: 'center' },
-                1: { cellWidth: columnWidth * 0.42, halign: 'left' },
-                2: { cellWidth: columnWidth * 0.15, halign: 'right' },
-                3: { cellWidth: columnWidth * 0.17, halign: 'right' },
-                4: { cellWidth: columnWidth * 0.18, halign: 'right' },
-            },
-            margin: { left: currentX, right: 0 },
-            pageBreak: 'auto',
-            didDrawPage: (data) => {
-                // This hook is called *after* a page (or in our case, a column) is drawn.
-                // We use it to reset the Y position and draw the header for the next column.
-                if (data.pageNumber > 1) { // jspdf-autotable treats columns on the same page as separate pages
-                    currentColumn++;
-                    currentX = columnMargin + (currentColumn * (columnWidth + columnMargin));
-                    currentY = drawHeader(true);
-                    data.settings.startY = currentY; // Important: Tell autotable where to start the next chunk
-                }
-            },
-            willDrawCell: (data) => {
-                // If the next cell will overflow the current column, we manually handle the break.
-                // This logic is complex and autotable's `pageBreak: 'auto'` with `didDrawPage` is often sufficient.
-                // Let's rely on the built-in handling for now.
-            }
-        });
+      autoTable(doc, {
+        head: tableHead,
+        body: tableBody,
+        startY: currentY,
+        theme: 'plain',
+        styles: { fontSize: 8, cellPadding: { top: 1, bottom: 1, left: 2, right: 2 }, overflow: 'linebreak' },
+        headStyles: { fontStyle: 'bold', halign: 'center', fontSize: 8.5, cellPadding: 2 },
+        columnStyles: {
+          0: { cellWidth: contentWidth * 0.08, halign: 'center' },
+          1: { cellWidth: contentWidth * 0.42, halign: 'left' },
+          2: { cellWidth: contentWidth * 0.15, halign: 'right' },
+          3: { cellWidth: contentWidth * 0.17, halign: 'right' },
+          4: { cellWidth: contentWidth * 0.18, halign: 'right' },
+        },
+        margin: { left: currentX, right: pageA4Width - (currentX + contentWidth) },
+        didDrawPage: (data) => {
+          if (data.pageNumber > 1) { // Autotable creates a new "page" for each column
+            currentX += columnWidth;
+            isContinuation = true;
+            currentY = drawHeader(isContinuation);
+            data.settings.startY = currentY;
+          }
+        },
+      });
 
-        currentY = (doc as any).lastAutoTable.finalY + 5;
-        
-        // After the table is finished, draw the footer in the final column
-        drawFooter();
-        
-        doc.save(`A4-thermal-bill-${sale.id}.pdf`);
+      currentY = (doc as any).lastAutoTable.finalY + 5;
+      drawFooter(currentY);
+
+      doc.save(`A4-thermal-bill-${sale.id}.pdf`);
     } catch (error) {
-        console.error("Error generating A4 multi-column PDF:", error);
-        toast({ title: "Error Generating PDF", description: "Could not generate A4 thermal-style bill.", variant: "destructive" });
+      console.error("Error generating A4 multi-column PDF:", error);
+      toast({ title: "Error Generating PDF", description: "Could not generate A4 thermal-style bill.", variant: "destructive" });
     } finally {
-        setIsProcessingA4Thermal(false);
+      setIsProcessingA4Thermal(false);
     }
   };
 
 
   const handlePreviewA4Bill = () => {
-    const dataUri = generateInvoicePDF('datauristring', { shopDetails: currentShopDetails });
+    const dataUri = generateInvoicePDF('datauristring', { shopDetails: currentShopDetails, documentType });
     if (dataUri) {
       setA4PreviewPdfUrl(dataUri);
       setIsA4PreviewModalOpen(true);
@@ -794,7 +787,7 @@ export default function SaleDetailPage() {
   };
 
   const handleDownloadA4Pdf = () => {
-    generateInvoicePDF('save', { shopDetails: currentShopDetails });
+    generateInvoicePDF('save', { shopDetails: currentShopDetails, documentType });
   };
 
   const handlePreviewThermalReceipt = () => {
@@ -954,17 +947,34 @@ export default function SaleDetailPage() {
                 </Link>
             </Button>
           )}
+           <div className="flex items-center gap-2">
+            <Select value={documentType} onValueChange={(value: DocumentType) => setDocumentType(value)}>
+              <SelectTrigger className="w-[150px]" aria-label="Select Document Type">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Invoice">Invoice</SelectItem>
+                <SelectItem value="Estimate">Estimate</SelectItem>
+                <SelectItem value="Quotation">Quotation</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={handlePreviewA4Bill} disabled={isProcessingA4Pdf || isProcessingThermalPdf || isUpdatingStatus} variant="outline" size="sm">
+              {(isProcessingA4Pdf && a4PreviewPdfUrl === null) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}
+              Preview
+            </Button>
+            <Button onClick={handleDownloadA4Pdf} disabled={isProcessingA4Pdf || isProcessingThermalPdf || isUpdatingStatus} size="sm">
+              {(isProcessingA4Pdf && a4PreviewPdfUrl !== null) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+              Download
+            </Button>
+          </div>
+        </div>
+      </div>
+      
+      <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <Button onClick={handleGenerateA4ThermalLayout} disabled={isProcessingA4Thermal || isProcessingA4Pdf || isProcessingThermalPdf || isUpdatingStatus} className="flex-grow sm:flex-grow-0">
             {isProcessingA4Thermal ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
             Print A4 Thermal
-          </Button>
-          <Button onClick={handlePreviewA4Bill} disabled={isProcessingA4Pdf || isProcessingThermalPdf || isUpdatingStatus} variant="outline" className="flex-grow sm:flex-grow-0">
-            {(isProcessingA4Pdf && a4PreviewPdfUrl === null) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}
-            Preview Bill
-          </Button>
-          <Button onClick={handleDownloadA4Pdf} disabled={isProcessingA4Pdf || isProcessingThermalPdf || isUpdatingStatus} className="flex-grow sm:flex-grow-0">
-            {(isProcessingA4Pdf && a4PreviewPdfUrl !== null) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
-            Download PDF
           </Button>
           <Button onClick={handleDownloadThermalReceipt} disabled={isProcessingThermalPdf || isProcessingA4Pdf || isUpdatingStatus} className="flex-grow sm:flex-grow-0">
             {(isProcessingThermalPdf && thermalPreviewPdfUrl !== null) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
@@ -976,7 +986,7 @@ export default function SaleDetailPage() {
             </div>
           )}
         </div>
-      </div>
+
 
       <Card>
         <CardHeader className="flex flex-row justify-between items-start">
@@ -1222,7 +1232,7 @@ export default function SaleDetailPage() {
       <Dialog open={isA4PreviewModalOpen} onOpenChange={setIsA4PreviewModalOpen}>
         <DialogContent className="max-w-3xl h-[90vh] flex flex-col p-0">
           <DialogHeader className="p-4 border-b">
-            <DialogTitle>Invoice Preview (A4)</DialogTitle>
+            <DialogTitle>{documentType} Preview (A4)</DialogTitle>
           </DialogHeader>
           <div className="flex-1 p-0 m-0 overflow-hidden">
             {a4PreviewPdfUrl ? (
