@@ -18,15 +18,8 @@ export async function middleware(request: NextRequest) {
   const pinSetupPendingCookie = request.cookies.get(PIN_SETUP_PENDING_COOKIE_NAME);
 
 
-  console.log(`[Middleware] Request to path: ${pathname}.`);
-  if (sessionCookie) console.log(`[Middleware] Main session cookie (first 50 chars): ${sessionCookie.value?.substring(0,50) ?? 'N/A'}`);
-  if (pinPendingCookie) console.log(`[Middleware] PIN verification pending cookie (first 50 chars): ${pinPendingCookie.value?.substring(0,50) ?? 'N/A'}`);
-  if (pinSetupPendingCookie) console.log(`[Middleware] PIN setup pending cookie (first 50 chars): ${pinSetupPendingCookie.value?.substring(0,50) ?? 'N/A'}`);
-
-
   // Allow access to /login, /login/** sub-paths and API routes without full session
   if (pathname.startsWith('/login') || pathname.startsWith('/api')) {
-    console.log(`[Middleware] Allowing access to public/auth path: ${pathname}`);
     return NextResponse.next();
   }
   
@@ -35,7 +28,6 @@ export async function middleware(request: NextRequest) {
   if (sessionCookie && sessionCookie.value) {
     try {
       const parsedData = JSON.parse(sessionCookie.value);
-      // Basic validation (can be more thorough if needed)
       if (parsedData && parsedData.email && parsedData.role) {
         session = parsedData as SessionData;
       }
@@ -45,7 +37,6 @@ export async function middleware(request: NextRequest) {
   }
 
   if (session) {
-    console.log(`[Middleware] Valid session found for ${session.email}, role ${session.role}. Allowing access to: ${pathname}`);
     return NextResponse.next();
   }
 
@@ -99,6 +90,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|healthz|files/.*|assets/.*|images/.*).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js)$).*)',
   ],
 };

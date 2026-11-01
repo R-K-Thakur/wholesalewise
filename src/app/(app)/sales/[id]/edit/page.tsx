@@ -72,7 +72,9 @@ function EditSaleForm({ allProducts, onProductAdded, currentUserRole, existingSa
         productNameSnapshot: item.productNameSnapshot, // Keep snapshot for display
       })),
       paymentMethod: existingSaleData.paymentMethod || 'cash',
+      customerId: existingSaleData.customerId || '',
       customerName: existingSaleData.customerName || '',
+      customerPhone: existingSaleData.customerPhone || '',
       notes: existingSaleData.notes || '',
       packagingCharges: existingSaleData.packagingCharges,
       transportCharges: existingSaleData.transportCharges,

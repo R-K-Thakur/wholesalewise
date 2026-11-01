@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Wand2 } from "lucide-react";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,8 @@ export default function NewProductPage() {
       wholesalePricePerBaseUnit: '' as unknown as number,
       initialStock: '' as unknown as number,
       reorderThreshold: 0,
+      sku: '',
+      barcode: '',
     },
   });
 
@@ -164,6 +166,57 @@ export default function NewProductPage() {
                   </FormItem>
                 )}
               />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="barcode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center justify-between">
+                        <FormLabel>Barcode (Optional)</FormLabel>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs text-primary gap-1 px-1.5 hover:bg-primary/10"
+                          onClick={() => {
+                            const randomDigits = Math.floor(100000000 + Math.random() * 900000000);
+                            const generatedCode = `890${randomDigits}`;
+                            field.onChange(generatedCode);
+                            toast({
+                              title: "Barcode Generated",
+                              description: `Generated code: ${generatedCode}. You can print or use this on product labels later.`,
+                            });
+                          }}
+                        >
+                          <Wand2 className="h-3 w-3" /> Auto-Generate
+                        </Button>
+                      </div>
+                      <FormControl>
+                        <Input placeholder="Leave blank or scan/enter barcode" {...field} />
+                      </FormControl>
+                      <p className="text-[11px] text-muted-foreground">
+                        Not using barcodes yet? You can safely leave this blank and add or generate barcodes anytime later.
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="sku"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>SKU / Item Code</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g. SOAP-LAV-01" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField

@@ -48,7 +48,7 @@ export function PendingPurchasePriceWidget({ products }: PendingPurchasePriceWid
                       Category: {product.category}
                     </p>
                     <p className="text-xs text-destructive">
-                      Current Purchase Price: Rs. {product.purchasePrice.toFixed(2)}
+                      Current Purchase Price: Rs. {product.purchasePrice !== undefined ? product.purchasePrice.toFixed(2) : 'Not Set'}
                     </p>
                   </div>
                   <Button variant="outline" size="sm" asChild className="flex-shrink-0 border-amber-500 text-amber-600 hover:bg-amber-500/10">

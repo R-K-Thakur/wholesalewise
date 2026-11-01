@@ -16,7 +16,9 @@ export const saleItemSchema = z.object({
 
 export const saleFormSchema = z.object({
   saleType: z.literal('wholesale'), // Hardcoded to wholesale
+  customerId: z.string().optional().nullable(),
   customerName: z.string().max(100, "Customer name too long").optional().nullable(),
+  customerPhone: z.string().max(20, "Phone number too long").optional().nullable(),
   saleDate: z.string().refine((date) => !isNaN(Date.parse(date)), { message: "Invalid date" }),
   items: z.array(saleItemSchema),
   paymentMethod: z.enum(['cash', 'card', 'online'], { required_error: "Payment method is required."}).optional(),
@@ -28,6 +30,17 @@ export const saleFormSchema = z.object({
     .number({ invalid_type_error: "Transport charges must be a number." })
     .nonnegative("Transport charges cannot be negative.")
     .optional(),
+  discountType: z.enum(['percentage', 'fixed']).optional().default('fixed'),
+  discountValue: z.coerce
+    .number({ invalid_type_error: "Discount must be a number." })
+    .nonnegative("Discount cannot be negative.")
+    .optional()
+    .default(0),
+  discountAmount: z.coerce
+    .number({ invalid_type_error: "Discount amount must be a number." })
+    .nonnegative("Discount amount cannot be negative.")
+    .optional()
+    .default(0),
   amountPaid: z.coerce
     .number({ invalid_type_error: "Amount paid must be a number."})
     .nonnegative("Amount paid cannot be negative."),
@@ -45,13 +58,36 @@ export const saleFormSchema = z.object({
   data.items.forEach(item => {
     itemsTotal += (item.quantitySold || 0) * (item.pricePerUnitSold || 0);
   });
-  const calculatedGrandTotal = itemsTotal + (data.packagingCharges || 0) + (data.transportCharges || 0);
 
-  if (data.amountPaid > calculatedGrandTotal) {
+  let calculatedDiscount = 0;
+  if (data.discountValue && data.discountValue > 0) {
+    if (data.discountType === 'percentage') {
+      calculatedDiscount = parseFloat(((itemsTotal * data.discountValue) / 100).toFixed(2));
+    } else {
+      calculatedDiscount = parseFloat(data.discountValue.toFixed(2));
+    }
+  }
+  calculatedDiscount = Math.min(itemsTotal, calculatedDiscount);
+
+  const calculatedGrandTotal = parseFloat(
+    Math.max(0, itemsTotal - calculatedDiscount + (data.packagingCharges || 0) + (data.transportCharges || 0)).toFixed(2)
+  );
+
+  if (data.amountPaid > calculatedGrandTotal + 0.001) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: "Amount paid cannot be greater than the total bill amount.",
       path: ["amountPaid"],
+    });
+  }
+
+  // If there is any amount due, customer name is required so their due can be tracked in their profile
+  const dueAmount = calculatedGrandTotal - data.amountPaid;
+  if (dueAmount > 0.001 && (!data.customerName || data.customerName.trim() === '')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Customer name is required when there is a due amount to record in their profile.",
+      path: ["customerName"],
     });
   }
 });
@@ -59,9 +95,11 @@ export const saleFormSchema = z.object({
 export type SaleItemFormStructure = z.infer<typeof saleItemSchema>;
 export type SaleFormData = z.infer<typeof saleFormSchema>;
 
-export type RecordSaleActionPayload = Omit<SaleFormData, 'customerName' | 'notes' | 'items' | 'packagingCharges' | 'transportCharges' | 'amountPaid' | 'saleType'> & {
+export type RecordSaleActionPayload = Omit<SaleFormData, 'customerId' | 'customerName' | 'customerPhone' | 'notes' | 'items' | 'packagingCharges' | 'transportCharges' | 'discountType' | 'discountValue' | 'discountAmount' | 'amountPaid' | 'saleType'> & {
   saleType: 'wholesale'; // Ensure this is fixed
+  customerId?: string;
   customerName?: string;
+  customerPhone?: string;
   notes?: string;
   items: Array<{
     productId?: string;
@@ -74,6 +112,9 @@ export type RecordSaleActionPayload = Omit<SaleFormData, 'customerName' | 'notes
   }>;
   packagingCharges?: number;
   transportCharges?: number;
+  discountType?: 'percentage' | 'fixed';
+  discountValue?: number;
+  discountAmount?: number;
   totalAmount: number;
   amountPaid: number;
 };

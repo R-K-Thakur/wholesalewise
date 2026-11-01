@@ -38,9 +38,10 @@ const DEFAULT_ITEMS_PER_PAGE = 10;
 
 interface ProductListClientContentProps {
   products: Product[];
+  initialRole?: 'owner' | 'staff';
 }
 
-export function ProductListClientContent({ products: initialProducts }: ProductListClientContentProps) {
+export function ProductListClientContent({ products: initialProducts, initialRole }: ProductListClientContentProps) {
   const router = useRouter();
   const { toast } = useToast();
   
@@ -59,35 +60,37 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
   const [currentPage, setCurrentPage] = React.useState(1);
   const [itemsPerPage, setItemsPerPage] = React.useState(DEFAULT_ITEMS_PER_PAGE);
   
-  const [session, setSession] = React.useState<SessionData | null>(null);
-  const [sessionLoaded, setSessionLoaded] = React.useState(false);
+  const isOwner = initialRole === 'owner';
+  const [session, setSession] = React.useState<SessionData | null>(initialRole ? ({ role: initialRole } as any) : null);
+  const [sessionLoaded, setSessionLoaded] = React.useState(Boolean(initialRole));
   const [isMounted, setIsMounted] = React.useState(false);
 
-  const [showPurchasePriceColumn, setShowPurchasePriceColumn] = React.useState(false);
-  const [tableColSpan, setTableColSpan] = React.useState(7);
-
+  const [showPurchasePriceColumn, setShowPurchasePriceColumn] = React.useState(isOwner);
+  const [tableColSpan, setTableColSpan] = React.useState(isOwner ? 8 : 7);
 
   React.useEffect(() => {
     setIsMounted(true);
-    async function fetchSessionData() {
-      const currentSession = await getSession();
-      setSession(currentSession);
-      if (currentSession && currentSession.role !== 'staff') {
-        setShowPurchasePriceColumn(true);
-        setTableColSpan(8);
-      } else {
-        setShowPurchasePriceColumn(false);
-        setTableColSpan(7);
+    if (!initialRole) {
+      async function fetchSessionData() {
+        const currentSession = await getSession();
+        setSession(currentSession);
+        if (currentSession && currentSession.role !== 'staff') {
+          setShowPurchasePriceColumn(true);
+          setTableColSpan(8);
+        } else {
+          setShowPurchasePriceColumn(false);
+          setTableColSpan(7);
+        }
+        setSessionLoaded(true);
       }
-      setSessionLoaded(true);
+      fetchSessionData();
     }
-    fetchSessionData();
 
     const storedItemsPerPage = localStorage.getItem(ITEMS_PER_PAGE_STORAGE_KEY);
     if (storedItemsPerPage) {
       setItemsPerPage(parseInt(storedItemsPerPage, 10) || DEFAULT_ITEMS_PER_PAGE);
     }
-  }, []);
+  }, [initialRole]);
 
   const filteredProducts = React.useMemo(() => {
     const lowercasedSearchTerm = searchTerm.toLowerCase().trim();
@@ -95,7 +98,8 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
     return initialProducts.filter(product =>
       product.name.toLowerCase().includes(lowercasedSearchTerm) ||
       product.category.toLowerCase().includes(lowercasedSearchTerm) ||
-      (product.sku && product.sku.toLowerCase().includes(lowercasedSearchTerm))
+      (product.sku && product.sku.toLowerCase().includes(lowercasedSearchTerm)) ||
+      (product.barcode && product.barcode.toLowerCase().includes(lowercasedSearchTerm))
     );
   }, [initialProducts, searchTerm]);
 
@@ -225,7 +229,23 @@ export function ProductListClientContent({ products: initialProducts }: ProductL
           <tbody className="bg-card divide-y divide-border">
             {paginatedProducts.map((product) => (
               <tr key={product.id}>
-                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-foreground">{product.name}</td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-foreground">
+                  <div>{product.name}</div>
+                  {(product.sku || product.barcode) && (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {product.sku && (
+                        <span className="text-[10px] font-mono bg-muted text-muted-foreground px-1.5 py-0.5 rounded">
+                          SKU: {product.sku}
+                        </span>
+                      )}
+                      {product.barcode && (
+                        <span className="text-[10px] font-mono bg-primary/10 text-primary px-1.5 py-0.5 rounded">
+                          BARCODE: {product.barcode}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.category}</td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground">{product.quantityInStock} {product.baseUnit}</td>
                 {showPurchasePriceColumn && (

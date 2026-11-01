@@ -39,9 +39,7 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 export function PurchaseHistoryChart({ purchases }: PurchaseHistoryChartProps) {
-  const [processedChartData, setProcessedChartData] = React.useState<PurchaseTrend[]>([]);
-  const [selectedRange, setSelectedRange] = React.useState<string>(TREND_DATE_RANGE_OPTIONS[1].value); // Default to "Last 30 Days"
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [selectedRange, setSelectedRange] = React.useState<string>(TREND_DATE_RANGE_OPTIONS[1].value);
   const [isMounted, setIsMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -52,52 +50,41 @@ export function PurchaseHistoryChart({ purchases }: PurchaseHistoryChartProps) {
     }
   }, []);
 
-  React.useEffect(() => {
-    if (!isMounted || !purchases) {
-      setProcessedChartData([]);
-      setIsLoading(false);
-      return;
-    }
-    setIsLoading(true);
+  const processedChartData = React.useMemo(() => {
+    if (!purchases || purchases.length === 0) return [];
 
     const now = new Date();
     const rangeInDays = parseInt(selectedRange, 10);
-    const startDateBoundary = subDays(startOfDay(now), rangeInDays -1);
+    const startDateBoundary = subDays(startOfDay(now), rangeInDays - 1);
 
     const dailyPurchases: Record<string, number> = {};
-
-    // Initialize daily purchases with 0 for all days in the range
     for (let i = 0; i < rangeInDays; i++) {
-        const dateKey = format(subDays(startOfDay(now), i), 'yyyy-MM-dd');
-        dailyPurchases[dateKey] = 0;
+      const dateKey = format(subDays(startOfDay(now), i), 'yyyy-MM-dd');
+      dailyPurchases[dateKey] = 0;
     }
-    
-    if (purchases.length > 0) {
-        purchases.forEach(purchase => {
-        try {
-            const purchaseEventDate = startOfDay(parseISO(purchase.purchaseDate)); // Use purchaseDate for actual event time
-            if (purchaseEventDate >= startDateBoundary && purchaseEventDate <= now) {
-            const dateKey = format(purchaseEventDate, 'yyyy-MM-dd');
-            dailyPurchases[dateKey] = (dailyPurchases[dateKey] || 0) + purchase.totalCost;
-            }
-        } catch (error) {
-            console.warn(`Skipping purchase due to invalid date format: ${purchase.purchaseDate}`, purchase);
+
+    for (let i = 0; i < purchases.length; i++) {
+      const purchase = purchases[i];
+      try {
+        const purchaseEventDate = startOfDay(parseISO(purchase.purchaseDate));
+        if (purchaseEventDate >= startDateBoundary && purchaseEventDate <= now) {
+          const dateKey = format(purchaseEventDate, 'yyyy-MM-dd');
+          dailyPurchases[dateKey] = (dailyPurchases[dateKey] || 0) + (purchase.totalCost || 0);
         }
-        });
+      } catch {
+        // Skip invalid date
+      }
     }
-    
-    const chartData = Object.entries(dailyPurchases)
+
+    return Object.entries(dailyPurchases)
       .map(([date, totalPurchases]) => ({
-        date: format(parseISO(date), "MMM d"), // Format for display
-        fullDate: date, // Keep for sorting
+        date: format(parseISO(date), "MMM d"),
+        fullDate: date,
         totalPurchases: parseFloat(totalPurchases.toFixed(2)),
       }))
-      .sort((a, b) => new Date(a.fullDate).getTime() - new Date(b.fullDate).getTime())
-      .map(({date, totalPurchases}) => ({date, totalPurchases}));
-
-    setProcessedChartData(chartData);
-    setIsLoading(false);
-  }, [purchases, selectedRange, isMounted]);
+      .sort((a, b) => (a.fullDate > b.fullDate ? 1 : -1))
+      .map(({ date, totalPurchases }) => ({ date, totalPurchases }));
+  }, [purchases, selectedRange]);
 
   const handleRangeChange = (value: string) => {
     setSelectedRange(value);
@@ -109,7 +96,6 @@ export function PurchaseHistoryChart({ purchases }: PurchaseHistoryChartProps) {
   const currentRangeLabel = isMounted ? 
     (TREND_DATE_RANGE_OPTIONS.find(opt => opt.value === selectedRange)?.label || selectedRange + " Days") : 
     (TREND_DATE_RANGE_OPTIONS.find(opt => opt.value === TREND_DATE_RANGE_OPTIONS[1].value)?.label);
-
 
   return (
     <Card>
@@ -132,17 +118,12 @@ export function PurchaseHistoryChart({ purchases }: PurchaseHistoryChartProps) {
         </Select>
       </CardHeader>
       <CardContent>
-        {isLoading && isMounted ? (
-            <div className="h-[300px] flex items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="ml-2 text-muted-foreground">Loading chart data...</p>
-            </div>
-        ) : !isMounted ? (
-             <div className="h-[300px] flex items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="ml-2 text-muted-foreground">Initializing chart...</p>
-            </div>
-        ) : processedChartData.length === 0 && isMounted ? (
+        {!isMounted ? (
+          <div className="h-[300px] flex items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="ml-2 text-muted-foreground">Loading chart...</p>
+          </div>
+        ) : processedChartData.length === 0 ? (
           <div className="h-[300px] flex items-center justify-center">
             <p className="text-muted-foreground">No purchase data available for the selected period.</p>
           </div>

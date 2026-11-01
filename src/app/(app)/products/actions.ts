@@ -9,6 +9,7 @@ import type { ValidatedProductFormData } from './schema';
 import type { Product, Purchase } from '@/lib/types';
 import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from '@/lib/constants';
 import { getSession, type SessionData } from '@/app/login/actions';
+import { getFromMemoryCache, setMemoryCache, invalidateMemoryCache } from '@/lib/memory-cache';
 
 const PRODUCTS_COLLECTION = 'products';
 const PURCHASES_COLLECTION = 'purchases';
@@ -98,8 +99,8 @@ export async function addProduct(data: ValidatedProductFormData) {
       wholesalePricePerBaseUnit: data.wholesalePricePerBaseUnit,
       quantityInStock: quantityInBaseUnits,
       reorderThreshold: data.reorderThreshold ?? 0,
-      sku: '',
-      barcode: '',
+      sku: data.sku?.trim() || '',
+      barcode: data.barcode?.trim() || '',
       vendor: '',
       createdAt: now,
       updatedAt: now,
@@ -137,6 +138,8 @@ export async function addProduct(data: ValidatedProductFormData) {
       return newProductRef;
     });
 
+    invalidateMemoryCache('products');
+    invalidateMemoryCache('purchases');
     revalidateTag('products');
     revalidateTag('purchases');
     revalidatePath('/products');
@@ -175,7 +178,11 @@ const getProductsCached = unstable_cache(
 );
 
 export async function getProductsAction(): Promise<Product[]> {
-  return getProductsCached();
+  const memoryCached = getFromMemoryCache<Product[]>('products');
+  if (memoryCached) return memoryCached;
+  const products = await getProductsCached();
+  setMemoryCache('products', products, 60);
+  return products;
 }
 
 export async function getProductByIdAction(id: string): Promise<Product | undefined> {
@@ -271,6 +278,8 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
         }
     }
     if (data.reorderThreshold !== undefined) updateData.reorderThreshold = data.reorderThreshold;
+    if (data.sku !== undefined) updateData.sku = data.sku.trim();
+    if (data.barcode !== undefined) updateData.barcode = data.barcode.trim();
 
 
     if (Object.keys(updateData).length === 0) {
@@ -281,6 +290,7 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
 
     await updateDoc(productRef, updateData);
 
+    invalidateMemoryCache('products');
     revalidateTag('products');
     revalidatePath('/products');
     revalidatePath(`/products/${id}/edit`);
@@ -301,6 +311,9 @@ export async function updateProductAction(id: string, data: Partial<ValidatedPro
 export async function deleteProductAction(id: string) {
   try {
     await deleteDoc(doc(db, PRODUCTS_COLLECTION, id));
+    invalidateMemoryCache('products');
+    invalidateMemoryCache('sales');
+    invalidateMemoryCache('purchases');
     revalidateTag('products');
     revalidateTag('sales');
     revalidateTag('purchases');
@@ -392,6 +405,8 @@ export async function addStockToProductAction(
       transaction.set(purchaseDocRef, purchaseRecord);
     });
 
+    invalidateMemoryCache('products');
+    invalidateMemoryCache('purchases');
     revalidateTag('products');
     revalidateTag('purchases');
     revalidatePath('/products');
@@ -470,6 +485,10 @@ const getPurchasesCached = unstable_cache(
 );
 
 export async function getPurchasesAction(): Promise<Purchase[]> {
-  return getPurchasesCached();
+  const memoryCached = getFromMemoryCache<Purchase[]>('purchases');
+  if (memoryCached) return memoryCached;
+  const purchases = await getPurchasesCached();
+  setMemoryCache('purchases', purchases, 60);
+  return purchases;
 }
 

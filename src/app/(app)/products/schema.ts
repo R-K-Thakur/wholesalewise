@@ -41,6 +41,8 @@ export const productFormSchema = z.object({
     .int({ message: 'Reorder threshold must be a whole number.' })
     .nonnegative({ message: 'Reorder threshold cannot be negative.' })
     .optional(),
+  sku: z.string().max(50, { message: 'SKU cannot exceed 50 characters.' }).optional(),
+  barcode: z.string().max(50, { message: 'Barcode cannot exceed 50 characters.' }).optional(),
 }).superRefine((data, ctx) => {
   if (data.baseUnit !== data.purchaseUnit && (data.purchaseUnitConversionFactor === undefined || data.purchaseUnitConversionFactor < 1)) {
     if (!(data.purchaseUnit === "dozen" && data.baseUnit === "piece")) {

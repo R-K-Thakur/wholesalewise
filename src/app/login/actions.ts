@@ -1,8 +1,9 @@
 
 "use server";
 
+import { cache } from "react";
 import { cookies } from "next/headers";
-import { doc, getDoc, setDoc, updateDoc, Timestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import crypto from "crypto";
 
@@ -12,6 +13,7 @@ const PIN_SETUP_PENDING_COOKIE_NAME = "auth-session-pin-setup-pending";
 const APP_SETTINGS_COLLECTION = "app_settings";
 const ROLE_MANAGEMENT_DOC = "role_management";
 const USERS_COLLECTION = "users";
+const STAFF_MEMBERS_COLLECTION = "staff_members";
 
 const UTC_STAFF_LOGIN_START_TIME = { H: 3, M: 30 }; 
 const UTC_STAFF_LOGIN_END_TIME = { H: 17, M: 30 };  
@@ -91,19 +93,23 @@ async function getRoleEmailsFromFirestore(): Promise<RoleEmails> {
   }
 }
 
-async function finalizeLoginSession(userData: UserDocumentData, role: "owner" | "staff"): Promise<void> {
+async function finalizeLoginSession(
+  userData: UserDocumentData,
+  role: "owner" | "staff",
+  customUsername?: string
+): Promise<void> {
   const sessionData: SessionData = {
-    username: userData.email,
+    username: customUsername || userData.email,
     email: userData.email,
     role: role,
-    name: userData.displayName,
+    name: userData.displayName || customUsername || userData.email,
     invoicePrimaryColor: userData.invoicePrimaryColor,
     shopName: userData.shopName,
     shopAddress: userData.shopAddress,
     shopContact: userData.shopContact,
   };
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const cookieSecure = process.env.NODE_ENV === 'production';
   
   cookieStore.set(SESSION_COOKIE_NAME, JSON.stringify(sessionData), {
@@ -116,118 +122,231 @@ async function finalizeLoginSession(userData: UserDocumentData, role: "owner" | 
 }
 
 
-export async function signInWithEmailAction(email: string): Promise<{ success: boolean; error?: string; pinRequired?: boolean; pinSetupRequired?: boolean; email?: string }> {
+export async function signInWithEmailAction(
+  identifier: string,
+  password?: string
+): Promise<{
+  success: boolean;
+  error?: string;
+  pinRequired?: boolean;
+  pinSetupRequired?: boolean;
+  email?: string;
+}> {
   if (!db) {
     return { success: false, error: "Authentication service is critically misconfigured. Database unavailable." };
   }
-  if (!email || !email.includes('@')) {
-    return { success: false, error: "Invalid email format provided." };
+  if (!identifier || identifier.trim() === "") {
+    return { success: false, error: "Please enter your Staff ID or Email." };
   }
 
-  const userEmailLower = email.toLowerCase();
+  const rawInput = identifier.trim();
+  const lowerInput = rawInput.toLowerCase();
 
   try {
     const roleEmailsResult = await getRoleEmailsFromFirestore();
     const { ownerEmails, staffEmails } = roleEmailsResult;
 
-    let userRole: SessionData['role'] | null = null;
+    // 1. Check if identifier matches an Owner email
+    if (ownerEmails.includes(lowerInput)) {
+      const userDocRef = doc(db, USERS_COLLECTION, lowerInput);
+      const userDocSnap = await getDoc(userDocRef);
+      const userDocDataFromDb: UserDocumentData | null = userDocSnap.exists()
+        ? (userDocSnap.data() as UserDocumentData)
+        : null;
+      const userDisplayName = userDocDataFromDb?.displayName?.trim() || lowerInput;
 
-    if (ownerEmails.includes(userEmailLower)) {
-      userRole = "owner";
-    } else if (staffEmails.includes(userEmailLower)) {
-      userRole = "staff";
-    }
-
-    if (!userRole) {
-      if (ownerEmails.length === 0 && staffEmails.length === 0) {
-        return { success: false, error: "Login failed: No authorized users are configured in the system. Please contact an administrator." };
+      // If owner has PIN and provided password (PIN) in the input form, verify immediately
+      if (password && password.trim() !== "" && userDocDataFromDb?.ownerPinHash && userDocDataFromDb?.ownerPinSalt) {
+        const isPinValid = verifyPin(password.trim(), userDocDataFromDb.ownerPinHash, userDocDataFromDb.ownerPinSalt);
+        if (isPinValid) {
+          await finalizeLoginSession(userDocDataFromDb, "owner");
+          const cookieStore = await cookies();
+          cookieStore.delete(PIN_PENDING_COOKIE_NAME);
+          cookieStore.delete(PIN_SETUP_PENDING_COOKIE_NAME);
+          console.log(`[signInWithEmailAction] Owner ${lowerInput} authenticated directly with PIN.`);
+          return { success: true };
+        } else {
+          return { success: false, error: "Invalid Owner PIN." };
+        }
       }
-      return { success: false, error: "Login failed: This email address is not authorized for access." };
+
+      const cookieStore = await cookies();
+      const cookieSecure = process.env.NODE_ENV === "production";
+
+      if (userDocDataFromDb?.ownerPinHash && userDocDataFromDb?.ownerPinSalt) {
+        const pinPendingData = { email: lowerInput, name: userDisplayName };
+        cookieStore.set(PIN_PENDING_COOKIE_NAME, JSON.stringify(pinPendingData), {
+          httpOnly: true,
+          secure: cookieSecure,
+          maxAge: 60 * 10,
+          path: "/",
+          sameSite: "lax" as const,
+        });
+        console.log(`[signInWithEmailAction] Owner ${lowerInput} requires PIN. Setting PIN_PENDING cookie.`);
+        return { success: true, pinRequired: true, email: lowerInput };
+      } else {
+        const pinSetupPendingData = { email: lowerInput, name: userDisplayName };
+        cookieStore.set(PIN_SETUP_PENDING_COOKIE_NAME, JSON.stringify(pinSetupPendingData), {
+          httpOnly: true,
+          secure: cookieSecure,
+          maxAge: 60 * 10,
+          path: "/",
+          sameSite: "lax" as const,
+        });
+        console.log(`[signInWithEmailAction] New owner ${lowerInput} without PIN. Setting PIN_SETUP_PENDING cookie.`);
+        return { success: true, pinSetupRequired: true, email: lowerInput };
+      }
     }
 
-    const userDocRef = doc(db, USERS_COLLECTION, userEmailLower);
-    let userDocSnap = await getDoc(userDocRef);
-    let userDocDataFromDb: UserDocumentData | null = userDocSnap.exists() ? userDocSnap.data() as UserDocumentData : null;
-    
-    const userDisplayName = userDocDataFromDb?.displayName?.trim() ? userDocDataFromDb.displayName.trim() : userEmailLower;
+    // 2. Check in staff_members collection (by staffId or by email)
+    let matchedStaff: any = null;
 
-    if (userRole === "staff") {
-      const now = new Date(); 
+    // Check by doc id (lowercase staffId)
+    const directDocSnap = await getDoc(doc(db, STAFF_MEMBERS_COLLECTION, lowerInput));
+    if (directDocSnap.exists()) {
+      matchedStaff = directDocSnap.data();
+    }
+
+    // Check by staffId field (exact match)
+    if (!matchedStaff) {
+      const qById = query(collection(db, STAFF_MEMBERS_COLLECTION), where("staffId", "==", rawInput));
+      const snapById = await getDocs(qById);
+      if (!snapById.empty) {
+        matchedStaff = snapById.docs[0].data();
+      }
+    }
+
+    // Check by email field
+    if (!matchedStaff) {
+      const qByEmail = query(collection(db, STAFF_MEMBERS_COLLECTION), where("email", "==", lowerInput));
+      const snapByEmail = await getDocs(qByEmail);
+      if (!snapByEmail.empty) {
+        matchedStaff = snapByEmail.docs[0].data();
+      }
+    }
+
+    // If staff record found in staff_members
+    if (matchedStaff) {
+      if (matchedStaff.isActive === false) {
+        return {
+          success: false,
+          error: "Your staff account has been deactivated. Please contact your store administrator.",
+        };
+      }
+
+      // Check password
+      if (matchedStaff.password && matchedStaff.password.trim() !== "") {
+        if (!password || password.trim() === "") {
+          return { success: false, error: "Password is required for staff login." };
+        }
+        if (matchedStaff.password.trim() !== password.trim()) {
+          return {
+            success: false,
+            error: "Incorrect password. If you forgot your credentials, please ask your admin to look them up in the Admin Dashboard.",
+          };
+        }
+      }
+
+      // Check allowed staff login time window (09:00 - 23:00 IST / 03:30 - 17:30 UTC)
+      const now = new Date();
       const currentUTCHour = now.getUTCHours();
       const currentUTCMinute = now.getUTCMinutes();
-
-      const isAfterStartTime = currentUTCHour > UTC_STAFF_LOGIN_START_TIME.H || 
-                              (currentUTCHour === UTC_STAFF_LOGIN_START_TIME.H && currentUTCMinute >= UTC_STAFF_LOGIN_START_TIME.M);
-      
-      const isBeforeEndTime = currentUTCHour < UTC_STAFF_LOGIN_END_TIME.H ||
-                              (currentUTCHour === UTC_STAFF_LOGIN_END_TIME.H && currentUTCMinute < UTC_STAFF_LOGIN_END_TIME.M);
+      const isAfterStartTime =
+        currentUTCHour > UTC_STAFF_LOGIN_START_TIME.H ||
+        (currentUTCHour === UTC_STAFF_LOGIN_START_TIME.H && currentUTCMinute >= UTC_STAFF_LOGIN_START_TIME.M);
+      const isBeforeEndTime =
+        currentUTCHour < UTC_STAFF_LOGIN_END_TIME.H ||
+        (currentUTCHour === UTC_STAFF_LOGIN_END_TIME.H && currentUTCMinute < UTC_STAFF_LOGIN_END_TIME.M);
 
       if (!(isAfterStartTime && isBeforeEndTime)) {
-        return { success: false, error: `Access denied. Staff login is only permitted between 09:00 and 23:00 (exclusive).` };
+        return {
+          success: false,
+          error: "Access denied. Staff login is only permitted between 09:00 and 23:00 (exclusive).",
+        };
       }
+
+      // Fetch or build user details
+      const staffEmail = (matchedStaff.email || `${matchedStaff.staffId}@wholesalewise.staff`).toLowerCase();
+      const staffDocRef = doc(db, USERS_COLLECTION, staffEmail);
+      const staffDocSnap = await getDoc(staffDocRef);
+      const staffDocData = staffDocSnap.exists() ? staffDocSnap.data() : null;
+
+      const userData: UserDocumentData = {
+        email: staffEmail,
+        displayName: matchedStaff.name || matchedStaff.staffId || "Staff Member",
+        role: "staff",
+        shopName: staffDocData?.shopName,
+        shopAddress: staffDocData?.shopAddress,
+        shopContact: staffDocData?.shopContact,
+        invoicePrimaryColor: staffDocData?.invoicePrimaryColor,
+      };
+
+      await finalizeLoginSession(userData, "staff", matchedStaff.staffId || matchedStaff.name);
+      console.log(`[signInWithEmailAction] Staff ${matchedStaff.staffId} (${staffEmail}) logged in successfully.`);
+      return { success: true };
     }
-    
-    const userDataToSet: Partial<UserDocumentData> = {
-      email: userEmailLower,
-      displayName: userDisplayName,
-      role: userRole,
+
+    // 3. Check legacy staffEmails list in role_management
+    if (staffEmails.includes(lowerInput)) {
+      const now = new Date();
+      const currentUTCHour = now.getUTCHours();
+      const currentUTCMinute = now.getUTCMinutes();
+      const isAfterStartTime =
+        currentUTCHour > UTC_STAFF_LOGIN_START_TIME.H ||
+        (currentUTCHour === UTC_STAFF_LOGIN_START_TIME.H && currentUTCMinute >= UTC_STAFF_LOGIN_START_TIME.M);
+      const isBeforeEndTime =
+        currentUTCHour < UTC_STAFF_LOGIN_END_TIME.H ||
+        (currentUTCHour === UTC_STAFF_LOGIN_END_TIME.H && currentUTCMinute < UTC_STAFF_LOGIN_END_TIME.M);
+
+      if (!(isAfterStartTime && isBeforeEndTime)) {
+        return {
+          success: false,
+          error: "Access denied. Staff login is only permitted between 09:00 and 23:00 (exclusive).",
+        };
+      }
+
+      const userDocRef = doc(db, USERS_COLLECTION, lowerInput);
+      let userDocSnap = await getDoc(userDocRef);
+      let userDocDataFromDb: UserDocumentData | null = userDocSnap.exists()
+        ? (userDocSnap.data() as UserDocumentData)
+        : null;
+      const userDisplayName = userDocDataFromDb?.displayName?.trim() || lowerInput;
+
+      const userDataToSet: Partial<UserDocumentData> = {
+        email: lowerInput,
+        displayName: userDisplayName,
+        role: "staff",
+      };
+      await setDoc(userDocRef, userDataToSet, { merge: true });
+
+      await finalizeLoginSession(
+        {
+          email: lowerInput,
+          displayName: userDisplayName,
+          role: "staff",
+          shopName: userDocDataFromDb?.shopName,
+          shopAddress: userDocDataFromDb?.shopAddress,
+          shopContact: userDocDataFromDb?.shopContact,
+          invoicePrimaryColor: userDocDataFromDb?.invoicePrimaryColor,
+        },
+        "staff",
+        userDisplayName
+      );
+      return { success: true };
+    }
+
+    // 4. Account not found
+    return {
+      success: false,
+      error:
+        "Login failed: No account found with this ID or Email. If you are staff and forgot your credentials, please ask your admin to look them up in the Admin Dashboard.",
     };
-
-    if (userDocDataFromDb) {
-      // Conditionally add fields only if they exist in the fetched document
-      if (userDocDataFromDb.invoicePrimaryColor !== undefined) userDataToSet.invoicePrimaryColor = userDocDataFromDb.invoicePrimaryColor;
-      if (userDocDataFromDb.shopName !== undefined) userDataToSet.shopName = userDocDataFromDb.shopName;
-      if (userDocDataFromDb.shopAddress !== undefined) userDataToSet.shopAddress = userDocDataFromDb.shopAddress;
-      if (userDocDataFromDb.shopContact !== undefined) userDataToSet.shopContact = userDocDataFromDb.shopContact;
-      if (userDocDataFromDb.ownerPinHash !== undefined) userDataToSet.ownerPinHash = userDocDataFromDb.ownerPinHash;
-      if (userDocDataFromDb.ownerPinSalt !== undefined) userDataToSet.ownerPinSalt = userDocDataFromDb.ownerPinSalt;
-    }
-
-
-    await setDoc(userDocRef, userDataToSet, { merge: true });
-    userDocSnap = await getDoc(userDocRef); 
-    userDocDataFromDb = userDocSnap.exists() ? userDocSnap.data() as UserDocumentData : null;
-
-    if (!userDocDataFromDb) {
-        throw new Error("Failed to retrieve user data after update.");
-    }
-
-    const cookieStore = cookies();
-    const cookieSecure = process.env.NODE_ENV === 'production';
-
-    if (userRole === "owner") {
-      if (userDocDataFromDb.ownerPinHash && userDocDataFromDb.ownerPinSalt) {
-        const pinPendingData = { email: userEmailLower, name: userDisplayName };
-        cookieStore.set(PIN_PENDING_COOKIE_NAME, JSON.stringify(pinPendingData), {
-          httpOnly: true, secure: cookieSecure, maxAge: 60 * 10, path: "/", sameSite: "lax" as const,
-        });
-        console.log(`[signInWithEmailAction] Owner ${userEmailLower} has PIN. Setting PIN_PENDING cookie.`);
-        return { success: true, pinRequired: true, email: userEmailLower };
-      } else {
-        const pinSetupPendingData = { email: userEmailLower, name: userDisplayName };
-        cookieStore.set(PIN_SETUP_PENDING_COOKIE_NAME, JSON.stringify(pinSetupPendingData), {
-          httpOnly: true, secure: cookieSecure, maxAge: 60 * 10, path: "/", sameSite: "lax" as const,
-        });
-        console.log(`[signInWithEmailAction] New owner ${userEmailLower} or owner without PIN. Setting PIN_SETUP_PENDING cookie.`);
-        return { success: true, pinSetupRequired: true, email: userEmailLower };
-      }
-    }
-    
-    await finalizeLoginSession(userDocDataFromDb, userRole);
-    console.log(`[signInWithEmailAction] Setting full session cookie for staff ${userEmailLower}.`);
-    return { success: true };
-
   } catch (e: any) {
     console.error("[signInWithEmailAction] Error:", e);
-    let safeErrorMessage = "An unexpected server error occurred during login.";
-    if (e instanceof Error && typeof e.message === 'string' && e.message.trim() !== "") {
-      safeErrorMessage = e.message.startsWith("Function setDoc() called with invalid data. Unsupported field value: undefined")
-        ? "Login setup error. Please try again." 
-        : `Login failed: ${e.message}`;
-    } else if (typeof e === 'string' && e.trim() !== "") {
-      safeErrorMessage = `Login failed: ${e}`;
-    }
-    return { success: false, error: safeErrorMessage };
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : "An unexpected server error occurred during login.",
+    };
   }
 }
 
@@ -263,7 +382,7 @@ export async function verifyOwnerPinAction(email: string, enteredPin: string): P
     }
 
     await finalizeLoginSession(userData, "owner");
-    cookies().delete(PIN_PENDING_COOKIE_NAME);
+    (await cookies()).delete(PIN_PENDING_COOKIE_NAME);
     console.log(`[verifyOwnerPinAction] PIN verified for ${userEmailLower}. Full session set. PIN_PENDING cookie cleared.`);
     return { success: true };
 
@@ -275,8 +394,9 @@ export async function verifyOwnerPinAction(email: string, enteredPin: string): P
 
 
 export async function setOrChangeOwnerPinAction(newPin: string, currentPin?: string): Promise<{ success: boolean; message?: string, email?: string }> {
-  const sessionCookie = cookies().get(SESSION_COOKIE_NAME);
-  const pinSetupPendingCookie = cookies().get(PIN_SETUP_PENDING_COOKIE_NAME);
+  const cookieStore = await cookies();
+  const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
+  const pinSetupPendingCookie = cookieStore.get(PIN_SETUP_PENDING_COOKIE_NAME);
 
   let userEmailLower: string | undefined;
   let isSettingUpNewPin = false;
@@ -356,23 +476,21 @@ export async function setOrChangeOwnerPinAction(newPin: string, currentPin?: str
 
 
 export async function logoutAction() {
-  const cookieStore = cookies(); 
+  const cookieStore = await cookies(); 
   cookieStore.delete(SESSION_COOKIE_NAME);
   cookieStore.delete(PIN_PENDING_COOKIE_NAME); 
   cookieStore.delete(PIN_SETUP_PENDING_COOKIE_NAME);
 }
 
-export async function getSession(): Promise<SessionData | null> {
-  const cookieStore = cookies();
+export const getSession = cache(async function getSession(): Promise<SessionData | null> {
+  const cookieStore = await cookies();
   const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
 
   if (sessionCookie && sessionCookie.value) {
-    console.log(`[getSession] Found session cookie. Value (first 50 chars): ${sessionCookie.value.substring(0, 50)}...`);
     try {
       const parsedData = JSON.parse(sessionCookie.value);
       
       if (!parsedData || typeof parsedData !== 'object') {
-        console.warn("[getSession] Invalid session: Parsed data is null, undefined, or not an object. Deleting cookie.");
         cookieStore.delete(SESSION_COOKIE_NAME);
         return null;
       }
@@ -380,38 +498,24 @@ export async function getSession(): Promise<SessionData | null> {
       const requiredFields: (keyof SessionData)[] = ['email', 'username', 'role', 'name'];
       for (const field of requiredFields) {
         if (!parsedData[field] || typeof parsedData[field] !== 'string' || (parsedData[field] as string).trim() === '') {
-           console.warn(`[getSession] Invalid session: Field '${String(field)}' is problematic (value: '${parsedData[field]}', type: ${typeof parsedData[field]}). Deleting cookie.`);
           cookieStore.delete(SESSION_COOKIE_NAME);
           return null;
         }
       }
       
       if (parsedData.role !== 'owner' && parsedData.role !== 'staff') {
-        console.warn(`[getSession] Invalid session: Role is problematic (value: ${parsedData.role}, type: ${typeof parsedData.role}). Deleting cookie.`);
         cookieStore.delete(SESSION_COOKIE_NAME);
         return null;
       }
-      
-      const optionalStringFields: (keyof SessionData)[] = ['invoicePrimaryColor', 'shopName', 'shopAddress', 'shopContact'];
-      for (const field of optionalStringFields) {
-        if (parsedData[field] !== undefined && typeof parsedData[field] !== 'string') {
-          console.warn(`[getSession] Session cookie parsed, but optional field '${String(field)}' is not a string (value: ${parsedData[field]}, type: ${typeof parsedData[field]}). Invalidating and deleting cookie.`);
-          cookieStore.delete(SESSION_COOKIE_NAME);
-          return null;
-        }
-      }
-      console.log(`[getSession] Successfully parsed session. Name from cookie: '${parsedData.name}'`);
-      return parsedData as SessionData;
 
-    } catch (error) {
-      console.error("[getSession] Failed to parse session cookie:", error);
+      return parsedData as SessionData;
+    } catch {
       cookieStore.delete(SESSION_COOKIE_NAME);
       return null;
     }
   }
-  console.log("[getSession] No session cookie found.");
   return null;
-}
+});
 
 interface TempSessionInfo {
   email: string;
@@ -419,7 +523,7 @@ interface TempSessionInfo {
 }
 
 export async function getPinPendingSession(): Promise<TempSessionInfo | null> {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const pinPendingCookie = cookieStore.get(PIN_PENDING_COOKIE_NAME);
 
   if (pinPendingCookie && pinPendingCookie.value) {
@@ -438,7 +542,7 @@ export async function getPinPendingSession(): Promise<TempSessionInfo | null> {
 }
 
 export async function getPinSetupPendingSession(): Promise<TempSessionInfo | null> {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const pinSetupPendingCookie = cookieStore.get(PIN_SETUP_PENDING_COOKIE_NAME);
 
   if (pinSetupPendingCookie && pinSetupPendingCookie.value) {
@@ -520,7 +624,7 @@ export async function updateUserDisplayNameAction(newName: string): Promise<{ su
 
   const updatedSessionData: SessionData = { ...session, name: newTrimmedName };
   console.log(`[updateUserDisplayNameAction] Updating session cookie. New name: '${updatedSessionData.name}'`);
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const cookieSecure = process.env.NODE_ENV === 'production';
   const cookieSameSite = "lax" as const; 
 
@@ -550,7 +654,7 @@ export async function updateUserInvoiceColorAction(color: string): Promise<{ suc
   }
 
   const updatedSessionData: SessionData = { ...session, invoicePrimaryColor: color };
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const cookieSecure = process.env.NODE_ENV === 'production';
   const cookieSameSite = "lax" as const; 
 
@@ -604,7 +708,7 @@ export async function updateShopDetailsAction(details: ShopDetailsPayload): Prom
   if (dataToUpdate.shopAddress !== undefined) updatedSessionData.shopAddress = dataToUpdate.shopAddress;
   if (dataToUpdate.shopContact !== undefined) updatedSessionData.shopContact = dataToUpdate.shopContact;
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const cookieSecure = process.env.NODE_ENV === 'production';
   const cookieSameSite = "lax" as const;
   try {

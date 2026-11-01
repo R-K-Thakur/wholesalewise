@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import type { Sale } from "@/lib/types";
 import { ChevronLeft, ChevronRight, Trash2, Loader2, AlertTriangle } from "lucide-react"; // Added Trash2, Loader2, AlertTriangle
 import { ITEMS_PER_PAGE_STORAGE_KEY } from "@/lib/constants";
-import { Badge } from "@/components/ui/badge"; 
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { getSession, type SessionData } from "@/app/login/actions"; // Import getSession
 import {
@@ -28,16 +28,17 @@ const DEFAULT_ITEMS_PER_PAGE = 10;
 
 interface SalesListClientContentProps {
   sales: Sale[];
+  initialRole?: 'owner' | 'staff';
 }
 
-export function SalesListClientContent({ sales: initialSales }: SalesListClientContentProps) {
+export function SalesListClientContent({ sales: initialSales, initialRole }: SalesListClientContentProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [sales, setSales] = React.useState<Sale[]>(initialSales);
   const [currentPage, setCurrentPage] = React.useState(1);
   const [itemsPerPage, setItemsPerPage] = React.useState(DEFAULT_ITEMS_PER_PAGE);
   const [isMounted, setIsMounted] = React.useState(false);
-  const [session, setSession] = React.useState<SessionData | null>(null);
+  const [session, setSession] = React.useState<SessionData | null>(initialRole ? ({ role: initialRole } as any) : null);
 
   // State for delete confirmation
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
@@ -47,20 +48,22 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
 
   React.useEffect(() => {
     setIsMounted(true);
-    async function fetchSessionData() {
-      const currentSession = await getSession();
-      setSession(currentSession);
+    if (!initialRole) {
+      async function fetchSessionData() {
+        const currentSession = await getSession();
+        setSession(currentSession);
+      }
+      fetchSessionData();
     }
-    fetchSessionData();
     const storedItemsPerPage = localStorage.getItem(ITEMS_PER_PAGE_STORAGE_KEY);
     if (storedItemsPerPage) {
       setItemsPerPage(parseInt(storedItemsPerPage, 10) || DEFAULT_ITEMS_PER_PAGE);
     }
-  }, []);
+  }, [initialRole]);
 
   React.useEffect(() => {
     setSales(initialSales);
-    setCurrentPage(1); 
+    setCurrentPage(1);
   }, [initialSales]);
 
 
@@ -81,11 +84,11 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
   const getStatusBadgeVariant = (status: Sale['paymentStatus']): "default" | "secondary" | "destructive" => {
     switch (status) {
       case 'paid':
-        return 'default'; 
+        return 'default';
       case 'partially_paid':
-        return 'secondary'; 
+        return 'secondary';
       case 'unpaid':
-        return 'destructive'; 
+        return 'destructive';
       default:
         return 'secondary';
     }
@@ -121,7 +124,7 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
 
   if (!isMounted) {
     return (
-       <div className="overflow-x-auto">
+      <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-border">
           <thead className="bg-muted/50">
             <tr>
@@ -136,7 +139,7 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
           </thead>
           <tbody className="bg-card divide-y divide-border">
             <tr>
-                <td colSpan={7} className="px-6 py-4 text-center text-sm text-muted-foreground">Loading sales records...</td>
+              <td colSpan={7} className="px-6 py-4 text-center text-sm text-muted-foreground">Loading sales records...</td>
             </tr>
           </tbody>
         </table>
@@ -166,15 +169,21 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
                   {new Date(sale.saleDate).toLocaleDateString()}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-foreground">
-                  {sale.customerName || "N/A"}
+                  {sale.customerId ? (
+                    <Link href={`/customers/${sale.customerId}`} className="text-primary hover:underline font-medium">
+                      {sale.customerName || "N/A"}
+                    </Link>
+                  ) : (
+                    sale.customerName || "N/A"
+                  )}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{sale.totalAmount.toFixed(2)}</td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{sale.totalPaidAmount.toFixed(2)}</td>
                 <td className={cn(
-                    "px-4 py-4 whitespace-nowrap text-sm text-right font-medium",
-                    sale.totalAmountDue > 0 ? "text-destructive" : "text-green-600"
-                  )}>
-                    {sale.totalAmountDue.toFixed(2)}
+                  "px-4 py-4 whitespace-nowrap text-sm text-right font-medium",
+                  sale.totalAmountDue > 0 ? "text-destructive" : "text-green-600"
+                )}>
+                  {sale.totalAmountDue.toFixed(2)}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-center">
                   <Badge variant={getStatusBadgeVariant(sale.paymentStatus)} className="capitalize">
@@ -186,9 +195,9 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
                     <Link href={`/sales/${sale.id}`}>View Details</Link>
                   </Button>
                   {session?.role === 'owner' && (
-                    <Button 
-                      variant="destructive" 
-                      size="sm" 
+                    <Button
+                      variant="destructive"
+                      size="sm"
                       onClick={() => handleDeleteClick(sale)}
                       disabled={isDeleting}
                       title="Delete Sale"
@@ -240,16 +249,16 @@ export function SalesListClientContent({ sales: initialSales }: SalesListClientC
                 <AlertDialogTitle>Delete Sale Record?</AlertDialogTitle>
               </div>
               <AlertDialogDescription>
-                Are you sure you want to delete the sale record for "{saleToDelete.customerName || `ID: ${saleToDelete.id.substring(0,8)}...`}" on {new Date(saleToDelete.saleDate).toLocaleDateString()}?
+                Are you sure you want to delete the sale record for "{saleToDelete.customerName || `ID: ${saleToDelete.id.substring(0, 8)}...`}" on {new Date(saleToDelete.saleDate).toLocaleDateString()}?
                 This action cannot be undone and will restore the stock for the items sold in this transaction.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => {setIsDeleteDialogOpen(false); setSaleToDelete(null);}} disabled={isDeleting}>
+              <AlertDialogCancel onClick={() => { setIsDeleteDialogOpen(false); setSaleToDelete(null); }} disabled={isDeleting}>
                 Cancel
               </AlertDialogCancel>
-              <AlertDialogAction 
-                onClick={confirmDelete} 
+              <AlertDialogAction
+                onClick={confirmDelete}
                 disabled={isDeleting}
                 className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
               >

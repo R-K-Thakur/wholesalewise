@@ -2,16 +2,18 @@
 'use server';
 
 import { revalidatePath, revalidateTag } from 'next/cache';
-import { collection, addDoc, doc, runTransaction, Timestamp, getDocs, query, orderBy, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, runTransaction, Timestamp, getDocs, query, orderBy, getDoc, updateDoc, deleteDoc, where } from 'firebase/firestore';
 import { unstable_cache } from 'next/cache';
 import { db } from '@/lib/firebase';
 import type { RecordSaleActionPayload, SaleFormData } from './schema';
-import type { Product, Sale, SaleItem, PaymentTransaction, RecordAdditionalPaymentPayload } from '@/lib/types';
+import type { Product, Sale, SaleItem, PaymentTransaction, RecordAdditionalPaymentPayload, Customer } from '@/lib/types';
 import type { ProductUnit } from '@/lib/constants';
 import { getSession, type SessionData } from '@/app/login/actions';
+import { getFromMemoryCache, setMemoryCache, invalidateMemoryCache } from '@/lib/memory-cache';
 
 const SALES_COLLECTION = 'sales';
 const PRODUCTS_COLLECTION = 'products';
+const CUSTOMERS_COLLECTION = 'customers';
 const EPSILON = 0.001;
 
 const mapDocToSale = (document: import('firebase/firestore').DocumentSnapshot | import('firebase/firestore').QueryDocumentSnapshot): Sale => {
@@ -53,6 +55,9 @@ const mapDocToSale = (document: import('firebase/firestore').DocumentSnapshot | 
     })) : [],
     packagingCharges: typeof data.packagingCharges === 'number' ? data.packagingCharges : undefined,
     transportCharges: typeof data.transportCharges === 'number' ? data.transportCharges : undefined,
+    discountType: ['percentage', 'fixed'].includes(data.discountType) ? data.discountType : undefined,
+    discountValue: typeof data.discountValue === 'number' ? data.discountValue : undefined,
+    discountAmount: typeof data.discountAmount === 'number' ? data.discountAmount : undefined,
     totalAmount: typeof data.totalAmount === 'number' ? data.totalAmount : 0,
     totalPaidAmount: typeof data.totalPaidAmount === 'number' ? data.totalPaidAmount : 0,
     totalAmountDue: typeof data.totalAmountDue === 'number' ? data.totalAmountDue : 0,
@@ -60,7 +65,9 @@ const mapDocToSale = (document: import('firebase/firestore').DocumentSnapshot | 
     paymentHistory: paymentHistory,
     saleType: 'wholesale', // Always wholesale
     saleDate: typeof data.saleDate === 'string' ? data.saleDate : (data.saleDate?.toDate ? data.saleDate.toDate().toISOString().split('T')[0] : nowAsISO.split('T')[0]),
+    customerId: typeof data.customerId === 'string' ? data.customerId : undefined,
     customerName: typeof data.customerName === 'string' ? data.customerName : '',
+    customerPhone: typeof data.customerPhone === 'string' ? data.customerPhone : undefined,
     customerNameInitiallyEmpty: typeof data.customerNameInitiallyEmpty === 'boolean' ? data.customerNameInitiallyEmpty : undefined,
     staffMadeInitialEdit: typeof data.staffMadeInitialEdit === 'boolean' ? data.staffMadeInitialEdit : undefined,
     paymentMethod: ['cash', 'card', 'online', 'manual_adjustment'].includes(data.paymentMethod) ? data.paymentMethod as Sale['paymentMethod'] : undefined,
@@ -81,9 +88,38 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
   const userName = session.name;
   console.log(`[recordSaleAction] Recording sale. User Name: '${userName}', User Email: '${userEmail}'`);
 
+  let targetCustomerId = data.customerId?.trim() || undefined;
+  let isNewCustomer = false;
+  const trimmedCustomerName = data.customerName?.trim() || '';
+  const trimmedCustomerPhone = data.customerPhone?.trim() || '';
+
+  // Look up existing customer if customerId not explicitly provided, but customerName provided
+  if (!targetCustomerId && trimmedCustomerName) {
+    try {
+      const custQuery = query(
+        collection(db, CUSTOMERS_COLLECTION),
+        where('name', '==', trimmedCustomerName)
+      );
+      const custSnap = await getDocs(custQuery);
+      if (!custSnap.empty) {
+        targetCustomerId = custSnap.docs[0].id;
+      } else {
+        const newCustRef = doc(collection(db, CUSTOMERS_COLLECTION));
+        targetCustomerId = newCustRef.id;
+        isNewCustomer = true;
+      }
+    } catch (e) {
+      console.warn('Customer lookup fallback:', e);
+      const newCustRef = doc(collection(db, CUSTOMERS_COLLECTION));
+      targetCustomerId = newCustRef.id;
+      isNewCustomer = true;
+    }
+  }
 
   try {
     await runTransaction(db, async (transaction) => {
+      // READ PHASE: Read all products
+      const productsToUpdate: Array<{ ref: any; newStock: number }> = [];
       const saleItemsForDb: SaleItem[] = [];
       let itemsTotalAmount = 0;
 
@@ -110,19 +146,14 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
           }
 
           const newStock = product.quantityInStock - quantitySoldInBaseUnits;
-          transaction.update(productRef, {
-              quantityInStock: newStock,
-              updatedAt: Timestamp.now().toDate().toISOString(),
-              lastStockUpdateByEmail: userEmail,
-              lastStockUpdateByName: userName,
-          });
+          productsToUpdate.push({ ref: productRef, newStock });
 
           saleItemsForDb.push({
             productId: item.productId,
             productNameSnapshot: product.name,
             baseUnitSnapshot: product.baseUnit,
             quantitySold: item.quantitySold,
-            pricePerUnitSold: item.pricePerUnitSold, // This is the user-editable price
+            pricePerUnitSold: item.pricePerUnitSold,
             soldUnit: item.soldUnit,
             total: item.quantitySold * item.pricePerUnitSold,
           });
@@ -132,7 +163,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
             productNameSnapshot: item.productNameSnapshot,
             baseUnitSnapshot: item.baseUnitSnapshot,
             quantitySold: item.quantitySold,
-            pricePerUnitSold: item.pricePerUnitSold, // User-editable price
+            pricePerUnitSold: item.pricePerUnitSold,
             soldUnit: item.soldUnit,
             total: item.quantitySold * item.pricePerUnitSold,
           });
@@ -140,7 +171,35 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         itemsTotalAmount += item.quantitySold * item.pricePerUnitSold;
       }
 
-      const finalBillTotalAmount = parseFloat((itemsTotalAmount + (data.packagingCharges || 0) + (data.transportCharges || 0)).toFixed(2));
+      // READ PHASE: Read customer if targetCustomerId exists
+      let customerRef: any = null;
+      let existingCustomerData: any = null;
+      if (targetCustomerId) {
+        customerRef = doc(db, CUSTOMERS_COLLECTION, targetCustomerId);
+        if (!isNewCustomer) {
+          const customerSnap = await transaction.get(customerRef);
+          if (customerSnap.exists()) {
+            existingCustomerData = customerSnap.data();
+          } else {
+            isNewCustomer = true;
+          }
+        }
+      }
+
+      // CALCULATIONS
+      let calculatedDiscount = 0;
+      if (data.discountValue && data.discountValue > 0) {
+        if (data.discountType === 'percentage') {
+          calculatedDiscount = parseFloat(((itemsTotalAmount * data.discountValue) / 100).toFixed(2));
+        } else {
+          calculatedDiscount = parseFloat(data.discountValue.toFixed(2));
+        }
+      }
+      calculatedDiscount = Math.min(itemsTotalAmount, calculatedDiscount);
+
+      const finalBillTotalAmount = parseFloat(
+        Math.max(0, itemsTotalAmount - calculatedDiscount + (data.packagingCharges || 0) + (data.transportCharges || 0)).toFixed(2)
+      );
       const totalPaidAmountForSale = parseFloat(data.amountPaid.toFixed(2));
 
       if (Math.abs(finalBillTotalAmount - data.totalAmount) > EPSILON) {
@@ -177,10 +236,13 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         paymentHistory.push(initialPayment);
       }
 
+      const newSaleDocRef = doc(collection(db, SALES_COLLECTION));
+
       const newSaleDataObject: any = {
-        customerName: data.customerName || '',
-        customerNameInitiallyEmpty: !data.customerName || data.customerName.trim() === '',
-        // staffMadeInitialEdit is not set at creation
+        customerName: trimmedCustomerName,
+        customerPhone: trimmedCustomerPhone || undefined,
+        customerId: targetCustomerId || undefined,
+        customerNameInitiallyEmpty: !trimmedCustomerName || trimmedCustomerName === '',
         saleDate: data.saleDate,
         saleType: 'wholesale',
         items: saleItemsForDb,
@@ -196,6 +258,12 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         recordedByName: userName,
       };
 
+      if (calculatedDiscount > 0) {
+        newSaleDataObject.discountType = data.discountType || 'fixed';
+        newSaleDataObject.discountValue = data.discountValue || 0;
+        newSaleDataObject.discountAmount = calculatedDiscount;
+      }
+
       if (paymentHistory.length > 0 && data.paymentMethod) {
         newSaleDataObject.paymentMethod = data.paymentMethod;
       }
@@ -206,13 +274,85 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         newSaleDataObject.transportCharges = data.transportCharges;
       }
 
+      // WRITE PHASE: 1. Update product stocks
+      for (const prodUpdate of productsToUpdate) {
+        transaction.update(prodUpdate.ref, {
+          quantityInStock: prodUpdate.newStock,
+          updatedAt: now,
+          lastStockUpdateByEmail: userEmail,
+          lastStockUpdateByName: userName,
+        });
+      }
 
-      transaction.set(doc(collection(db, SALES_COLLECTION)), newSaleDataObject as Omit<Sale, 'id'>);
+      // WRITE PHASE: 2. Create or update customer profile & transaction ledger
+      if (targetCustomerId && customerRef) {
+        let newCustomerTotalDue = totalAmountDueForSale;
+        let newCustomerTotalPurchases = finalBillTotalAmount;
+        let newCustomerTotalPaid = totalPaidAmountForSale;
+
+        if (!isNewCustomer && existingCustomerData) {
+          newCustomerTotalDue = parseFloat(((existingCustomerData.totalDue || 0) + totalAmountDueForSale).toFixed(2));
+          newCustomerTotalPurchases = parseFloat(((existingCustomerData.totalPurchases || 0) + finalBillTotalAmount).toFixed(2));
+          newCustomerTotalPaid = parseFloat(((existingCustomerData.totalPaid || 0) + totalPaidAmountForSale).toFixed(2));
+
+          const customerUpdates: Record<string, any> = {
+            totalDue: newCustomerTotalDue < 0.001 && newCustomerTotalDue > -0.001 ? 0 : newCustomerTotalDue,
+            totalPurchases: newCustomerTotalPurchases,
+            totalPaid: newCustomerTotalPaid,
+            updatedAt: now,
+          };
+          if (trimmedCustomerPhone && !existingCustomerData.phone) {
+            customerUpdates.phone = trimmedCustomerPhone;
+          }
+          transaction.update(customerRef, customerUpdates);
+        } else {
+          transaction.set(customerRef, {
+            name: trimmedCustomerName || 'Walk-in Customer',
+            phone: trimmedCustomerPhone || '',
+            totalDue: newCustomerTotalDue < 0.001 && newCustomerTotalDue > -0.001 ? 0 : newCustomerTotalDue,
+            totalPurchases: newCustomerTotalPurchases,
+            totalPaid: newCustomerTotalPaid,
+            createdAt: now,
+            updatedAt: now,
+            createdByEmail: userEmail,
+            createdByName: userName,
+          });
+        }
+
+        // Add transaction entry to customer's subcollection
+        const custTxRef = doc(collection(db, CUSTOMERS_COLLECTION, targetCustomerId, 'transactions'));
+        transaction.set(custTxRef, {
+          customerId: targetCustomerId,
+          type: 'sale',
+          saleId: newSaleDocRef.id,
+          amount: finalBillTotalAmount,
+          amountPaid: totalPaidAmountForSale,
+          dueAdded: totalAmountDueForSale,
+          balanceAfter: newCustomerTotalDue,
+          paymentMethod: data.paymentMethod || 'cash',
+          date: data.saleDate,
+          notes: data.notes || '',
+          createdAt: now,
+          recordedByEmail: userEmail,
+          recordedByName: userName,
+        });
+      }
+
+      // WRITE PHASE: 3. Set sale document
+      transaction.set(newSaleDocRef, newSaleDataObject as Omit<Sale, 'id'>);
     });
 
+    invalidateMemoryCache('sales');
+    invalidateMemoryCache('products');
+    invalidateMemoryCache('customers');
     revalidateTag('sales');
     revalidateTag('products');
+    revalidateTag('customers');
     revalidatePath('/sales');
+    revalidatePath('/customers');
+    if (targetCustomerId) {
+      revalidatePath(`/customers/${targetCustomerId}`);
+    }
     revalidatePath('/products');
     revalidatePath('/dashboard');
 
@@ -244,7 +384,11 @@ const getSalesCached = unstable_cache(
 );
 
 export async function getSalesAction(): Promise<Sale[]> {
-  return getSalesCached();
+  const memoryCached = getFromMemoryCache<Sale[]>('sales');
+  if (memoryCached) return memoryCached;
+  const sales = await getSalesCached();
+  setMemoryCache('sales', sales, 60);
+  return sales;
 }
 
 export async function getSaleByIdAction(id: string): Promise<Sale | undefined> {
@@ -359,6 +503,9 @@ export async function updateSalePaymentStatusAction(
       transaction.update(saleRef, updateData);
     });
 
+    invalidateMemoryCache('sales');
+    invalidateMemoryCache('products');
+    invalidateMemoryCache('customers');
     revalidateTag('sales');
     revalidatePath('/sales');
     revalidatePath(`/sales/${saleId}`);
@@ -417,6 +564,14 @@ export async function recordAdditionalPaymentAction(
         throw new Error(`Payment amount (Rs. ${paymentAmountReceived.toFixed(2)}) exceeds amount due (Rs. ${currentCalculatedDue.toFixed(2)}).`);
       }
 
+      // Read customer if linked
+      let customerRef: any = null;
+      let customerSnap: any = null;
+      if (currentSaleData.customerId) {
+        customerRef = doc(db, CUSTOMERS_COLLECTION, currentSaleData.customerId);
+        customerSnap = await transaction.get(customerRef);
+      }
+
       const newPaymentTransaction: PaymentTransaction = {
         date: now,
         amount: paymentAmountReceived,
@@ -428,7 +583,6 @@ export async function recordAdditionalPaymentAction(
       if (paymentNotes && typeof paymentNotes === 'string' && paymentNotes.trim() !== "") {
         newPaymentTransaction.notes = paymentNotes.trim();
       }
-
 
       const updatedPaymentHistory = [...currentSaleData.paymentHistory, newPaymentTransaction];
       const newTotalPaidAmount = parseFloat((currentTotalPaidAmount + paymentAmountReceived).toFixed(2));
@@ -445,7 +599,6 @@ export async function recordAdditionalPaymentAction(
         newPaymentStatus = 'unpaid';
       }
 
-
       const updateData: Partial<Sale> & {updatedAt: string} = {
         totalPaidAmount: newTotalPaidAmount,
         totalAmountDue: newTotalAmountDue,
@@ -454,11 +607,48 @@ export async function recordAdditionalPaymentAction(
         updatedAt: now,
       };
 
+      // WRITE: Update sale doc
       transaction.update(saleRef, updateData);
+
+      // WRITE: Update customer balance and transaction ledger
+      if (currentSaleData.customerId && customerRef && customerSnap && customerSnap.exists()) {
+        const custData = customerSnap.data();
+        const currentCustDue = Number(custData.totalDue) || 0;
+        const currentCustPaid = Number(custData.totalPaid) || 0;
+        const newCustDue = parseFloat((currentCustDue - paymentAmountReceived).toFixed(2));
+        const newCustPaid = parseFloat((currentCustPaid + paymentAmountReceived).toFixed(2));
+
+        transaction.update(customerRef, {
+          totalDue: newCustDue < 0.001 && newCustDue > -0.001 ? 0 : newCustDue,
+          totalPaid: newCustPaid,
+          updatedAt: now,
+        });
+
+        const custTxRef = doc(collection(db, CUSTOMERS_COLLECTION, currentSaleData.customerId, 'transactions'));
+        transaction.set(custTxRef, {
+          customerId: currentSaleData.customerId,
+          type: 'payment',
+          saleId: saleId,
+          amount: paymentAmountReceived,
+          dueAdded: -paymentAmountReceived,
+          balanceAfter: newCustDue,
+          paymentMethod: payload.paymentMethod,
+          date: now.split('T')[0],
+          notes: paymentNotes && paymentNotes.trim() ? paymentNotes.trim() : `Payment for Sale invoice #${saleId}`,
+          createdAt: now,
+          recordedByEmail: userEmail,
+          recordedByName: userName,
+        });
+      }
     });
 
+    invalidateMemoryCache('sales');
+    invalidateMemoryCache('products');
+    invalidateMemoryCache('customers');
     revalidateTag('sales');
+    revalidateTag('customers');
     revalidatePath('/sales');
+    revalidatePath('/customers');
     revalidatePath(`/sales/${saleId}`);
     revalidatePath('/dashboard');
     return { success: true, message: 'Payment recorded successfully.' };
@@ -487,13 +677,26 @@ export async function deleteSaleAction(saleId: string): Promise<{ success: boole
   const nowISO = Timestamp.now().toDate().toISOString();
 
   try {
+    let customerIdForReval: string | undefined;
+
     await runTransaction(db, async (transaction) => {
       const saleDoc = await transaction.get(saleRef);
       if (!saleDoc.exists()) {
         throw new Error("Sale not found. It may have already been deleted.");
       }
       const saleData = mapDocToSale(saleDoc);
+      customerIdForReval = saleData.customerId;
 
+      // READ: customer if linked
+      let customerRef: any = null;
+      let customerSnap: any = null;
+      if (saleData.customerId) {
+        customerRef = doc(db, CUSTOMERS_COLLECTION, saleData.customerId);
+        customerSnap = await transaction.get(customerRef);
+      }
+
+      // READ & PREPARE: products
+      const productsToUpdate: Array<{ ref: any; newStock: number; id: string; qtyRestored: number }> = [];
       for (const item of saleData.items) {
         if (!item.productId) {
           console.log(`[deleteSaleAction] Item "${item.productNameSnapshot}" in sale ${saleId} is unlisted. Skipping stock restoration.`);
@@ -515,23 +718,69 @@ export async function deleteSaleAction(saleId: string): Promise<{ success: boole
         }
 
         const newStockInBaseUnits = (productData.quantityInStock || 0) + quantityToRestoreInBaseUnits;
+        productsToUpdate.push({ ref: productRef, newStock: newStockInBaseUnits, id: item.productId, qtyRestored: quantityToRestoreInBaseUnits });
+      }
 
-        transaction.update(productRef, {
-          quantityInStock: newStockInBaseUnits,
+      // WRITE: products
+      for (const p of productsToUpdate) {
+        transaction.update(p.ref, {
+          quantityInStock: p.newStock,
           updatedAt: nowISO,
           lastStockUpdateByEmail: userEmail,
           lastStockUpdateByName: userName,
         });
-        console.log(`[deleteSaleAction] Restored ${quantityToRestoreInBaseUnits} (base units) to product ${item.productId}. New stock: ${newStockInBaseUnits}`);
+        console.log(`[deleteSaleAction] Restored ${p.qtyRestored} (base units) to product ${p.id}. New stock: ${p.newStock}`);
+      }
+
+      // WRITE: customer adjustment if linked
+      if (saleData.customerId && customerRef && customerSnap && customerSnap.exists()) {
+        const custData = customerSnap.data();
+        const currentCustDue = Number(custData.totalDue) || 0;
+        const currentCustPurchases = Number(custData.totalPurchases) || 0;
+        const currentCustPaid = Number(custData.totalPaid) || 0;
+
+        const newCustDue = parseFloat((currentCustDue - (saleData.totalAmountDue || 0)).toFixed(2));
+        const newCustPurchases = parseFloat((currentCustPurchases - (saleData.totalAmount || 0)).toFixed(2));
+        const newCustPaid = parseFloat((currentCustPaid - (saleData.totalPaidAmount || 0)).toFixed(2));
+
+        transaction.update(customerRef, {
+          totalDue: newCustDue < 0.001 && newCustDue > -0.001 ? 0 : (newCustDue < 0 ? 0 : newCustDue),
+          totalPurchases: newCustPurchases < 0 ? 0 : newCustPurchases,
+          totalPaid: newCustPaid < 0 ? 0 : newCustPaid,
+          updatedAt: nowISO,
+        });
+
+        const custTxRef = doc(collection(db, CUSTOMERS_COLLECTION, saleData.customerId, 'transactions'));
+        transaction.set(custTxRef, {
+          customerId: saleData.customerId,
+          type: 'adjustment',
+          saleId: saleId,
+          amount: saleData.totalAmount,
+          dueAdded: -(saleData.totalAmountDue || 0),
+          balanceAfter: newCustDue,
+          date: nowISO.split('T')[0],
+          notes: `Sale #${saleId} deleted. Due balance adjusted.`,
+          createdAt: nowISO,
+          recordedByEmail: userEmail,
+          recordedByName: userName,
+        });
       }
 
       transaction.delete(saleRef);
       console.log(`[deleteSaleAction] Sale ${saleId} deleted successfully.`);
     });
 
+    invalidateMemoryCache('sales');
+    invalidateMemoryCache('products');
+    invalidateMemoryCache('customers');
     revalidateTag('sales');
     revalidateTag('products');
+    revalidateTag('customers');
     revalidatePath('/sales');
+    revalidatePath('/customers');
+    if (customerIdForReval) {
+      revalidatePath(`/customers/${customerIdForReval}`);
+    }
     revalidatePath('/dashboard');
 
     return { success: true, message: 'Sale deleted successfully and product stock (for listed items) restored.' };
@@ -586,6 +835,9 @@ export async function updateSaleCustomerNameAction(
       transaction.update(saleRef, updatePayload);
     });
 
+    invalidateMemoryCache('sales');
+    invalidateMemoryCache('products');
+    invalidateMemoryCache('customers');
     revalidateTag('sales');
     revalidatePath(`/sales/${saleId}`);
     revalidatePath('/sales');
@@ -620,6 +872,14 @@ export async function updateSaleAction(
         throw new Error("Sale not found.");
       }
       const originalSaleData = mapDocToSale(originalSaleDoc);
+
+      // READ: customer if linked
+      let customerRef: any = null;
+      let customerSnap: any = null;
+      if (originalSaleData.customerId) {
+        customerRef = doc(db, CUSTOMERS_COLLECTION, originalSaleData.customerId);
+        customerSnap = await transaction.get(customerRef);
+      }
 
       const stockChanges = new Map<string, number>();
 
@@ -689,6 +949,8 @@ export async function updateSaleAction(
       if (finalAmountDue <= EPSILON) paymentStatus = 'paid';
       else if (finalAmountPaid > EPSILON) paymentStatus = 'partially_paid';
 
+      const now = Timestamp.now().toDate().toISOString();
+
       const saleUpdateData = {
         ...updatedFormData,
         items: updatedItemsForAction,
@@ -696,15 +958,59 @@ export async function updateSaleAction(
         totalPaidAmount: finalAmountPaid,
         totalAmountDue: finalAmountDue,
         paymentStatus: paymentStatus,
-        updatedAt: Timestamp.now().toDate().toISOString(),
+        updatedAt: now,
       };
       
       transaction.update(saleRef, saleUpdateData);
+
+      // Update customer totals if linked
+      if (originalSaleData.customerId && customerRef && customerSnap && customerSnap.exists()) {
+        const custData = customerSnap.data();
+        const prevCustDue = Number(custData.totalDue) || 0;
+        const prevCustPurchases = Number(custData.totalPurchases) || 0;
+        const prevCustPaid = Number(custData.totalPaid) || 0;
+
+        const purchaseDiff = finalGrandTotal - (originalSaleData.totalAmount || 0);
+        const paidDiff = finalAmountPaid - (originalSaleData.totalPaidAmount || 0);
+        const dueDiff = finalAmountDue - (originalSaleData.totalAmountDue || 0);
+
+        const newCustDue = parseFloat((prevCustDue + dueDiff).toFixed(2));
+        const newCustPurchases = parseFloat((prevCustPurchases + purchaseDiff).toFixed(2));
+        const newCustPaid = parseFloat((prevCustPaid + paidDiff).toFixed(2));
+
+        transaction.update(customerRef, {
+          totalDue: newCustDue < 0.001 && newCustDue > -0.001 ? 0 : (newCustDue < 0 ? 0 : newCustDue),
+          totalPurchases: newCustPurchases < 0 ? 0 : newCustPurchases,
+          totalPaid: newCustPaid < 0 ? 0 : newCustPaid,
+          updatedAt: now,
+        });
+
+        const custTxRef = doc(collection(db, CUSTOMERS_COLLECTION, originalSaleData.customerId, 'transactions'));
+        transaction.set(custTxRef, {
+          customerId: originalSaleData.customerId,
+          type: 'adjustment',
+          saleId: saleId,
+          amount: finalGrandTotal,
+          amountPaid: finalAmountPaid,
+          dueAdded: dueDiff,
+          balanceAfter: newCustDue,
+          date: typeof updatedFormData.saleDate === 'string' ? updatedFormData.saleDate : now.split('T')[0],
+          notes: `Sale #${saleId} edited. Total: Rs. ${finalGrandTotal.toFixed(2)}, Paid: Rs. ${finalAmountPaid.toFixed(2)}, Due difference: Rs. ${dueDiff.toFixed(2)}`,
+          createdAt: now,
+          recordedByEmail: userEmail,
+          recordedByName: userName,
+        });
+      }
     });
 
+    invalidateMemoryCache('sales');
+    invalidateMemoryCache('products');
+    invalidateMemoryCache('customers');
     revalidateTag('sales');
     revalidateTag('products');
+    revalidateTag('customers');
     revalidatePath('/sales');
+    revalidatePath('/customers');
     revalidatePath(`/sales/${saleId}`);
     revalidatePath('/dashboard');
 
