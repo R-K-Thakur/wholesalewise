@@ -63,7 +63,7 @@ const mapDocToSale = (document: import('firebase/firestore').DocumentSnapshot | 
     totalAmountDue: typeof data.totalAmountDue === 'number' ? data.totalAmountDue : 0,
     paymentStatus: ['paid', 'partially_paid', 'unpaid'].includes(data.paymentStatus) ? data.paymentStatus as Sale['paymentStatus'] : 'unpaid',
     paymentHistory: paymentHistory,
-    saleType: 'wholesale', // Always wholesale
+    saleType: data.saleType === 'retail' ? 'retail' : 'wholesale',
     saleDate: typeof data.saleDate === 'string' ? data.saleDate : (data.saleDate?.toDate ? data.saleDate.toDate().toISOString().split('T')[0] : nowAsISO.split('T')[0]),
     customerId: typeof data.customerId === 'string' ? data.customerId : undefined,
     customerName: typeof data.customerName === 'string' ? data.customerName : '',
@@ -188,7 +188,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
 
       // CALCULATIONS
       let calculatedDiscount = 0;
-      if (data.discountValue && data.discountValue > 0) {
+      if (data.saleType !== 'wholesale' && data.discountValue && data.discountValue > 0) {
         if (data.discountType === 'percentage') {
           calculatedDiscount = parseFloat(((itemsTotalAmount * data.discountValue) / 100).toFixed(2));
         } else {
@@ -244,7 +244,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         customerId: targetCustomerId || undefined,
         customerNameInitiallyEmpty: !trimmedCustomerName || trimmedCustomerName === '',
         saleDate: data.saleDate,
-        saleType: 'wholesale',
+        saleType: data.saleType === 'retail' ? 'retail' : 'wholesale',
         items: saleItemsForDb,
         totalAmount: finalBillTotalAmount,
         totalPaidAmount: totalPaidAmountForSale,
@@ -258,7 +258,7 @@ export async function recordSaleAction(data: RecordSaleActionPayload) {
         recordedByName: userName,
       };
 
-      if (calculatedDiscount > 0) {
+      if (data.saleType !== 'wholesale' && calculatedDiscount > 0) {
         newSaleDataObject.discountType = data.discountType || 'fixed';
         newSaleDataObject.discountValue = data.discountValue || 0;
         newSaleDataObject.discountAmount = calculatedDiscount;

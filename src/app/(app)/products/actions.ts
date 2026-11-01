@@ -369,38 +369,34 @@ export async function addStockToProductAction(
       const productUpdatePayload: any = {
         quantityInStock: newStockInBaseUnits,
         updatedAt: nowISO,
-        lastStockUpdateByEmail: userEmail,
-        lastStockUpdateByName: userName,
       };
+      if (userEmail) productUpdatePayload.lastStockUpdateByEmail = userEmail;
+      if (userName) productUpdatePayload.lastStockUpdateByName = userName;
 
-      let purchasePriceForRecord = productData.purchasePrice;
-      if (newPurchasePricePerPurchaseUnit !== undefined && newPurchasePricePerPurchaseUnit >= 0) {
+      let purchasePriceForRecord = typeof productData.purchasePrice === 'number' ? productData.purchasePrice : 0;
+      if (newPurchasePricePerPurchaseUnit !== undefined && !isNaN(newPurchasePricePerPurchaseUnit) && newPurchasePricePerPurchaseUnit >= 0) {
         if (userRole === 'owner') {
-            productUpdatePayload.purchasePrice = newPurchasePricePerPurchaseUnit;
+          productUpdatePayload.purchasePrice = newPurchasePricePerPurchaseUnit;
         }
         purchasePriceForRecord = newPurchasePricePerPurchaseUnit;
-      } else if (productData.purchasePrice === 0 && userRole === 'owner' && newPurchasePricePerPurchaseUnit === undefined) {
-         throw new Error("Owner must set a purchase price when adding stock to a product with no existing purchase price.");
-      } else if (productData.purchasePrice === 0 && userRole === 'staff' ) {
-         purchasePriceForRecord = 0;
       }
-
 
       transaction.update(productRef, productUpdatePayload);
 
-      const purchaseRecord: Omit<Purchase, 'id'> = {
+      const purchaseRecord: any = {
         productId: productId,
         productNameSnapshot: productData.name || 'Unknown Product',
         quantityPurchased: quantityAddedInPurchaseUnits,
         purchaseUnitSnapshot: productData.purchaseUnit || PRODUCT_UNITS[0],
         purchasePricePerUnitSnapshot: purchasePriceForRecord,
-        totalCost: quantityAddedInPurchaseUnits * purchasePriceForRecord,
+        totalCost: parseFloat((quantityAddedInPurchaseUnits * purchasePriceForRecord).toFixed(2)),
         purchaseDate: nowISO,
         createdAt: nowISO,
         updatedAt: nowISO,
-        recordedByEmail: userEmail,
-        recordedByName: userName,
       };
+      if (userEmail) purchaseRecord.recordedByEmail = userEmail;
+      if (userName) purchaseRecord.recordedByName = userName;
+
       const purchaseDocRef = doc(collection(db, PURCHASES_COLLECTION));
       transaction.set(purchaseDocRef, purchaseRecord);
     });

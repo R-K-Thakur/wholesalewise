@@ -106,6 +106,7 @@ export interface Customer {
   email?: string;
   address?: string;
   notes?: string;
+  customerType?: 'wholesale' | 'retail';
   totalDue: number; // Positive means amount due to be paid by customer
   totalPurchases: number; // Sum of all bills
   totalPaid: number; // Sum of all payments received
@@ -138,6 +139,7 @@ export interface CustomerFormData {
   email?: string;
   address?: string;
   notes?: string;
+  customerType?: 'wholesale' | 'retail';
 }
 
 export interface RecordCustomerPaymentPayload {
@@ -161,7 +163,7 @@ export interface Sale {
   totalAmountDue: number;
   paymentStatus: 'paid' | 'partially_paid' | 'unpaid';
   paymentHistory: PaymentTransaction[];
-  saleType: 'wholesale'; // Changed to wholesale only
+  saleType: 'wholesale' | 'retail';
   saleDate: string;
   customerId?: string;
   customerName?: string;
@@ -193,7 +195,7 @@ export type PurchaseFormData = Omit<Purchase, 'id' | 'productNameSnapshot' | 'to
 export type SaleItemFormData = Omit<SaleItem, 'productNameSnapshot' | 'total' | 'pricePerUnitSold' | 'baseUnitSnapshot'> & { pricePerUnitSold?: number };
 export type SaleFormData = {
   items: SaleItemFormData[];
-  saleType: 'wholesale'; // Changed to wholesale only
+  saleType: 'wholesale' | 'retail';
   saleDate?: Date;
   customerId?: string;
   customerName?: string;

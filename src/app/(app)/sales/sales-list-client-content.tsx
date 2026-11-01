@@ -169,13 +169,23 @@ export function SalesListClientContent({ sales: initialSales, initialRole }: Sal
                   {new Date(sale.saleDate).toLocaleDateString()}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-foreground">
-                  {sale.customerId ? (
-                    <Link href={`/customers/${sale.customerId}`} className="text-primary hover:underline font-medium">
-                      {sale.customerName || "N/A"}
-                    </Link>
-                  ) : (
-                    sale.customerName || "N/A"
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {sale.customerId ? (
+                      <Link href={`/customers/${sale.customerId}`} className="text-primary hover:underline font-medium">
+                        {sale.customerName || "Walk-in Customer"}
+                      </Link>
+                    ) : (
+                      <span>{sale.customerName || "Walk-in Customer"}</span>
+                    )}
+                    <span className={cn(
+                      "text-[10px] px-1.5 py-0.5 rounded uppercase font-semibold",
+                      sale.saleType === 'retail' 
+                        ? "bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/20" 
+                        : "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/20"
+                    )}>
+                      {sale.saleType === 'retail' ? 'Retail' : 'Wholesale'}
+                    </span>
+                  </div>
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{sale.totalAmount.toFixed(2)}</td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-muted-foreground text-right">{sale.totalPaidAmount.toFixed(2)}</td>

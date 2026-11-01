@@ -322,6 +322,7 @@ export default function SaleDetailPage() {
       const invoiceDateTime = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.saleDate);
       addDetailRow(`${docType} No:`, sale.id.substring(0, 12).toUpperCase());
       addDetailRow("Date & Time:", format(invoiceDateTime, "dd/MM/yyyy HH:mm:ss"));
+      addDetailRow("Bill Type:", sale.saleType === 'retail' ? 'Retail Bill' : 'Wholesale Bill');
       
       currentY = Math.max(currentY + detailRowHeight, tempY);
       doc.setDrawColor(180, 180, 180);
@@ -540,6 +541,8 @@ export default function SaleDetailPage() {
                          ? new Date(sale.createdAt)
                          : saleDate;
       doc.text(`Date: ${saleDate.toLocaleDateString()} ${timePartDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, marginPt, currentY);
+      currentY += 10;
+      doc.text(`Type: ${sale.saleType === 'retail' ? 'Retail Bill' : 'Wholesale Bill'}`, marginPt, currentY);
       currentY += 10;
 
       if (sale.customerName) {
@@ -1225,7 +1228,12 @@ export default function SaleDetailPage() {
                 )}
             </div>
             <div><strong>Sale Date:</strong> {new Date(sale.saleDate).toLocaleDateString()}</div>
-            <div><strong>Sale Type:</strong> <span className="capitalize">{sale.saleType}</span></div>
+            <div>
+              <strong>Sale Type:</strong>{' '}
+              <Badge variant={sale.saleType === 'retail' ? "secondary" : "default"} className="ml-1 capitalize text-xs">
+                {sale.saleType === 'retail' ? '🛍️ Retail Bill' : '🏢 Wholesale Bill'}
+              </Badge>
+            </div>
             <div>
                 <strong>Payment Method:</strong>
                 <span className="capitalize ml-1">{displayPaymentMethod}</span>

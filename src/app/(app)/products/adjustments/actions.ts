@@ -89,21 +89,21 @@ export async function recordInventoryAdjustmentAction(
       const totalValueImpact = parseFloat((quantityAdjusted * unitCost).toFixed(2));
 
       // 2. WRITE: Update product stock
-      transaction.update(productRef, {
+      const productUpdate: any = {
         quantityInStock: Math.max(0, newStock),
         updatedAt: now,
-        lastStockUpdateByEmail: session.email,
-        lastStockUpdateByName: session.name,
-      });
+      };
+      if (session.email) productUpdate.lastStockUpdateByEmail = session.email;
+      if (session.name) productUpdate.lastStockUpdateByName = session.name;
+      transaction.update(productRef, productUpdate);
 
       // 3. WRITE: Add inventory adjustment audit record
       const adjustmentsColRef = collection(db, INVENTORY_ADJUSTMENTS_COLLECTION);
       const newAdjustmentRef = doc(adjustmentsColRef);
 
-      transaction.set(newAdjustmentRef, {
+      const adjustmentData: any = {
         productId,
         productNameSnapshot: productName,
-        categorySnapshot: category,
         type,
         quantityAdjusted,
         unit: baseUnit,
@@ -113,9 +113,12 @@ export async function recordInventoryAdjustmentAction(
         notes: notes ? notes.trim() : '',
         date: adjustmentDate,
         createdAt: now,
-        recordedByEmail: session.email,
-        recordedByName: session.name,
-      });
+      };
+      if (category) adjustmentData.categorySnapshot = category;
+      if (session.email) adjustmentData.recordedByEmail = session.email;
+      if (session.name) adjustmentData.recordedByName = session.name;
+
+      transaction.set(newAdjustmentRef, adjustmentData);
 
       return newAdjustmentRef.id;
     });

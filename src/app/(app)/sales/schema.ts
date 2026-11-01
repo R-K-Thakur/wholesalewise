@@ -15,7 +15,7 @@ export const saleItemSchema = z.object({
 });
 
 export const saleFormSchema = z.object({
-  saleType: z.literal('wholesale'), // Hardcoded to wholesale
+  saleType: z.enum(['wholesale', 'retail']).default('wholesale'),
   customerId: z.string().optional().nullable(),
   customerName: z.string().max(100, "Customer name too long").optional().nullable(),
   customerPhone: z.string().max(20, "Phone number too long").optional().nullable(),
@@ -60,7 +60,7 @@ export const saleFormSchema = z.object({
   });
 
   let calculatedDiscount = 0;
-  if (data.discountValue && data.discountValue > 0) {
+  if (data.saleType !== 'wholesale' && data.discountValue && data.discountValue > 0) {
     if (data.discountType === 'percentage') {
       calculatedDiscount = parseFloat(((itemsTotal * data.discountValue) / 100).toFixed(2));
     } else {
@@ -96,7 +96,7 @@ export type SaleItemFormStructure = z.infer<typeof saleItemSchema>;
 export type SaleFormData = z.infer<typeof saleFormSchema>;
 
 export type RecordSaleActionPayload = Omit<SaleFormData, 'customerId' | 'customerName' | 'customerPhone' | 'notes' | 'items' | 'packagingCharges' | 'transportCharges' | 'discountType' | 'discountValue' | 'discountAmount' | 'amountPaid' | 'saleType'> & {
-  saleType: 'wholesale'; // Ensure this is fixed
+  saleType: 'wholesale' | 'retail';
   customerId?: string;
   customerName?: string;
   customerPhone?: string;

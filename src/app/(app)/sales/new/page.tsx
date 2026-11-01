@@ -6,7 +6,7 @@ import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, ChevronsUpDown, PackagePlus, Truck, Save, ShieldAlert, ScanLine, Tag, Camera, Minus, Plus, CreditCard, Banknote, Sparkles, Search, LayoutGrid, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, ChevronsUpDown, PackagePlus, Truck, Save, ShieldAlert, ScanLine, Tag, Camera, Minus, Plus, CreditCard, Banknote, Sparkles, Search, LayoutGrid, ChevronDown, ChevronUp, Building2, ShoppingBag } from "lucide-react";
 import { CameraScannerDialog } from "./camera-scanner-dialog";
 
 import { Button } from "@/components/ui/button";
@@ -106,6 +106,7 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
   });
 
   const currentWatchedItems = form.watch("items");
+  const watchedSaleType = form.watch("saleType") || 'wholesale';
   const watchedPackagingCharges = form.watch("packagingCharges");
   const watchedTransportCharges = form.watch("transportCharges");
   const watchedDiscountType = form.watch("discountType") || "fixed";
@@ -121,6 +122,7 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
   }, [currentWatchedItems]);
 
   const discountAmount = React.useMemo(() => {
+    if (watchedSaleType === 'wholesale') return 0;
     const val = Number(watchedDiscountValue) || 0;
     if (val <= 0) return 0;
     let disc = 0;
@@ -130,7 +132,7 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
       disc = val;
     }
     return parseFloat(Math.min(itemsTotal, disc).toFixed(2));
-  }, [itemsTotal, watchedDiscountType, watchedDiscountValue]);
+  }, [itemsTotal, watchedDiscountType, watchedDiscountValue, watchedSaleType]);
 
   const grandTotal = React.useMemo(() => {
     const packaging = Number(watchedPackagingCharges) || 0;
@@ -164,6 +166,53 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
 
   const amountPaidDisplay = Number(watchedAmountPaid) || 0;
   const amountDue = parseFloat((grandTotal - amountPaidDisplay).toFixed(2));
+
+  const handleSaleTypeChange = React.useCallback((newType: 'wholesale' | 'retail') => {
+    form.setValue('saleType', newType, { shouldValidate: true, shouldDirty: true });
+
+    if (newType === 'wholesale') {
+      form.setValue('discountValue', 0, { shouldDirty: true, shouldValidate: true });
+      form.setValue('discountAmount', 0, { shouldDirty: true, shouldValidate: true });
+    }
+
+    // Update all current items in the bill to reflect new pricing
+    const currentItems = form.getValues('items') || [];
+    let updatedCount = 0;
+
+    currentItems.forEach((item, idx) => {
+      if (!item.productId) return;
+      const prod = allProducts.find((p) => p.id === item.productId);
+      if (!prod) return;
+
+      const basePrice =
+        newType === 'retail'
+          ? (prod.retailPricePerBaseUnit || prod.wholesalePricePerBaseUnit || 0)
+          : (prod.wholesalePricePerBaseUnit || 0);
+
+      let pricePerSoldUnit = basePrice;
+      if (
+        item.soldUnit === prod.purchaseUnit &&
+        prod.purchaseUnit !== prod.baseUnit &&
+        prod.purchaseUnitConversionFactor &&
+        prod.purchaseUnitConversionFactor > 0
+      ) {
+        pricePerSoldUnit = basePrice * prod.purchaseUnitConversionFactor;
+      }
+
+      form.setValue(`items.${idx}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+      updatedCount++;
+    });
+
+    toast({
+      title: newType === 'retail' ? "Switched to Retail Billing" : "Switched to Wholesale Billing",
+      description: updatedCount > 0 
+        ? `Recalculated ${updatedCount} item(s) to ${newType} prices.`
+        : `New items added will use ${newType} rates.`,
+    });
+  }, [allProducts, form, toast]);
 
 
   const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
@@ -264,6 +313,11 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
     const currentItems = form.getValues("items") || [];
     const existingIndex = currentItems.findIndex((i) => i.productId === product.id);
 
+    const currentSaleType = form.getValues("saleType") || 'wholesale';
+    const basePrice = currentSaleType === 'retail'
+      ? (product.retailPricePerBaseUnit || product.wholesalePricePerBaseUnit || 0)
+      : (product.wholesalePricePerBaseUnit || 0);
+
     if (existingIndex >= 0) {
       const currentQty = Number(currentItems[existingIndex].quantitySold) || 0;
       form.setValue(`items.${existingIndex}.quantitySold`, currentQty + 1, { shouldDirty: true, shouldValidate: true });
@@ -275,21 +329,21 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
       if (currentItems.length === 1 && !currentItems[0].productId && !itemSearchTexts[0]) {
         form.setValue(`items.0.productId`, product.id, { shouldDirty: true });
         form.setValue(`items.0.soldUnit`, product.baseUnit, { shouldDirty: true });
-        form.setValue(`items.0.pricePerUnitSold`, product.wholesalePricePerBaseUnit, { shouldDirty: true, shouldValidate: true });
+        form.setValue(`items.0.pricePerUnitSold`, basePrice, { shouldDirty: true, shouldValidate: true });
         form.setValue("items.0.quantitySold", 1, { shouldDirty: true, shouldValidate: true });
         setItemSearchTexts([product.name]);
       } else {
         append({
           productId: product.id,
           quantitySold: 1,
-          pricePerUnitSold: product.wholesalePricePerBaseUnit,
+          pricePerUnitSold: basePrice,
           soldUnit: product.baseUnit,
         });
         setItemSearchTexts((prev) => [...prev, product.name]);
       }
       toast({
         title: "Item Added to Bill",
-        description: `${product.name} (Rs. ${product.wholesalePricePerBaseUnit}/${product.baseUnit}).`,
+        description: `${product.name} (Rs. ${basePrice}/${product.baseUnit} - ${currentSaleType === 'retail' ? 'Retail' : 'Wholesale'}).`,
       });
     }
   }, [form, itemSearchTexts, append, toast]);
@@ -531,15 +585,18 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
     const finalTransportCharges = Number(data.transportCharges) || 0;
     
     let finalDiscountAmount = 0;
-    const discountVal = Number(data.discountValue) || 0;
-    if (discountVal > 0) {
-      if (data.discountType === 'percentage') {
-        finalDiscountAmount = parseFloat(((finalItemsTotal * discountVal) / 100).toFixed(2));
-      } else {
-        finalDiscountAmount = parseFloat(discountVal.toFixed(2));
+    const isWholesale = (data.saleType || 'wholesale') === 'wholesale';
+    if (!isWholesale) {
+      const discountVal = Number(data.discountValue) || 0;
+      if (discountVal > 0) {
+        if (data.discountType === 'percentage') {
+          finalDiscountAmount = parseFloat(((finalItemsTotal * discountVal) / 100).toFixed(2));
+        } else {
+          finalDiscountAmount = parseFloat(discountVal.toFixed(2));
+        }
       }
+      finalDiscountAmount = Math.min(finalItemsTotal, finalDiscountAmount);
     }
-    finalDiscountAmount = Math.min(finalItemsTotal, finalDiscountAmount);
 
     const finalGrandTotalForSubmission = parseFloat(
       Math.max(0, finalItemsTotal - finalDiscountAmount + finalPackagingCharges + finalTransportCharges).toFixed(2)
@@ -554,7 +611,7 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
     }
 
     const payload: RecordSaleActionPayload = {
-      saleType: 'wholesale',
+      saleType: data.saleType || 'wholesale',
       saleDate: data.saleDate,
       customerId: data.customerId || undefined,
       customerName: data.customerName || undefined,
@@ -564,9 +621,9 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
       items: itemsForAction,
       packagingCharges: finalPackagingCharges > 0 ? finalPackagingCharges : undefined,
       transportCharges: finalTransportCharges > 0 ? finalTransportCharges : undefined,
-      discountType: data.discountType || 'fixed',
-      discountValue: data.discountValue || 0,
-      discountAmount: finalDiscountAmount > 0 ? finalDiscountAmount : undefined,
+      discountType: isWholesale ? undefined : (data.discountType || 'fixed'),
+      discountValue: isWholesale ? 0 : (data.discountValue || 0),
+      discountAmount: isWholesale ? undefined : (finalDiscountAmount > 0 ? finalDiscountAmount : undefined),
       totalAmount: finalGrandTotalForSubmission,
       amountPaid: finalAmountPaid,
     };
@@ -605,9 +662,14 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
     const product = productData || allProducts.find(p => p.id === form.getValues(`items.${itemIndex}.productId`));
 
     if (product) {
-        let pricePerSoldUnit = product.wholesalePricePerBaseUnit;
+        const currentSaleType = form.getValues("saleType") || 'wholesale';
+        const basePrice = currentSaleType === 'retail'
+          ? (product.retailPricePerBaseUnit || product.wholesalePricePerBaseUnit || 0)
+          : (product.wholesalePricePerBaseUnit || 0);
+
+        let pricePerSoldUnit = basePrice;
         if (newSoldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor && product.purchaseUnitConversionFactor > 0) {
-            pricePerSoldUnit = product.wholesalePricePerBaseUnit * product.purchaseUnitConversionFactor;
+            pricePerSoldUnit = basePrice * product.purchaseUnitConversionFactor;
         }
         form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), { shouldValidate: true, shouldDirty: true });
     }
@@ -701,7 +763,49 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
   return (
     <>
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          {/* Top Billing Mode Bar: Wholesale vs Retail */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 sm:px-4 bg-card border rounded-xl shadow-xs">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Bill Mode:</span>
+              <div className="inline-flex items-center p-1 bg-muted/80 rounded-lg border gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleSaleTypeChange('wholesale')}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer",
+                    watchedSaleType === 'wholesale'
+                      ? "bg-primary text-primary-foreground shadow-sm font-bold"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Building2 className="h-3.5 w-3.5" />
+                  🏢 Wholesale Bill
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaleTypeChange('retail')}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer",
+                    watchedSaleType === 'retail'
+                      ? "bg-primary text-primary-foreground shadow-sm font-bold"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <ShoppingBag className="h-3.5 w-3.5" />
+                  🛍️ Retail Bill
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Badge variant={watchedSaleType === 'wholesale' ? "default" : "secondary"} className="gap-1 font-semibold text-xs">
+                {watchedSaleType === 'wholesale' ? "Wholesale Rates Active" : "Retail Rates Active"}
+              </Badge>
+              <span className="text-xs text-muted-foreground hidden md:inline">• Product rates auto-adjust on switch</span>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             
             {/* ================= LEFT COLUMN: Items & Barcode Scanner ================= */}
@@ -790,7 +894,9 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
                                   </div>
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <span className="font-bold text-primary text-xs">Rs. {prod.wholesalePricePerBaseUnit}</span>
+                                  <span className="font-bold text-primary text-xs">
+                                    Rs. {watchedSaleType === 'retail' ? (prod.retailPricePerBaseUnit || prod.wholesalePricePerBaseUnit) : prod.wholesalePricePerBaseUnit}
+                                  </span>
                                   <span className="text-[10px] text-muted-foreground block">/{prod.baseUnit}</span>
                                 </div>
                               </button>
@@ -878,7 +984,7 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
                                   </div>
                                   <div className="mt-1.5 flex items-center justify-between text-xs pt-1 border-t border-border/40">
                                     <span className="font-bold text-foreground">
-                                      Rs. {product.wholesalePricePerBaseUnit}
+                                      Rs. {watchedSaleType === 'retail' ? (product.retailPricePerBaseUnit || product.wholesalePricePerBaseUnit) : product.wholesalePricePerBaseUnit}
                                     </span>
                                     <span className={cn(
                                       "text-[10px]",
@@ -1132,8 +1238,11 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
                   {selectedCustomer ? (
                     <div className="flex items-center justify-between p-2.5 rounded-md border bg-muted/20 text-xs">
                       <div>
-                        <p className="font-semibold text-foreground flex items-center gap-1">
+                        <p className="font-semibold text-foreground flex items-center gap-1.5">
                           <User className="h-3.5 w-3.5 text-primary" /> {selectedCustomer.name}
+                          <Badge variant={selectedCustomer.customerType === 'retail' ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0 h-4 capitalize font-semibold">
+                            {selectedCustomer.customerType || 'wholesale'} customer
+                          </Badge>
                         </p>
                         <p className="text-muted-foreground mt-0.5">
                           {selectedCustomer.phone ? `Phone: ${selectedCustomer.phone} • ` : ""}
@@ -1185,13 +1294,26 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
                                         form.setValue("customerId", cust.id);
                                         form.setValue("customerName", cust.name);
                                         form.setValue("customerPhone", cust.phone || "");
+                                        if (cust.customerType === 'wholesale' || cust.customerType === 'retail') {
+                                          handleSaleTypeChange(cust.customerType);
+                                        }
                                         setIsCustomerComboboxOpen(false);
                                         setCustomerSearchText("");
                                       }}
                                       className="flex justify-between items-center cursor-pointer"
                                     >
                                       <div>
-                                        <p className="font-medium text-foreground">{cust.name}</p>
+                                        <p className="font-medium text-foreground flex items-center gap-1.5">
+                                          {cust.name}
+                                          {cust.customerType && (
+                                            <span className={cn(
+                                              "text-[9px] px-1 py-0.5 rounded uppercase font-bold",
+                                              cust.customerType === 'retail' ? "bg-purple-500/15 text-purple-700 dark:text-purple-300" : "bg-blue-500/15 text-blue-700 dark:text-blue-300"
+                                            )}>
+                                              {cust.customerType}
+                                            </span>
+                                          )}
+                                        </p>
                                         {cust.phone && <p className="text-xs text-muted-foreground">{cust.phone}</p>}
                                       </div>
                                       <span className={cn("text-xs font-semibold px-1.5 py-0.5 rounded", cust.totalDue > 0 ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground")}>
@@ -1298,52 +1420,58 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
               <Card className="border-border/70 shadow-sm">
                 <CardHeader className="p-4 pb-2">
                   <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
-                    <Tag className="h-4 w-4 text-primary" /> Discount & Charges
+                    <Tag className="h-4 w-4 text-primary" /> {watchedSaleType === 'retail' ? "Discount & Charges" : "Additional Charges"}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 pt-1 space-y-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Trade Discount</Label>
-                    <div className="flex items-center gap-2">
-                      <FormField
-                        control={form.control}
-                        name="discountType"
-                        render={({ field }) => (
-                          <Select value={field.value || "fixed"} onValueChange={field.onChange}>
-                            <SelectTrigger className="h-9 w-28 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="fixed">Fixed (Rs.)</SelectItem>
-                              <SelectItem value="percentage">Percent (%)</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="discountValue"
-                        render={({ field }) => (
-                          <Input
-                            type="number"
-                            inputMode="decimal"
-                            placeholder="0"
-                            className="h-9 flex-1 text-base sm:text-xs"
-                            value={field.value === undefined || field.value === null ? "" : field.value}
-                            onChange={(e) => {
-                              const val = e.target.value === "" ? 0 : parseFloat(e.target.value);
-                              field.onChange(isNaN(val) ? 0 : val);
-                            }}
-                          />
-                        )}
-                      />
+                  {/* Retail Discount: Only available in Retail billing */}
+                  {watchedSaleType === 'retail' ? (
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground flex items-center justify-between">
+                        <span>Retail Discount (Optional)</span>
+                        <span className="text-[10px] text-primary font-medium">Retail Mode</span>
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <FormField
+                          control={form.control}
+                          name="discountType"
+                          render={({ field }) => (
+                            <Select value={field.value || "fixed"} onValueChange={field.onChange}>
+                              <SelectTrigger className="h-9 w-28 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="fixed">Fixed (Rs.)</SelectItem>
+                                <SelectItem value="percentage">Percent (%)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="discountValue"
+                          render={({ field }) => (
+                            <Input
+                              type="number"
+                              inputMode="decimal"
+                              placeholder="0"
+                              className="h-9 flex-1 text-base sm:text-xs"
+                              value={field.value === undefined || field.value === null ? "" : field.value}
+                              onChange={(e) => {
+                                const val = e.target.value === "" ? 0 : parseFloat(e.target.value);
+                                field.onChange(isNaN(val) ? 0 : val);
+                              }}
+                            />
+                          )}
+                        />
+                      </div>
+                      {discountAmount > 0 && (
+                        <p className="text-xs text-green-600 font-medium">
+                          Savings: -Rs. {discountAmount.toFixed(2)}
+                        </p>
+                      )}
                     </div>
-                    {discountAmount > 0 && (
-                      <p className="text-xs text-green-600 font-medium">
-                        Savings: -Rs. {discountAmount.toFixed(2)}
-                      </p>
-                    )}
-                  </div>
+                  ) : null}
 
                   <div className="grid grid-cols-2 gap-3 pt-1">
                     <FormField
@@ -1395,7 +1523,7 @@ function SaleForm({ allProducts, allCustomers, onProductAdded, currentUserRole }
                       <span>Items Total:</span>
                       <span className="font-medium text-foreground">Rs. {itemsTotal.toFixed(2)}</span>
                     </div>
-                    {discountAmount > 0 && (
+                    {watchedSaleType === 'retail' && discountAmount > 0 && (
                       <div className="flex justify-between text-green-600 font-medium">
                         <span>Discount ({watchedDiscountType === "percentage" ? `${watchedDiscountValue}%` : "Fixed"}):</span>
                         <span>-Rs. {discountAmount.toFixed(2)}</span>

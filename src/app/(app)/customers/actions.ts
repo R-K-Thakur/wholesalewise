@@ -37,6 +37,7 @@ const mapDocToCustomer = (document: import('firebase/firestore').DocumentSnapsho
     email: typeof data.email === 'string' ? data.email : undefined,
     address: typeof data.address === 'string' ? data.address : undefined,
     notes: typeof data.notes === 'string' ? data.notes : undefined,
+    customerType: data.customerType === 'retail' ? 'retail' : (data.customerType === 'wholesale' ? 'wholesale' : undefined),
     totalDue: typeof data.totalDue === 'number' ? data.totalDue : 0,
     totalPurchases: typeof data.totalPurchases === 'number' ? data.totalPurchases : 0,
     totalPaid: typeof data.totalPaid === 'number' ? data.totalPaid : 0,
@@ -155,6 +156,7 @@ export async function createCustomerAction(formData: CustomerFormData): Promise<
       email: formData.email?.trim() || '',
       address: formData.address?.trim() || '',
       notes: formData.notes?.trim() || '',
+      customerType: formData.customerType === 'retail' ? 'retail' : 'wholesale',
       totalDue: 0,
       totalPurchases: 0,
       totalPaid: 0,
@@ -194,6 +196,7 @@ export async function updateCustomerAction(customerId: string, formData: Partial
     if (formData.email !== undefined) updateData.email = formData.email.trim();
     if (formData.address !== undefined) updateData.address = formData.address.trim();
     if (formData.notes !== undefined) updateData.notes = formData.notes.trim();
+    if (formData.customerType !== undefined) updateData.customerType = formData.customerType;
 
     await updateDoc(customerRef, updateData);
 

@@ -133,62 +133,60 @@ export async function recordPurchaseBillAction(
     const billId = billDocRef.id;
 
     await runTransaction(db, async (transaction) => {
-      // 1. READ PHASE: Get all products involved in this purchase bill
-      const productReads = await Promise.all(
-        data.items.map((item) => transaction.get(doc(db, PRODUCTS_COLLECTION, item.productId)))
+      // 1. READ PHASE: Get unique products involved in this purchase bill
+      const uniqueProductIds = Array.from(new Set(data.items.map((item) => item.productId)));
+      const productDocs = await Promise.all(
+        uniqueProductIds.map((pid) => transaction.get(doc(db, PRODUCTS_COLLECTION, pid)))
       );
 
-      for (let i = 0; i < productReads.length; i++) {
-        const prodSnap = productReads[i];
+      const productMap = new Map<string, any>();
+      for (let i = 0; i < uniqueProductIds.length; i++) {
+        const prodSnap = productDocs[i];
         if (!prodSnap.exists()) {
-          throw new Error(`Product not found for item at row ${i + 1}.`);
+          throw new Error(`Product not found for ID: ${uniqueProductIds[i]}`);
         }
+        productMap.set(uniqueProductIds[i], prodSnap.data() || {});
       }
 
       // 2. WRITE PHASE: Prepare updates
       let calculatedTotal = 0;
       const billItems: PurchaseBillItem[] = [];
-      const individualPurchaseDocRefs: { ref: any; data: Purchase }[] = [];
+      const individualPurchaseDocRefs: { ref: any; data: any }[] = [];
+      const stockIncrementByProduct: Record<string, number> = {};
+      const newPurchasePriceByProduct: Record<string, number> = {};
 
       for (let i = 0; i < data.items.length; i++) {
         const itemInput = data.items[i];
-        const prodSnap = productReads[i];
-        const prodData = prodSnap.data() || {};
+        const prodData = productMap.get(itemInput.productId) || {};
 
-        const conversionFactor = prodData.purchaseUnitConversionFactor || 1;
-        const quantityAddedInBaseUnits = itemInput.quantityPurchased * conversionFactor;
-        const newStockInBaseUnits = (prodData.quantityInStock || 0) + quantityAddedInBaseUnits;
-        const itemTotal = parseFloat((itemInput.quantityPurchased * itemInput.purchasePricePerUnit).toFixed(2));
+        const conversionFactor = typeof prodData.purchaseUnitConversionFactor === 'number' && prodData.purchaseUnitConversionFactor > 0
+          ? prodData.purchaseUnitConversionFactor
+          : 1;
+        const quantityAddedInBaseUnits = (itemInput.quantityPurchased || 0) * conversionFactor;
+        stockIncrementByProduct[itemInput.productId] = (stockIncrementByProduct[itemInput.productId] || 0) + quantityAddedInBaseUnits;
+
+        const itemTotal = parseFloat(((itemInput.quantityPurchased || 0) * (itemInput.purchasePricePerUnit || 0)).toFixed(2));
         calculatedTotal += itemTotal;
 
-        billItems.push({
+        const billItem: PurchaseBillItem = {
           productId: itemInput.productId,
           productNameSnapshot: prodData.name || 'Unknown Product',
           quantityPurchased: itemInput.quantityPurchased,
           purchasePricePerUnit: itemInput.purchasePricePerUnit,
-          purchaseUnit: itemInput.purchaseUnit,
+          purchaseUnit: itemInput.purchaseUnit as any,
           itemTotal,
           conversionFactorSnapshot: conversionFactor,
-        });
-
-        // Update product document
-        const productUpdate: any = {
-          quantityInStock: newStockInBaseUnits,
-          updatedAt: nowISO,
-          lastStockUpdateByEmail: session.email,
-          lastStockUpdateByName: session.name,
         };
+        billItems.push(billItem);
 
         // Update product purchase price if owner, or if product had no price
-        if (session.role === 'owner' || (prodData.purchasePrice === 0 && itemInput.purchasePricePerUnit > 0)) {
-          productUpdate.purchasePrice = itemInput.purchasePricePerUnit;
+        if (session.role === 'owner' || ((!prodData.purchasePrice || prodData.purchasePrice === 0) && itemInput.purchasePricePerUnit > 0)) {
+          newPurchasePriceByProduct[itemInput.productId] = itemInput.purchasePricePerUnit;
         }
-
-        transaction.update(doc(db, PRODUCTS_COLLECTION, itemInput.productId), productUpdate);
 
         // Prepare synchronized item entry in purchases collection
         const itemPurchaseRef = doc(collection(db, PURCHASES_COLLECTION));
-        const itemPurchaseData: Purchase = {
+        const itemPurchaseData: any = {
           id: itemPurchaseRef.id,
           productId: itemInput.productId,
           productNameSnapshot: prodData.name || 'Unknown Product',
@@ -199,16 +197,35 @@ export async function recordPurchaseBillAction(
           purchaseDate: data.purchaseDate,
           createdAt: nowISO,
           updatedAt: nowISO,
-          recordedByEmail: session.email,
-          recordedByName: session.name,
           purchaseBillId: billId,
         };
+        if (session.email) itemPurchaseData.recordedByEmail = session.email;
+        if (session.name) itemPurchaseData.recordedByName = session.name;
         individualPurchaseDocRefs.push({ ref: itemPurchaseRef, data: itemPurchaseData });
       }
 
+      // Update product stocks
+      for (const [pid, increment] of Object.entries(stockIncrementByProduct)) {
+        const prodData = productMap.get(pid) || {};
+        const currentStock = typeof prodData.quantityInStock === 'number' ? prodData.quantityInStock : 0;
+        const newStockInBaseUnits = parseFloat((currentStock + increment).toFixed(4));
+
+        const productUpdate: any = {
+          quantityInStock: Math.max(0, newStockInBaseUnits),
+          updatedAt: nowISO,
+        };
+        if (session.email) productUpdate.lastStockUpdateByEmail = session.email;
+        if (session.name) productUpdate.lastStockUpdateByName = session.name;
+        if (newPurchasePriceByProduct[pid] !== undefined) {
+          productUpdate.purchasePrice = newPurchasePriceByProduct[pid];
+        }
+
+        transaction.update(doc(db, PRODUCTS_COLLECTION, pid), productUpdate);
+      }
+
       calculatedTotal = parseFloat(calculatedTotal.toFixed(2));
-      const amountPaid = parseFloat(Math.min(calculatedTotal, data.amountPaid).toFixed(2));
-      const amountDue = parseFloat((calculatedTotal - amountPaid).toFixed(2));
+      const amountPaid = parseFloat(Math.min(calculatedTotal, data.amountPaid || 0).toFixed(2));
+      const amountDue = parseFloat(Math.max(0, calculatedTotal - amountPaid).toFixed(2));
 
       let paymentStatus: 'paid' | 'partially_paid' | 'unpaid' = 'paid';
       if (amountDue <= 0.001) {
@@ -219,23 +236,34 @@ export async function recordPurchaseBillAction(
         paymentStatus = 'unpaid';
       }
 
-      const purchaseBillRecord: Omit<PurchaseBill, 'id'> = {
-        invoiceNumber: data.invoiceNumber?.trim() || undefined,
-        supplierName: data.supplierName.trim(),
-        supplierPhone: data.supplierPhone?.trim() || undefined,
+      const purchaseBillRecord: any = {
+        supplierName: (data.supplierName || 'Unknown Supplier').trim(),
         purchaseDate: data.purchaseDate,
         items: billItems,
         totalAmount: calculatedTotal,
         amountPaid,
         amountDue,
         paymentStatus,
-        paymentMethod: data.paymentMethod,
-        notes: data.notes?.trim() || undefined,
+        paymentMethod: data.paymentMethod || 'cash',
         createdAt: nowISO,
         updatedAt: nowISO,
-        recordedByEmail: session.email,
-        recordedByName: session.name,
       };
+
+      if (data.invoiceNumber && data.invoiceNumber.trim() !== '') {
+        purchaseBillRecord.invoiceNumber = data.invoiceNumber.trim();
+      }
+      if (data.supplierPhone && data.supplierPhone.trim() !== '') {
+        purchaseBillRecord.supplierPhone = data.supplierPhone.trim();
+      }
+      if (data.notes && data.notes.trim() !== '') {
+        purchaseBillRecord.notes = data.notes.trim();
+      }
+      if (session.email) {
+        purchaseBillRecord.recordedByEmail = session.email;
+      }
+      if (session.name) {
+        purchaseBillRecord.recordedByName = session.name;
+      }
 
       transaction.set(billDocRef, purchaseBillRecord);
 
@@ -302,12 +330,14 @@ export async function deletePurchaseBillAction(
           const quantityToRemove = item.quantityPurchased * conversionFactor;
           const newStock = Math.max(0, (prodData.quantityInStock || 0) - quantityToRemove);
 
-          transaction.update(doc(db, PRODUCTS_COLLECTION, item.productId), {
+          const productUpdate: any = {
             quantityInStock: newStock,
             updatedAt: nowISO,
-            lastStockUpdateByEmail: session.email,
-            lastStockUpdateByName: session.name,
-          });
+          };
+          if (session.email) productUpdate.lastStockUpdateByEmail = session.email;
+          if (session.name) productUpdate.lastStockUpdateByName = session.name;
+
+          transaction.update(doc(db, PRODUCTS_COLLECTION, item.productId), productUpdate);
         }
       }
 

@@ -1,6 +1,6 @@
 
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import { initializeFirestore, getFirestore, type Firestore } from "firebase/firestore";
 
 // Attempt to load environment variables
 const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
@@ -70,6 +70,13 @@ if (!getApps().length) {
   console.log("Using existing Firebase app instance for Project ID:", projectId);
 }
 
-const db: Firestore = getFirestore(app);
+let db: Firestore;
+try {
+  db = initializeFirestore(app, {
+    ignoreUndefinedProperties: true,
+  });
+} catch {
+  db = getFirestore(app);
+}
 
 export { db, app };

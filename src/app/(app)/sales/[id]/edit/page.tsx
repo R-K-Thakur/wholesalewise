@@ -6,9 +6,10 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
-import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, ChevronsUpDown, PackagePlus, Truck, Save, ShieldAlert, Edit } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trash2, Loader2, Check, ChevronsUpDown, PackagePlus, Truck, Save, ShieldAlert, Edit, Building2, ShoppingBag } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -62,7 +63,7 @@ function EditSaleForm({ allProducts, onProductAdded, currentUserRole, existingSa
   const form = useForm<SaleFormData>({
     resolver: zodResolver(saleFormSchema),
     defaultValues: {
-      saleType: 'wholesale',
+      saleType: existingSaleData.saleType || 'wholesale',
       saleDate: new Date(existingSaleData.saleDate).toISOString().split('T')[0],
       items: existingSaleData.items.map(item => ({
         productId: item.productId || '',
@@ -108,6 +109,49 @@ function EditSaleForm({ allProducts, onProductAdded, currentUserRole, existingSa
 
   const amountPaidDisplay = Number(watchedAmountPaid) || 0;
   const amountDue = parseFloat((grandTotal - amountPaidDisplay).toFixed(2));
+
+  const watchedSaleType = form.watch("saleType") || 'wholesale';
+
+  const handleSaleTypeChange = React.useCallback((newType: 'wholesale' | 'retail') => {
+    form.setValue('saleType', newType, { shouldValidate: true, shouldDirty: true });
+
+    const currentItems = form.getValues('items') || [];
+    let updatedCount = 0;
+
+    currentItems.forEach((item, idx) => {
+      if (!item.productId) return;
+      const prod = allProducts.find((p) => p.id === item.productId);
+      if (!prod) return;
+
+      const basePrice =
+        newType === 'retail'
+          ? (prod.retailPricePerBaseUnit || prod.wholesalePricePerBaseUnit || 0)
+          : (prod.wholesalePricePerBaseUnit || 0);
+
+      let pricePerSoldUnit = basePrice;
+      if (
+        item.soldUnit === prod.purchaseUnit &&
+        prod.purchaseUnit !== prod.baseUnit &&
+        prod.purchaseUnitConversionFactor &&
+        prod.purchaseUnitConversionFactor > 0
+      ) {
+        pricePerSoldUnit = basePrice * prod.purchaseUnitConversionFactor;
+      }
+
+      form.setValue(`items.${idx}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+      updatedCount++;
+    });
+
+    toast({
+      title: newType === 'retail' ? "Switched to Retail Billing" : "Switched to Wholesale Billing",
+      description: updatedCount > 0 
+        ? `Recalculated ${updatedCount} item(s) to ${newType} prices.`
+        : `Items added will now use ${newType} prices.`,
+    });
+  }, [allProducts, form, toast]);
 
   const [openComboboxIndex, setOpenComboboxIndex] = React.useState<number | null>(null);
   const [itemSearchTexts, setItemSearchTexts] = React.useState<string[]>(() =>
@@ -224,9 +268,14 @@ function EditSaleForm({ allProducts, onProductAdded, currentUserRole, existingSa
     form.setValue(`items.${itemIndex}.soldUnit`, newSoldUnit, { shouldDirty: true });
     const product = allProducts.find(p => p.id === form.getValues(`items.${itemIndex}.productId`));
     if (product) {
-        let pricePerSoldUnit = product.wholesalePricePerBaseUnit;
+        const currentSaleType = form.getValues("saleType") || 'wholesale';
+        const basePrice = currentSaleType === 'retail'
+          ? (product.retailPricePerBaseUnit || product.wholesalePricePerBaseUnit || 0)
+          : (product.wholesalePricePerBaseUnit || 0);
+
+        let pricePerSoldUnit = basePrice;
         if (newSoldUnit === product.purchaseUnit && product.purchaseUnit !== product.baseUnit && product.purchaseUnitConversionFactor && product.purchaseUnitConversionFactor > 0) {
-            pricePerSoldUnit = product.wholesalePricePerBaseUnit * product.purchaseUnitConversionFactor;
+            pricePerSoldUnit = basePrice * product.purchaseUnitConversionFactor;
         }
         form.setValue(`items.${itemIndex}.pricePerUnitSold`, parseFloat(pricePerSoldUnit.toFixed(2)), { shouldValidate: true, shouldDirty: true });
     }
@@ -397,6 +446,40 @@ function EditSaleForm({ allProducts, onProductAdded, currentUserRole, existingSa
     <>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          {/* Bill Mode: Wholesale vs Retail */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-muted/60 border rounded-lg">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-muted-foreground uppercase">Bill Mode:</span>
+              <div className="inline-flex items-center p-1 bg-background rounded-md border gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleSaleTypeChange('wholesale')}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer",
+                    watchedSaleType === 'wholesale' ? "bg-primary text-primary-foreground font-bold shadow-xs" : "text-muted-foreground"
+                  )}
+                >
+                  <Building2 className="h-3.5 w-3.5" />
+                  🏢 Wholesale Bill
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaleTypeChange('retail')}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer",
+                    watchedSaleType === 'retail' ? "bg-primary text-primary-foreground font-bold shadow-xs" : "text-muted-foreground"
+                  )}
+                >
+                  <ShoppingBag className="h-3.5 w-3.5" />
+                  🛍️ Retail Bill
+                </button>
+              </div>
+            </div>
+            <Badge variant={watchedSaleType === 'wholesale' ? "default" : "secondary"}>
+              {watchedSaleType === 'wholesale' ? "Wholesale Rates Active" : "Retail Rates Active"}
+            </Badge>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             <FormField
               control={form.control}
